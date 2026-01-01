@@ -1,0 +1,46 @@
+╔══════════════════════════════════════════════════════════════╗
+║           🌊 WINDGAME - VERSION LOCALE 🌊                    ║
+╚══════════════════════════════════════════════════════════════╝
+
+📦 INSTALLATION TERMINÉE AVEC SUCCÈS !
+
+📁 Structure du projet:
+   ├── index.html              Page principale du jeu
+   ├── server.py               Serveur Python (recommandé)
+   ├── start-server.sh         Script de lancement automatique
+   ├── QUICKSTART.md           Guide de démarrage rapide
+   ├── README.md               Documentation complète
+   │
+   ├── css/                    Feuilles de style (5 fichiers)
+   ├── js/                     Scripts JavaScript (5 fichiers)
+   ├── images/                 Images et icônes (2 fichiers)
+   ├── scripts/                Backend PHP simulé (4 fichiers)
+   └── generated/              Contenu dynamique
+
+🚀 DÉMARRAGE RAPIDE:
+   1. Lancez: ./start-server.sh
+   2. Ouvrez: http://localhost:8000
+
+✅ FONCTIONNALITÉS:
+   • Simulation de voile en temps réel
+   • Données de vent simulées (réalistes)
+   • Google Maps intégré
+   • Système de scoring
+   • Leaderboard
+
+🌐 ACCÈS INTERNET REQUIS POUR:
+   • Google Maps API
+   • Google Fonts
+   • jQuery (CDN)
+
+💻 COMPATIBILITÉ:
+   • PHP 7.0+ (optionnel)
+   • Python 3.6+ (recommandé)
+   • Navigateurs modernes
+
+📖 DOCUMENTATION:
+   • Guide rapide: QUICKSTART.md
+   • Détails complets: README.md
+
+🎮 BON JEU !
+

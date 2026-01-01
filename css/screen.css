@@ -1,0 +1,292 @@
+.info
+{
+	position:absolute;
+	height:500px;
+	bottom:50px;
+	max-width:1200px;
+	left:0;
+	right:0;
+	margin:0 auto;
+	border-radius:25px;
+	padding:0;
+	text-align:left;
+	overflow-y:auto;
+	background: #4394f2 url(../images/login-background.png) bottom left;
+	background-size:cover;
+	color:#FFFFFF;
+	/* Visible pour debug - sera caché plus tard */
+}
+.avatar
+{
+	width:auto;
+	height:168px;
+	background: url(../images/avatar.php) center center no-repeat;
+	
+}
+.wait-for-map
+{
+	/* Panneau d'informations - affiché en mode local pour montrer les résultats */
+}
+
+.login
+{
+	position:absolute;
+	width:300px;
+	top:10px;
+	right:20px;
+	-border:1px solid black
+}
+
+.vertical
+{
+	margin-right:340px;
+	height:100%;
+	background:#ffffff;
+	color:#000000;
+}
+
+
+.slider
+{
+	background:#ffffff;
+	height: calc(100% - 185px);
+	overflow-y:auto;
+	text-align:left;
+	-border:1px solid black;
+}
+.slider ul
+{
+	list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.slider ul li
+{
+	display:block;
+	height: auto;
+	min-height: 330px;
+	position:relative;
+	color:#000000;
+	padding:10px 40px 0px 40px;
+}
+
+.slider .placeholder
+{
+	display:block;
+	height:1px;
+}
+
+.slider ul li p
+{
+	margin-top:10px;
+	margin-bottom:10px;
+}
+
+.slider .effect-scroll
+{
+	/* Effet de scroll via ancre HTML - pas de positionnement absolu */
+}
+
+#leader-board
+{
+	width:100%;
+	display:table;
+	font-size:12px;
+	table-layout:fixed;
+}
+#ocean
+{
+	position:absolute;
+	bottom:0px;
+	left:0;
+	right:340px;
+	-border:1px solid green;
+	
+}
+#ocean-wave
+{
+	position:relative;
+	width:auto;
+	height:65px;
+	background-position: left 0px bottom 0px;
+	background-repeat: repeat-x;
+	overflow: hidden;
+	-border:1px solid red;
+}
+#ocean-water
+{
+	position:relative;
+	height:120px;
+	background:url(/images/water.png);
+	padding: 1px 40px;
+	border-radius: 0px 0px 0px 25px;
+	-border:1px solid blue;
+}
+
+.full-screen
+{
+	width:auto;
+	top:0px;
+	bottom:0px;
+	left:0px;
+	right:0px;
+	margin:0;
+	padding:20px 40px;
+	overflow-y:auto;
+	-border:1px solid black;
+}
+
+	
+.results
+{
+	position:relative;
+	display:table-cell;
+	vertical-align:top;
+	width:50%;
+}
+
+.results p
+{
+	text-align:left;
+	padding:2px;
+	margin:0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.results .scale
+{
+	position: relative;
+	top:-2px;
+	height:2px;
+	background:#d8e9ff;
+}
+
+@media only screen and (max-width: 1200px)
+{
+	.info
+	{
+		margin-left:20px;
+		margin-right:20px;
+	}
+	
+
+}
+
+@media only screen and (max-height: 600px)
+{
+	.info
+	{
+		bottom:25px;
+	}
+}
+
+@media only screen and (max-height: 550px)
+{
+	.info
+	{
+		bottom:20px;
+	}
+	
+}
+
+
+@media only screen and (max-width: 840px), screen and (max-height: 540px)
+{
+	.info
+	{
+		position:absolute;
+		height:auto;
+		top:20px;
+		bottom:20px;
+		border-radius:0px;
+		overflow-y:auto;
+		flex-flow: column;
+		display:flex;
+	}
+	.vertical
+	{
+		position:static;
+		width:auto;
+		height:auto;
+		margin-right:0;
+		order:2;
+	}
+	.slider ul li
+	{
+		display:block;
+		height: 310px;
+		position:relative;
+		color:#000000;
+		padding: 10px 20px;
+	}
+
+	.login
+	{
+		position:static;
+		width:auto;
+		height:auto;
+		padding: 10px 20px;
+		order:1;
+		-border:1px solid black
+	}
+	
+	.results
+	{
+		display:block;
+		width:auto;
+		padding:10px 0;
+		max-width:400px;
+	}
+	#leader-board
+	{
+		width:auto;
+		display:block;
+	}	
+	
+	#ocean
+	{
+		position:static;
+	}
+	#ocean-water
+	{
+		padding: 1px 20px;
+		border-radius: 0px;
+	}
+	
+	.slider
+	{
+		
+		height:auto;
+	}
+	
+	.slider ul li
+	{
+		height: auto;
+	}
+
+	.slider .placeholder
+	{
+		display:none;
+	}
+
+	.slider .effect-scroll
+	{
+		display:none;
+	}
+
+	.slider .wind
+	{
+		position:static;
+	}
+}
+
+@media only screen and (max-width: 600px)
+{
+	.screen-only
+	{
+		display:none;
+	}
+}

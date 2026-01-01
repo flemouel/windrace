@@ -1,0 +1,14 @@
+<svg 
+	xmlns="http://www.w3.org/2000/svg" 
+	xmlns:se="http://svg-edit.googlecode.com" 
+	xmlns:xlink="http://www.w3.org/1999/xlink" 
+	xmlns:dc="http://purl.org/dc/elements/1.1/" 
+	xmlns:cc="http://creativecommons.org/ns#" 
+	xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" 
+	xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" 
+	width="200" 
+	height="200">                                    
+	
+	<path fill="#4394f2" fill-opacity="0.5" stroke="#000000" stroke-opacity="0.5" stroke-width="2" d="M 90,150 L 100,50 L 110,150 L 100, 130 z" />
+
+</svg>

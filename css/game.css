@@ -1,0 +1,215 @@
+#map_canvas
+{
+	position:absolute; 
+	left:0px;
+	right:0px;
+	top:0px;
+	bottom:0px;
+}
+
+#button
+{
+	position:absolute; 
+	left:0px;
+	right:0px;
+	margin: 0 auto;
+	bottom:10px; 
+	width:100%;
+	max-width:600px;
+	height:100px;
+	font-weight:bold;
+	font-size:20pt;
+	background:#ffffff;
+	border:5px solid #4394f2;
+	border-radius:50px;
+	
+}
+#play
+{
+	position:relative; 
+	left:0px;
+	right:0px;
+	margin: 0 auto;
+}
+#share
+{
+	position:relative; 
+	left:0px;
+	right:0px;
+	margin: 10px auto;
+	background:#3b5998;
+	color:#ffffff;
+}
+#tweet
+{
+	position:relative; 
+	left:0px;
+	right:0px;
+	margin: 10px auto;
+	background:#33ccff;
+	color:#ffffff;
+}
+
+#button:focus { outline-style: none; }
+
+#wind_arrow
+{
+	position:absolute;
+	top:80px;
+	right:45px;
+	width:100px;
+	height:100px;
+}
+
+#wind_value
+{
+	position:absolute;
+	top:20px;
+	right:20px;
+	width:150px;
+	height:40px;
+	text-align:center;
+	font-weight:bold;
+	font-size:20pt;
+}
+	
+#speed_value
+{
+	position:absolute;
+	top:60px;
+	right:20px;
+	width:150px;
+	height:40px;
+	text-align:center;
+	font-weight:bold;
+	font-size:18pt;
+}
+
+#ranking_display
+{
+	position:absolute;
+	top:110px;
+	right:20px;
+	width:200px;
+	background:rgba(255,255,255,0.9);
+	padding:10px;
+	border-radius:5px;
+	font-size:11pt;
+	line-height:1.5;
+}
+
+#ranking_display h3
+{
+	margin:0 0 5px 0;
+	font-size:12pt;
+	text-align:center;
+}
+
+#ranking_display .boat-rank
+{
+	margin:3px 0;
+}
+
+#ranking_display .boat-rank.first
+{
+	font-weight:bold;
+	color:#008000;
+}
+
+#play
+{
+	padding: 10px 20px;
+	font-size: 14pt;
+	background: #4394f2;
+	color: white;
+	border: 2px solid white;
+	border-radius: 5px;
+	cursor: pointer;
+	font-weight: bold;
+}
+
+#play:hover
+{
+	background: #2d7ad3;
+}
+
+#curve_chart
+{
+	position:fixed;
+	bottom:100px;
+	left:0px;
+	right:0px;
+	height:200px;
+	background-color: rgba(255, 255, 255, 0.3);
+}
+#map_scroll
+{
+	position:fixed;
+	left:0px;
+	right:0px;
+	bottom:50px;
+	padding:20px;
+}
+#back_to_game
+{
+	position:fixed;
+	bottom:20px;
+	left:0;
+	right:0;
+	display:block;
+	font-family: 'Open Sans', verdana, helvetica; 
+	font-size: 14px;
+	font-weight:bold;
+	background-color: #ffffff;
+	border-radius:25px;
+	padding:10px;
+	border:0px;
+	color:#4a90e2;
+	width:100%;
+	max-width:300px;
+	margin:0px auto;
+	text-align:center;
+	cursor:pointer;
+	height:40px;
+}
+
+#preview_avatar
+{
+	position:fixed;
+	top:10px;
+	left:10px;
+	width:168px;
+	height:168px;
+}
+
+@media only screen and (max-width: 600px)
+{
+	#button
+	{
+		bottom:0px;
+		border-radius:0px;
+	}
+	
+	#wind_value
+	{
+		text-align:right;
+		top:10px;
+		right:10px;
+	}
+		
+	#speed_value
+	{
+		text-align:right;
+		top:50px;
+		right:10px;
+	}
+	#wind_arrow
+	{
+		top:0px;
+		left:0px;
+	}
+	#preview_avatar
+	{
+		display:none;
+	}
+}

@@ -1,0 +1,33 @@
+.wave1 { background-image: url(/images/wave1.png); background-size: 5px 5px; -webkit-animation: left100 6s linear infinite; }
+.wave2 { background-image: url(/images/wave1.png); background-size: 10px 10px; -webkit-animation: left100 5s linear infinite; }
+.wave3 { background-image: url(/images/wave1.png); background-size: 20px 20px; -webkit-animation: left100 4s linear infinite; }
+.wave4 { background-image: url(/images/wave1.png); background-size: 25px 25px; -webkit-animation: left100 3s linear infinite; }
+.wave5 { background-image: url(/images/wave1.png); background-size: 50px 50px; -webkit-animation: left100 2s linear infinite; }
+.wave6 { background-image: url(/images/wave2.png); background-size: 100px 20px; -webkit-animation: left100 2s linear infinite; }
+.wave7 { background-image: url(/images/wave2.png); background-size: 100px 25px; -webkit-animation: left100 2s linear infinite; }
+.wave8 { background-image: url(/images/wave2.png); background-size: 100px 30px; -webkit-animation: left100 2s linear infinite; }
+.wave9 { background-image: url(/images/wave2.png); background-size: 100px 35px; -webkit-animation: left100 2s linear infinite; }
+.wave10 { background-image: url(/images/wave2.png); background-size: 100px 40px; -webkit-animation: left100 2s linear infinite; }
+.wave11 { background-image: url(/images/wave2.png); background-size: 100px 45px; -webkit-animation: left100 2s linear infinite; }
+.wave12{ background-image: url(/images/wave2.png); background-size: 100px 50px; -webkit-animation: left100 2s linear infinite; }
+.wave13 { background-image: url(/images/wave2.png); background-size: 100px 55px; -webkit-animation: left100 2s linear infinite; }
+.wave14 { background-image: url(/images/wave2.png); background-size: 100px 60px; -webkit-animation: left100 2s linear infinite; }
+.wave15{ background-image: url(/images/wave2.png); background-size: 100px 65px; -webkit-animation: left100 2s linear infinite; }
+.wave16{ background-image: url(/images/wave3.png); background-size: 50px 25px; -webkit-animation: left100 1s linear infinite; }
+.wave17{ background-image: url(/images/wave3.png); background-size: 60px 30px; -webkit-animation: left60 1s linear infinite; }
+.wave18{ background-image: url(/images/wave3.png); background-size: 70px 35px; -webkit-animation: left70 1s linear infinite; }
+.wave19{ background-image: url(/images/wave3.png); background-size: 80px 40px; -webkit-animation: left80 1s linear infinite; }
+.wave19{ background-image: url(/images/wave3.png); background-size: 90px 45px; -webkit-animation: left90 1s linear infinite; }
+.wave20{ background-image: url(/images/wave3.png); background-size: 100px 50px; -webkit-animation: left100 1s linear infinite; }
+.wave21{ background-image: url(/images/wave3.png); background-size: 100px 50px; -webkit-animation: left100 0.9s linear infinite; }
+.wave22{ background-image: url(/images/wave3.png); background-size: 100px 50px; -webkit-animation: left100 0.8s linear infinite; }
+.wave23{ background-image: url(/images/wave3.png); background-size: 100px 50px; -webkit-animation: left100 0.7s linear infinite; }
+.wave24{ background-image: url(/images/wave3.png); background-size: 100px 50px; -webkit-animation: left100 0.6s linear infinite; }
+.wave25{ background-image: url(/images/wave3.png); background-size: 100px 50px; -webkit-animation: left100 0.5s linear infinite; }
+
+@-webkit-keyframes left60 { from { background-position: left 0 bottom; } to { background-position: left 60px bottom; }}
+@-webkit-keyframes left70 { from { background-position: left 0 bottom; } to { background-position: left 70px bottom; }}
+@-webkit-keyframes left80 { from { background-position: left 0 bottom; } to { background-position: left 80px bottom; }}
+@-webkit-keyframes left90 { from { background-position: left 0 bottom; } to { background-position: left 90px bottom; }}
+@-webkit-keyframes left100 { from { background-position: left 0 bottom; } to { background-position: left 100px bottom; }}
+

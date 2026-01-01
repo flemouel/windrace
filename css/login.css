@@ -1,0 +1,171 @@
+.field
+{
+	
+	padding:10px 0;
+	-border:1px solid black;
+}
+
+.field label
+{
+	display:block;
+	
+}
+
+.field input[type=text],  
+.field input[type=password],  
+.field select
+{
+	display:block;
+	width:100%;
+	max-width:300px;
+	font-family: 'Open Sans', verdana, helvetica; 
+	font-size: 14px;
+	padding: 2px 0;
+}
+.description select
+{
+	display:block;
+	width:100%;
+	font-family: 'Open Sans', verdana, helvetica; 
+	font-size: 14px;
+	padding: 2px 0;
+}
+
+.field select option {color: #000000; background: #ffffff;}
+
+.login .error
+{
+		color:#ff9999;
+		text-shadow: 0px 0px 5px #000000;
+}
+
+.login .field-checkbox input
+{
+	position:relative;
+	top:-20px;
+	left:0;
+	width:20px;
+	height:20px;
+}
+
+.login .field-checkbox label
+{
+	position:relative;
+	top:0;
+	left:40px;
+	width:50%;
+}
+
+
+
+.login a 
+{
+	color:#FFFFFF;
+	text-decoration:underline;
+}
+
+.login .field input, .login .field select
+{
+	border:0px;
+	border-bottom:1px solid white;
+	background:none;
+	color:white;
+}
+
+.login .field select
+{
+	-webkit-appearance: none;
+   -moz-appearance: none;
+   appearance: none;
+}   
+
+.login input[type='submit'], .login input[type='button']
+{
+	display:block;
+	font-family: 'Open Sans', verdana, helvetica; 
+	font-size: 14px;
+	font-weight:bold;
+	background:#FFFFFF;
+	border-radius:25px;
+	padding:10px;
+	border:0px;
+	color:#4a90e2;
+	width:100%;
+	max-width:300px;
+	margin:0px;
+	text-align:center;
+	cursor:pointer;
+	height:40px;
+	
+	
+}
+
+.login .field input::-webkit-input-placeholder 
+{ 
+  color: #a1c9f8;
+}
+.login .field input::-moz-placeholder 
+{ 
+  color: #a1c9f8;
+}
+.login .field input:-ms-input-placeholder 
+{ 
+  color: #a1c9f8;
+}
+.login .field input:-moz-placeholder 
+{ 
+  color: #a1c9f8;
+}
+
+.login input[type=file]::-webkit-file-upload-button 
+{
+    display:inline-block;
+	font-family: 'Open Sans', verdana, helvetica; 
+	font-size: 14px;
+	font-weight:bold;
+	background:#2c4f95;
+	padding:5px;
+	border:0px;
+	color:#ffffff;
+	width:100%;
+	max-width:100px;
+	margin:0px;
+	text-align:center;
+	cursor:pointer;
+	height:auto;
+}
+
+.login .field input:-webkit-autofill,
+.login .field input:-webkit-autofill:hover, 
+.login .field input:-webkit-autofill:focus
+.login .field input:-webkit-autofill, 
+.login .field textarea:-webkit-autofill,
+.login .field textarea:-webkit-autofill:hover
+.login .field textarea:-webkit-autofill:focus,
+.login .field select:-webkit-autofill,
+.login .field select:-webkit-autofill:hover,
+.login .field select:-webkit-autofill:focus {
+  border: 1px solid #a1c9f8;
+  -webkit-text-fill-color: #ffffff;
+  -webkit-box-shadow: 0 0 0px 1000px #3c85da inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+#fb-register
+{
+	display:block;
+	font-family: 'Open Sans', verdana, helvetica; 
+	font-size: 14px;
+	font-weight:bold;
+	background:#3b5998;
+	border-radius:25px;
+	padding:10px;
+	border:0px;
+	color:#ffffff;
+	max-width:280px;
+	margin:0px;
+	text-align:center;
+	cursor:pointer;
+	height:20px;
+}
+

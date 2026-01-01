@@ -1,0 +1,1415 @@
+﻿<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<title>Wind game is about tacking at the right moment</title>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="keywords" content="wind game, online sailing game" />
+	<meta name="description" content="Wind data is real from ultra-sonic weather station at Nanny Cay marina, BVI. So, no wind - no game. Boats are always sailing close-hauled course. RRS are not applied - it's just about tacking."/>
+			
+	<meta property="og:title" content="Wind game is about tacking at the right moment" />
+	<meta property="og:site_name" content="Wind game"/>
+	<meta property="og:description" content="Wind data is real from ultra-sonic weather station at Nanny Cay marina, BVI. So, no wind - no game. Boats are always sailing close-hauled course. RRS are not applied - it's just about tacking." />
+	<meta property="og:image:url" content="https://www.sailracer.net/windgame/images/share.png" />
+	<meta property="og:image:type" content="image/png">
+	<meta property="og:image:width" content="600">
+	<meta property="og:image:height" content="314">
+	<meta property="og:image:height" content="314">
+	<meta property="og:url" content="https://www.sailracer.net/windgame/">
+	<meta property="fb:app_id" content="169851579738903">
+	
+	<link rel="shortcut icon" href="favicon.ico"/>
+	<link rel="icon" href="favicon.ico"/>
+	<link rel="icon" type="image/png" href="icon.png" />
+
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:400,700">
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Montserrat:400,700">
+	<link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/themes/smoothness/jquery-ui.css">
+	
+	<link rel="stylesheet" href="css/style.css?v2.5">	
+	<link rel="stylesheet" href="css/game.css?v2.5">
+	<link rel="stylesheet" href="css/screen.css?v2.5">
+	<link rel="stylesheet" href="css/waves.css?v2.5">
+	<link rel="stylesheet" href="css/login.css?v2.5">
+	
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+	<script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.js"></script>
+	<script type="text/javascript" src="js/googlemaps.js"></script>
+	<script type="text/javascript" src="js/usgsoverlay.js"></script>
+	<script type="text/javascript" src="js/common.js"></script>
+	<script type="text/javascript" src="js/latlon.js"></script>
+	<script type="text/javascript" src="js/geo.js"></script>
+	<script type="text/javascript" src="js/properties.js"></script> 
+
+	<script  type="text/javascript">
+	
+	var share_url = "https://www.sailracer.net/windgame";
+	
+	// google
+	
+	 var _gaq = _gaq || [];
+	_gaq.push(['_setAccount', 'UA-6616951-4']);
+	_gaq.push(['_trackPageview']);
+
+	(function() {
+	var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+	ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+	var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+	})();
+	  
+	// facebook
+	
+	window.fbAsyncInit = function() {FB.init({appId:'169851579738903',cookie:true, xfbml:true,version: 'v2.4'});};
+
+	(function(d, s, id){
+	var js, fjs = d.getElementsByTagName(s)[0];
+	if (d.getElementById(id)) {return;}
+	js = d.createElement(s); js.id = id;
+	js.src = "//connect.facebook.net/en_US/sdk.js";
+	fjs.parentNode.insertBefore(js, fjs);
+	}(document, 'script', 'facebook-jssdk'));
+	
+	$(document).ready(function() 
+	{	
+		$("a.effect-scroll").on('click',function(e) 
+		{
+			var url = e.target.href;
+			var hash = url.substring(url.indexOf("#")+1);					
+			$(".slider").animate({scrollTop: ($("#"+hash).offset().top-$(".slider").offset().top) },1000);
+			return false;
+		});
+		
+		$("#fb-register").on('click',function(e) 
+		{
+			FB.login(function(response) {if (response.authResponse) {window.location.href="facebook.php";}},{scope: 'email'});
+			return false;
+		});
+		
+		$("#play").on('click',function(e)
+		{
+			var buttonText = $("#play").val();
+
+			// Si c'est "Try again" ou "Play again", on doit reset pour recommencer
+			if (buttonText === "Try again" || buttonText === "Play again") {
+				reset();
+			}
+
+			// Cacher le panneau info
+			if ($(".info").is(":visible")) {
+				$(".info").slideUp(200);
+			}
+			$("#chat").hide();
+			return false;
+		});
+		
+		$("#share").click(function() 
+		{
+			if (mark_top!=null)
+			{
+				
+				var name = "I have won wind game by "+finalresult+"m.";
+				var link = share_url+"/view.php?w="+track_id;
+				
+				if (finalresult<0)
+				{
+					name = "I have lost wind game by "+(0-finalresult)+"m.";
+					link = share_url+"/view.php?l="+track_id;
+				}
+				else if (track_achievement!="")
+				{
+					name += " "+track_achievement+"!";
+				}
+				
+				$("#share").attr("disabled", true);
+				$("#share").val("Sharing");
+				
+				$.post( "scripts/save.php", {"start":{lat:initial_boat_location.lat(),lng:initial_boat_location.lng()},"mark":{lat:mark_top.lat(),lng:mark_top.lng()},"black":black_tacks,"red":red_tacks}).done(function( response ) 
+				{
+					$("#share").removeAttr("disabled");
+					$("#share").val("Share on facebook");
+					//var picture = share_url+"/.share/"+response+".png";
+					
+					
+					FB.ui({
+						app_id: '169851579738903',
+						method: 'share',
+						display: 'iframe',
+						hashtag: 'windgame',
+						href: link,
+						//quote: name,
+						
+						
+						
+						
+					}, function(response){});
+
+				});
+			}
+		});
+		
+		$( "#tweet" ).click(function() 
+		{
+			if (mark_top!=null)
+			{
+				var text = escape("I have won a wind game by "+finalresult+"m. Try it yourself - it's about tacking at the right moment @sailracernet");
+				var link = escape(share_url);
+				
+				if (finalresult<0)
+				{
+					text = escape("I have lost a wind game by "+(0-finalresult)+"m. Try it yourself - it's about tacking at the right moment @sailracernet");
+				}
+				
+				location.href="https://twitter.com/share?url="+link+"&text="+text;	
+			}
+		});
+		
+		$("#avatar").mouseenter(function() 
+		{
+			$("#avatar_form").show();
+		});
+		$("#avatar").click(function() 
+		{
+			$("#avatar_form").show();
+		});
+		$("#avatar").mouseleave(function() 
+		{
+			$("#avatar_form").hide();
+		});
+		$("#avatar_file").change(function() 
+		{
+			$("#avatar_form").submit();
+		});
+
+  
+		
+	});
+	
+	var track_id = 0;
+	var track_achievement = "";
+	
+	function onGameFinish(id,achievement)
+	{
+		console.log("onGameFinish called - id:", id, "achievement:", achievement, "finalresult:", finalresult);
+		track_id = id;
+
+		if (finalresult<0)
+		{
+			track_achievement = "";
+			$("#result").html("<h3>Lost by "+(0-finalresult)+"m</h3>");
+			console.log("Setting play button to 'Try again' - button exists:", $("#play").length);
+			$("#play").val("Try again").show();
+			console.log("Play button display after show():", $("#play").css("display"));
+		}
+		else
+		{
+			track_achievement = achievement;
+			if (achievement=="") $("#result").html("<h3>Won by "+finalresult+"m</h3>");
+			else $("#result").html("<h3>Won by "+finalresult+"m<br/>"+achievement+"</h3>");
+			console.log("Setting play button to 'Play again' - button exists:", $("#play").length);
+			$("#play").val("Play again").show();
+			console.log("Play button display after show():", $("#play").css("display"));
+			if ($("#chat").length) $("#chat").show();
+
+		}
+		$.post("generated/table.html",null,function(response)
+        {
+			$("#leader-board").html(response);
+		});
+		$.post("scripts/wind.php",null,function(response)
+        {
+			$("#ocean").html(response);
+		});
+
+		if ($("#social").length) $("#social").show();
+		$("#button").slideUp(200,function(){
+			$(".info").slideDown(200, function(){
+				// Scroller vers le div result après l'animation slideDown
+				var resultElement = document.getElementById('result');
+				if (resultElement) {
+					resultElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+				}
+			});
+		});
+
+		return false;
+	}
+	</script>
+</head>
+<body>
+
+
+<script type="text/javascript">
+
+	var starttime = 0;
+	var startdistance = 4630;
+	var tackangle = 43;
+	var finalresult = 0;
+	var srdistance = startdistance;
+	var mydistance = startdistance;
+	var red_tacks = new Array();
+	var black_tacks = new Array();
+	var tacks_log = new Array();
+	var map = null;
+	var mark = null;
+	var started = false;
+	var finished = false;
+	var map_center = null;
+	var mark_top = null;
+	var initial_boat_location = null;
+	var course_line = null;
+	var myboat = null;
+	var srboat = null;
+	var left_layline = null;
+	var rigth_layline = null;
+	var center_line = null;
+	var left_arc = null;
+	var right_arc = null;
+	var wind_track = null;
+	var average_track = null;
+	var windindex = 0;
+	var winddirection = new Array();
+	var windspeed = new Array();
+	var windcache = new Array();
+	var windcache_length = 600;
+	var bearing = 0;
+	
+	$(document).ready(function()
+	{
+		console.log("Document ready! Button element:", $("#button").length);
+
+		// Ne pas cacher le panneau info au démarrage - il sera affiché par initialized()
+		// $(".info").hide();
+		// $("#play").hide(); // Commenté pour afficher le bouton Play dès le début
+
+		$("#button").on('click',function(e)
+		{
+			console.log("Button clicked! started:", started);
+			if (started)
+			{
+				console.log("Tacking...");
+				if (myboat!=null)
+				{
+					myboat.tack();
+					red_tacks.push([myboat.point.lat(),myboat.point.lng()]);
+					if (myboat.getTack()==1) tacks_log.push("P"+windindex);
+					else tacks_log.push("S"+windindex);
+				}
+			}
+			else
+			{
+				console.log("Starting game...");
+				started = true;
+				finished = false;
+				$("#button").val("Loading...");
+				$("#button").attr("disabled","true");
+				window.clearTimeout(processIdleTimeout);
+				console.log("load", starttime, windindex);
+				loadData(starttime-Math.round(windindex/10));
+				map.panTo(myboat.point);
+			}
+		});	
+		$("#back_to_game").on('click',function(e) 
+		{
+			window.location.href=".";
+		});
+		$("#wind_arrow").hide();
+		
+	});
+	
+	function isMobile() 
+	{ 
+		if( navigator.userAgent.match(/Android/i)
+		|| navigator.userAgent.match(/webOS/i)
+		|| navigator.userAgent.match(/iPhone/i)
+		|| navigator.userAgent.match(/iPad/i)
+		|| navigator.userAgent.match(/iPod/i)
+		|| navigator.userAgent.match(/BlackBerry/i)
+		|| navigator.userAgent.match(/Windows Phone/i))
+		{
+			return true;
+		}
+		else 
+		{
+			return false;
+		}
+	}
+	function readyWithGoogle()
+	{ 
+		
+		var MY_MAPTYPE_ID = 'terrain';
+			
+		var myOptions = {
+			scrollwheel:true,
+			streetViewControl: false,
+			fullscreenControl: false,
+			panControl: false,    
+			zoomControl: false,   
+			mapTypeControl: false,
+			scaleControl: true,
+			rotateControl: false,
+			scaleControlOptions: { position: google.maps.ControlPosition.TOP_RIGHT  },
+            mapTypeId: MY_MAPTYPE_ID
+            };
+			
+		var featureOpts = [
+			  {
+				"featureType": "landscape.man_made",
+				"stylers": [
+				  { "visibility": "simplified" },
+				  { "hue": "#ffff00" },
+				  { "saturation": 100 },
+				  { "lightness": -20 }
+				]
+			  },{
+				"featureType": "landscape.natural",
+				"stylers": [
+				  { "hue": "#ffff00" },
+				  { "saturation": 100 },
+				  { "lightness": -10 }
+				]
+			  },{
+				"featureType": "poi",
+				"stylers": [
+				  { "visibility": "off" }
+				]
+			  },{
+				"featureType": "water",
+				"stylers": [
+				  { "lightness": 20 },
+				  { "weight": 3 }
+				]
+			  },{
+				"featureType": "road",
+				"stylers": [
+				  { "visibility": "simplified" },
+				  { "hue": "#fff700" },
+				  { "saturation": -100 },
+				  { "lightness": -10 },
+				  { "weight": 1 }
+				]
+			  }
+			];
+		
+        map = new google.maps.Map(document.getElementById("map_canvas"), myOptions);
+		map_center = new google.maps.LatLng(18.395,-64.55);	
+
+		var styledMapOptions = { name: 'Custom Style' };  
+		var customMapType = new google.maps.StyledMapType(featureOpts, styledMapOptions);  
+		map.mapTypes.set(MY_MAPTYPE_ID, customMapType);
+
+		map.panTo(map_center);
+		map.setZoom(15);
+
+		// if(isMobile()==false) onChartChange(591); // Désactivé pour mode local
+
+		reset();
+	}
+	
+	function reset()
+	{
+		starttime = 0;
+		finalresult = 0;
+		srdistance = startdistance;
+		mydistance = startdistance;
+		
+		red_tacks = new Array();
+		black_tacks = new Array();
+		tacks_log = new Array();
+		
+		started = false;
+		finished = false;
+		
+		mark_top = null;
+		initial_boat_location = null;
+		
+		if (myboat!=null) {myboat.clear(); myboat = null;}
+		if (srboat!=null) {srboat.clear(); srboat = null;}
+		
+		if (mark!=null) mark.setMap(null);
+		if (left_layline!=null) left_layline.setMap(null);
+		if (rigth_layline!=null) rigth_layline.setMap(null);
+		if (center_line!=null) center_line.setMap(null);
+		if (left_arc!=null) left_arc.setMap(null);
+		if (right_arc!=null) right_arc.setMap(null);
+		if (wind_track!=null) wind_track.setMap(null);
+		if (average_track!=null) average_track.setMap(null);
+		
+		windindex = 0;
+		winddirection = new Array();
+		windspeed = new Array();
+		windcache = new Array();
+		bearing = 0;
+
+		$("#result").html("");
+		$("#play").val("Play").show(); // Afficher le bouton Play
+		$("#button").show(); // Afficher le bouton Start
+
+		loadDataIdle();
+	}
+	
+	function initWindCache(response)
+	{
+		starttime = response["timestamp"];
+		winddirection = response["direction"];
+		windspeed = response["speed"];
+		windindex = windcache_length;
+		windcache = new Array();		
+		for (var i=0; i<windindex; i++)
+		{
+			windcache.push(winddirection[i]);
+		}
+		// console.log(windcache); // Commenté pour réduire le spam
+	}
+	
+	function loadDataIdle()
+	{
+
+		//console.log("load", initialize);
+		$.getJSON("scripts/service.php?length="+windcache_length,null,function(response)
+        {
+			initWindCache(response);
+			bearing = getWindAverage(windcache)["avg"];
+			// console.log("Bearing calculated:", bearing); // Commenté pour réduire le spam
+			if (isNaN(bearing) || bearing === undefined) {
+				console.error("Invalid bearing value:", bearing);
+				bearing = 45; // Valeur par défaut
+			}
+			init();
+			processIdle();
+			$("#button").removeAttr("disabled");
+			$("#button").val("Start");
+
+		});
+
+	}
+	function loadData(timestamp)
+	{
+
+		console.log("loadData called with timestamp:", timestamp);
+		$.getJSON("scripts/service.php?timestamp="+timestamp,null,function(response)
+        {
+			console.log("Wind data loaded, response:", response);
+			initWindCache(response);
+
+			updateWindArrow(winddirection[windindex]);
+			updateLaylines(winddirection[windindex],getWindAverage(windcache))
+			srboat.headingByWind(winddirection[windindex],bearing);
+			myboat.headingByWind(winddirection[windindex],bearing);
+
+			if (myboat.getTack()==1) tacks_log.push("P"+windindex);
+			else tacks_log.push("S"+windindex);
+
+			countdown = 3;
+			console.log("Starting countdown from:", countdown);
+			window.setTimeout(runCountdown,500);
+
+		});
+
+	}
+	
+	var chart = null;
+	var chartdata = new Array();
+	var tacks = new Array();
+	var previewtimeoutid = null;
+	
+	function loadDataPreview()
+	{
+				
+		mark = new google.maps.Marker({position:mark_top, map: map	});
+				
+		var bounds = new google.maps.LatLngBounds();
+		bounds.extend(mark_top);
+		bounds.extend(initial_boat_location);
+		map.fitBounds(bounds);
+			
+		bearing = google.maps.geometry.spherical.computeHeading(initial_boat_location, mark_top);		
+		srboat = new Boat({id:'srboat',boatName:'', color:'000000', point:initial_boat_location, direction:bearing+tackangle});
+		myboat = new Boat({id:'myboat',boatName:'My boat', color:'ff0000', point:initial_boat_location, direction:bearing+tackangle});
+		srboat.showName(false);
+		srboat.showSpeed(false);
+		srboat.showDirection(false);
+		
+		var tacks_raw = tacks_string.split(",");
+		for (var i=0; i<tacks_raw.length; i++)
+		{
+			var letter = tacks_raw[i].substring(0, 1);
+			var value = tacks_raw[i].substring(1, tacks_raw[i].length);
+			if (letter=="P") tacks[parseInt(value)] = 1;
+			else tacks[parseInt(value)] = -1;
+		}
+		
+		$("#wind_arrow").show();
+		updateWindArrow(bearing);
+		
+		init();
+		
+		$.getJSON("scripts/service.php?timestamp="+timestamp,null,function(response)
+		{
+			initWindCache(response);
+			
+			updateWindArrow(winddirection[windindex]);
+			updateLaylines(winddirection[windindex],getWindAverage(windcache))
+			srboat.headingByWind(winddirection[windindex],bearing);
+			myboat.headingByWind(winddirection[windindex],bearing);
+			
+			var slider =  $("<div></div>").appendTo($( "#map_scroll" )).slider(
+			{
+				
+				range: "min",
+				value: windcache_length,
+				min: windcache_length,
+				max: finishindex-2,
+				slide: function( event, ui ) 
+				{
+					window.clearTimeout(previewtimeoutid);
+					previewtimeoutid = window.setTimeout(function()
+					{
+						display(ui.value);
+					},2); 
+				}
+			});
+			
+			while(!finished)
+			{
+				if (windindex<windspeed.length)
+				{
+					
+					var step = windspeed[windindex]/2.2;
+	
+					windcache.shift();
+					windcache.push(winddirection[windindex]);
+					var avg = getWindAverage(windcache);
+					average[windindex] = avg["avg"];
+					maximum[windindex] = avg["max"];
+					
+					var wd = winddirection[windindex];
+					if (wd>180) wd = wd - 360;
+					var ad = avg["avg"];
+					if (ad>180) ad = ad - 360;
+					
+					chartdata.addRow([windindex, wd, ad]);
+					
+					// move boats
+					if (myboat!=null)
+					{
+						if (typeof(tacks[windindex])!="undefined") myboat.setTack(tacks[windindex]);
+						var bearingToMark = Math.round(google.maps.geometry.spherical.computeHeading(myboat.point, mark_top));
+						myboat.moveByWind(winddirection[windindex],step,bearingToMark);	
+					}
+					if (srboat!=null)
+					{
+						moveBoat_method2(srboat,winddirection[windindex], step, avg);
+					}
+					
+					srdistance = google.maps.geometry.spherical.computeDistanceBetween(srboat.point, mark_top);
+					mydistance = google.maps.geometry.spherical.computeDistanceBetween(myboat.point, mark_top);
+					finalresult = Math.round(srdistance - mydistance);
+					distance[windindex] = mydistance;
+					result[windindex] = finalresult;
+				
+					if ((mydistance<20)||(srdistance<20)) finished = true;
+					
+					if (wind_track)
+					{
+						var path = wind_track.getPath();
+						path.push(getCoords(mark_top,winddirection[windindex]+180,mydistance+400));
+					}
+					if (average_track)
+					{
+						var path = average_track.getPath();
+						path.push(getCoords(mark_top,avg["avg"]+180,mydistance+400));
+					}
+					windindex++;
+				}
+				else
+				{
+					finished=true;
+				}
+			}
+			
+			var options = 
+			{
+			  //curveType: 'function',
+			  backgroundColor: { fill:'transparent' },
+			  legend: 'none',
+			   series: {
+				0: { lineWidth: 2 },
+				1: { lineWidth: 3 }
+			  },
+			  colors: ['#5555ff', '#555555', '#00FF00'],
+			  chartArea: {width: '100%', height: '100%'},
+			  hAxis: { textPosition: 'none' },
+			  vAxis: { direction: 1, textPosition: 'in', minValue: 30 }
+			};
+
+			chart = new google.visualization.LineChart(document.getElementById('curve_chart'));
+			chart.draw(chartdata, options);
+		});
+	}
+	
+	
+	
+	var average = new Array();
+	var maximum = new Array();
+	var result = new Array();
+	var distance = new Array();
+	
+	function display(index)
+	{
+		chart.setSelection([{row:index-windcache_length,column:null}]);
+		
+		$("#wind_value").text(windspeed[index]+" kn"); 
+		
+		var avg = {avg:average[index],max:maximum[index]};
+		mydistance = distance[index];
+		updateWindArrow(winddirection[index]);
+		updateLaylines(winddirection[index],avg);
+		
+		if (myboat!=null)
+		{
+			$("#speed_value").text(result[index]+" m");
+			myboat.moveToIndex(index);
+		}
+		if (srboat!=null) srboat.moveToIndex(index);
+	}
+	
+	
+	var countdown = 3;
+	function runCountdown()
+	{
+		console.log("runCountdown called, countdown value:", countdown);
+		if (countdown<=0)
+		{
+			$("#button").val("Tack");
+			$("#button").removeAttr("disabled");
+			console.log("Countdown finished! Calling process()...");
+			process();
+		}
+		else
+		{
+			$("#button").val(countdown);
+			window.setTimeout(runCountdown,500);
+		}
+		countdown--;
+	}
+	
+	function init()
+	{
+		
+		
+		if (mark_top==null) 
+		{
+			mark_top = getCoords(map_center, bearing, startdistance/2);
+			mark = new google.maps.Marker({position:mark_top, map: map	});
+			initial_boat_location = getCoords(map_center, bearing+180, startdistance/2);
+			
+						
+			var bounds = new google.maps.LatLngBounds();
+			bounds.extend(mark_top);
+			bounds.extend(initial_boat_location);
+			map.fitBounds(bounds);
+			
+						
+			red_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
+			black_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
+			
+			srboat = new Boat({id:"srboat",boatName:"SailRacer boat", color:"000000", point:initial_boat_location, direction:bearing+tackangle});
+			myboat = new Boat({id:"myboat",boatName:"My boat", color:"ff0000", point:initial_boat_location, direction:bearing+tackangle});
+
+			srboat.showName(true);
+			srboat.showSpeed(true);
+			srboat.showDirection(true);
+
+			// Show the boats
+			srboat.show();
+			myboat.show();
+			console.log("Boats shown!");
+
+			$("#wind_arrow").show();
+			updateWindArrow(bearing);
+
+			// Initialize ranking display immediately after boats are created
+			updateRanking();
+
+		}
+		
+		if (left_layline!=null) left_layline.setMap(null);
+		if (rigth_layline!=null) rigth_layline.setMap(null);
+		if (center_line!=null) center_line.setMap(null);
+		if (left_arc!=null) left_arc.setMap(null);
+		if (right_arc!=null) right_arc.setMap(null);
+		if (wind_track!=null) wind_track.setMap(null);
+		if (average_track!=null) average_track.setMap(null);
+		if (course_line!=null) course_line.setMap(null);
+		
+		left_layline = new google.maps.Polyline({path:[mark_top,getCoords(mark_top,bearing+180+tackangle,startdistance)],strokeColor:"#0000ff",strokeOpacity:0.5,strokeWeight:1,map:map});
+		rigth_layline = new google.maps.Polyline({path:[mark_top,getCoords(mark_top,bearing+180-tackangle,startdistance)],strokeColor:"#0000ff",strokeOpacity:0.5,strokeWeight:1,map:map});
+		center_line = new google.maps.Polyline({path:[mark_top,getCoords(mark_top,bearing+180,startdistance)],icons:[{icon:{path:'M 0,-2 0, 2',strokeOpacity:0.5},offset:'0',repeat:'10px'}],strokeColor:"#0000ff",strokeOpacity:0,strokeWeight:1,map:map});
+		left_arc = new google.maps.Polyline({path:getArc(mark_top,bearing+180,bearing+180,startdistance),strokeColor:"#000000",strokeOpacity:0.5,strokeWeight:1,map:map});
+		right_arc = new google.maps.Polyline({path:getArc(mark_top,bearing+180,bearing+180,startdistance),strokeColor:"#000000",strokeOpacity:0.5,strokeWeight:1,map:map}); 
+		
+		course_line = new google.maps.Polyline({path:[mark_top,initial_boat_location],icons:[{icon:{path:'M 0,-2 0, 2',strokeOpacity:0.5},offset:'0',repeat:'10px'}],strokeColor:"#000000",strokeOpacity:0,strokeWeight:1,map:map});
+		
+		
+		wind_track = new google.maps.Polyline({path:[],strokeColor: "#0000ff",strokeOpacity: 0.1,strokeWeight: 1,map:map}); 
+		average_track = new google.maps.Polyline({path: [],strokeColor: "#000000",strokeOpacity: 0.1,strokeWeight: 2,map:map}); 
+		
+		srboat.headingByWind(bearing,bearing);
+		myboat.headingByWind(bearing,bearing);
+		
+		window.setTimeout(initialized,2000);
+	}
+	
+	
+							
+							
+	function initialized()
+	{
+		// Au premier démarrage, le panneau est déjà visible (pas besoin de slideDown)
+		// Après un reset suite à "Try again", le panneau a été caché par l'utilisateur
+		// et doit rester caché jusqu'au prochain onGameFinish()
+		// Donc cette fonction ne fait rien
+	}
+	
+	var processIdleTimeout = 0;
+	
+	function processIdle()
+	{
+		var reload = false;
+		for (var i=0; i<10; i++)
+		{
+			if (windindex+1<winddirection.length)
+			{
+				windcache.shift();
+				windcache.push(winddirection[windindex]);
+				windindex++;
+			}
+			else
+			{
+				reload = true;
+				break;
+			}
+		}
+		
+		$("#wind_value").text(windspeed[windindex]+" kn"); 
+		$("#speed_value").text("0 m");
+			
+		updateWindArrow(winddirection[windindex]);
+		updateLaylines(winddirection[windindex],getWindAverage(windcache))
+		srboat.headingByWind(winddirection[windindex],bearing);
+		myboat.headingByWind(winddirection[windindex],bearing);
+		
+		window.clearTimeout(processIdleTimeout);
+		if (reload) loadDataIdle();
+		else processIdleTimeout = window.setTimeout(processIdle,1000);
+	}
+	
+	function process()
+	{
+		console.log("process() called - started:", started, "finished:", finished, "windindex:", windindex);
+		if ((started)&&(!finished))
+		{
+			if (windindex<windspeed.length)
+			{
+				var wind = winddirection[windindex];
+				var step = windspeed[windindex]/2.2;
+				var speed = windspeed[windindex];
+
+				console.log("Processing wind - index:", windindex, "wind:", wind, "step:", step, "speed:", speed);
+
+				windcache.shift();
+				windcache.push(wind);
+
+				$("#wind_value").text(speed+" kn");
+
+
+				var average = getWindAverage(windcache);
+				updateWindArrow(wind);
+				updateLaylines(wind,average)
+
+				if (wind_track)
+				{
+					var path = wind_track.getPath();
+					path.push(getCoords(mark_top,wind+180,mydistance+400));
+				}
+				if (average_track)
+				{
+					var path = average_track.getPath();
+					path.push(getCoords(mark_top,average["avg"]+180,mydistance+400));
+				}
+
+				if (myboat!=null)
+				{
+					mydistance = google.maps.geometry.spherical.computeDistanceBetween(myboat.point, mark_top);
+					var bearingToMark = Math.round(google.maps.geometry.spherical.computeHeading(myboat.point, mark_top));
+					console.log("Moving myboat - distance:", mydistance, "bearingToMark:", bearingToMark);
+					myboat.moveByWind(wind,step,bearingToMark);
+					if (map.getBounds().contains(myboat.point)==false) map.panTo(myboat.point);
+				}
+				
+				if (srboat!=null)
+				{
+					srdistance = google.maps.geometry.spherical.computeDistanceBetween(srboat.point, mark_top);
+					var rec = moveBoat_method2(srboat,wind, step, average);
+					if (rec!=null) black_tacks.push(rec);
+					if (srdistance<200) srboat.setTackDelay(10);
+				}
+				
+				finalresult = Math.round(srdistance - mydistance);
+				$("#speed_value").text(finalresult+" m");
+
+				// Update ranking display
+				updateRanking();
+
+				if ((mydistance<20)||(srdistance<20)) finished = true;
+			
+				windindex++;
+			}
+			else
+			{
+				finished=true;
+			}
+		}
+		
+		if (finished)
+		{
+			started = false;
+			$("#button").attr("disabled","true");
+			
+			if (myboat!=null) red_tacks.push([myboat.point.lat(),myboat.point.lng()]);
+			if (srboat!=null) black_tacks.push([srboat.point.lat(),srboat.point.lng()]);
+			
+			
+			$.getJSON( "scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:finalresult, tacks:tacks_log, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}).done(function(response)
+			{
+				onGameFinish(response["id"], response["achievement"]);
+			});
+				
+			
+		}
+		else
+		{
+			window.setTimeout(process,100);
+		}
+		
+	}
+
+	function updateRanking()
+	{
+		// Create array of boats with their distances
+		var boats = [];
+
+		if (myboat != null && mydistance !== undefined)
+		{
+			boats.push({
+				name: "My boat",
+				distance: mydistance,
+				color: "#ff0000"
+			});
+		}
+
+		if (srboat != null && srdistance !== undefined)
+		{
+			boats.push({
+				name: "SailRacer boat",
+				distance: srdistance,
+				color: "#000000"
+			});
+		}
+
+		// Sort by distance (ascending - closest to finish first)
+		boats.sort(function(a, b) { return a.distance - b.distance; });
+
+		// Build HTML for ranking display
+		var html = "<h3>Ranking</h3>";
+		for (var i = 0; i < boats.length; i++)
+		{
+			var boat = boats[i];
+			var rank = i + 1;
+			var cssClass = (rank === 1) ? "boat-rank first" : "boat-rank";
+			var distanceText = Math.round(boat.distance) + "m";
+
+			html += "<div class='" + cssClass + "'>";
+			html += rank + ". " + boat.name + ": " + distanceText;
+			html += "</div>";
+		}
+
+		$("#ranking_display").html(html);
+	}
+
+	function updateLaylines(wind,avg)
+	{
+		if (left_layline)
+		{
+			var path = left_layline.getPath();
+			path.setAt(1,getCoords(mark_top,wind+180+43,5000));
+		}
+		if (rigth_layline)
+		{
+			var path = rigth_layline.getPath();
+			path.setAt(1,getCoords(mark_top,wind+180-43,5000));
+		}
+		if (center_line)
+		{
+			var path = center_line.getPath();
+			path.setAt(1,getCoords(mark_top,wind+180,mydistance+300));
+		}
+		if (left_arc)
+		{
+			var path = getArc(mark_top,avg["avg"]+180-avg["max"],avg["avg"]+180,mydistance+1000/map.getZoom());
+			left_arc.setPath(path);
+		}
+		if (right_arc)
+		{
+			var path = getArc(mark_top,avg["avg"]+180,avg["avg"]+180+avg["max"],mydistance+1000/map.getZoom())
+			right_arc.setPath(path);
+		}
+			
+	}
+	
+	
+	
+	function moveBoat_method1(iBoat,iWindDirection, iDistance)
+	{
+		var record = null;
+		if (iBoat!=null)
+		{
+			var heading = Math.round(google.maps.geometry.spherical.computeHeading(iBoat.point, mark_top));
+			
+			var shift = iWindDirection-heading;
+			if (shift<-180) shift = 360 + shift;
+			if (shift>180) shift = shift - 360;
+		
+			if (shift<0)
+			{
+				if (iBoat.getTack()==-1)
+				{
+					if (iBoat.canTack())
+					{
+						iBoat.setTack(1);
+						record = [iBoat.point.lat(),iBoat.point.lng()];
+					}
+					
+				}
+			}
+			else
+			{
+				if (iBoat.getTack()==1)
+				{
+					if (iBoat.canTack())
+					{
+						iBoat.setTack(-1);
+						record = [iBoat.point.lat(),iBoat.point.lng()];
+					}
+				}
+			}
+			
+			iBoat.moveByWind(iWindDirection, iDistance, heading);
+		}
+		return record;
+	}
+	
+	function moveBoat_method2(iBoat,iWindDirection, iDistance, iAverage)
+	{
+		var record = null;
+		if (iBoat!=null)
+		{
+			var heading = Math.round(google.maps.geometry.spherical.computeHeading(iBoat.point, mark_top));
+			
+			var shift = iWindDirection-heading;
+			if (shift<-180) shift = 360 + shift;
+			if (shift>180) shift = shift - 360;
+			
+			if (Math.abs(shift)<43*0.5)
+			{
+				// in between 80% laylines
+				var wshift = iWindDirection-iAverage["avg"];
+				if (wshift<-180) wshift = 360 + wshift;
+				if (wshift>180) wshift = wshift - 360;
+			
+				if (wshift<0)
+				{
+					if (iBoat.getTack()==-1)
+					{
+						if (iBoat.canTack())
+						{
+							iBoat.setTack(1);
+							record = [iBoat.point.lat(),iBoat.point.lng()];
+						}
+						
+					}
+				}
+				else
+				{
+					if (iBoat.getTack()==1)
+					{
+						if (iBoat.canTack())
+						{
+							iBoat.setTack(-1);
+							record = [iBoat.point.lat(),iBoat.point.lng()];
+						}
+					}
+				}
+				
+				iBoat.moveByWind(iWindDirection, iDistance, heading);
+				
+			}
+			else
+			{
+				return moveBoat_method1(iBoat,iWindDirection, iDistance);
+			}
+		}
+		return record;
+	}
+	
+	function getWindAverage(iArray)
+	{
+		var first = iArray[0];
+		var sum = 0;
+		var max = 0;
+		for (var i=0; i<iArray.length; i++)
+		{
+			var shift = iArray[i]-first;
+			if (shift<-180) shift = 360 + shift;
+			if (shift>180) shift = shift - 360;
+			sum = sum + shift;
+		}
+		var avg = sum/iArray.length + first;
+		if (avg>360) avg = avg-360;
+		if (avg<0) avg = 360+avg;
+		for (var i=0; i<iArray.length; i++)
+		{
+			var shift = iArray[i]-avg;
+			if (shift<-180) shift = 360 + shift;
+			if (shift>180) shift = shift - 360;
+			if (Math.abs(shift)>max)
+			{
+				max = Math.abs(shift);
+			}
+		}
+		//console.log("avg",avg+" "+max)
+		return 	{avg:avg,max:max};
+	}
+	
+	function getVectorFromCoords(iX,iY)
+	{
+		if (iX<0)
+		{
+			if (iY>0) return Math.round(90+Math.atan(iY/iX)*180/Math.PI); 
+			else return Math.round(90+Math.atan(iY/iX)*180/Math.PI); 
+		}
+		else
+		{
+			if (iY<0) return Math.round(180-Math.atan(iX/iY)*180/Math.PI);
+			else return Math.round(360-Math.atan(iX/iY)*180/Math.PI); 
+		} 
+	}
+	
+	function getArc(center, initialBearing, finalBearing, radius) 
+	{ 
+		var points = 6; 
+		var delta = (finalBearing - initialBearing)/points;
+		var arr = new Array();
+		
+		arr.push(getCoords(center,initialBearing, radius+200));
+		for (var i=0; i < points+1; i++) 
+		{ 
+			arr.push(getCoords(center,initialBearing+delta*i, radius+300));
+		} 
+		arr.push(getCoords(center,finalBearing, radius+200));
+		return arr;
+	}
+	
+	function getCoords(iPoint,iDirection, iDistance)
+	{
+		if (iDirection>180) iDirection = iDirection - 360;
+		if (iDirection<-180) iDirection = iDirection + 360;
+			
+		var R = 6378137 ; // earth radius 
+		var lat1 = iPoint.lat();
+		var lon1 = iPoint.lng();
+		
+		var latitude = toDegrees(Math.asin( Math.sin(toRadians(lat1))*Math.cos(iDistance/R) + Math.cos(toRadians(lat1))*Math.sin(iDistance/R)*Math.cos(toRadians(iDirection))));
+		var longitude = lon1 + toDegrees(Math.atan2(Math.sin(toRadians(iDirection))*Math.sin(iDistance/R)*Math.cos(toRadians(lat1)), Math.cos(iDistance/R)-Math.sin(toRadians(lat1))*Math.sin(toRadians(latitude))));
+		
+		return new google.maps.LatLng(latitude,longitude);
+	}
+	
+
+	function updateWindArrow(iDegrees)
+	{
+		$('#wind_arrow').css({'-webkit-transform' : 'rotate('+ (iDegrees+180) +'deg)',
+                 '-moz-transform' : 'rotate('+ (iDegrees+180) +'deg)',
+                 '-ms-transform' : 'rotate('+ (iDegrees+180) +'deg)',
+                 'transform' : 'rotate('+ (iDegrees+180) +'deg)'});
+			
+				 
+	}
+	
+	function toRadians(degrees)
+	{
+		return degrees*Math.PI/180;
+	}
+	function toDegrees(degrees)
+	{
+		return degrees*180/Math.PI;
+	}
+	
+	function Boat(iObjParams)
+	{
+		var params = iObjParams||{};
+		
+		var self = this;
+		self.point = params.point||new google.maps.LatLng(0,0);
+		var angle = params.direction;
+		var id = params.id;
+		var color = params.color||"000000";
+		var boatName = params.boatName||"";
+		var srcImage = "images/boat.svg.php?color="+color;
+		var overlay = null;
+		
+		var tackindex = -1; //starboard
+		var tacktime = 0;
+		var tackdelay = 20; // indexes
+	
+		var line = new google.maps.Polyline({
+				  path: [self.point],
+				  strokeColor: "#"+color,
+				  strokeOpacity: 0.3,
+				  strokeWeight: 2,
+				  map:map
+				});
+				
+		function init()
+		{
+			overlay = new USGSOverlay(self.point, srcImage, map, angle, boatName, null, true);
+		}
+		
+		self.clear = function()
+		{
+			//console.log("remove", "flomboat");
+			if (overlay!=null) overlay.setMap(null);
+			overlay = null;
+			line.setMap(null);
+		}
+		self.tack = function()
+		{
+			if (tackindex == 1) self.setTack(-1);
+			else self.setTack(1);
+		}
+		self.moveByWind = function(iDirection, iDistance, iHeading)
+		{
+			var elapsed_fromtack = windindex - tacktime;
+			if (elapsed_fromtack<10)
+			{
+				iDistance = iDistance * 0.9;
+			}
+			
+			var boatdirection = iDirection + (tackindex*43);
+			
+			var wr = iDirection-iHeading;
+			if (wr>180) wr = wr - 360;
+			if (wr>43)
+			{
+				if (tackindex==-1) var boatdirection = iHeading;
+			}
+			else if (wr<-43)
+			{
+				if (tackindex==1) var boatdirection = iHeading;	
+			}
+			
+			if (boatdirection>360) boatdirection = boatdirection - 360;
+			if (boatdirection<0) boatdirection = boatdirection + 360;
+			
+			//console.log("moveByWind "+iDirection+" "+iDistance+" "+iHeading+" "+boatdirection+" "+tackindex);
+			
+			self.point = getCoords(self.point, boatdirection, iDistance);
+			
+						if (overlay!=null)overlay.move( self.point , boatdirection, iDistance);
+						
+			var path = line.getPath();
+			path.push(self.point);
+		}
+		
+		
+		self.headingByWind = function(iWindDirection, iBearingToMark)
+		{
+			var shift = iWindDirection-iBearingToMark;
+			if (shift<-180) shift = 360 + shift;
+			if (shift>180) shift = shift - 360;
+		
+			if (shift<0) self.setTack(1);
+			else self.setTack(-1);
+
+			var boatdirection = iWindDirection + (self.getTack()*tackangle);
+			if (boatdirection>360) boatdirection = boatdirection - 360;
+			if (boatdirection<0) boatdirection = boatdirection + 360;
+			 //console.log("headingByWind "+iWindDirection+" "+iBearingToMark+" "+shift+" "+self.getTack()+" "+boatdirection);
+			if (overlay!=null)
+			{
+				overlay.move( self.point , boatdirection, 0);
+			}
+		}
+		
+		var data = new Array();
+		
+		self.moveToIndex = function(index)
+		{
+			if (overlay!=null)
+			{
+				if (typeof(data[index])!="undefined")
+				{
+					if (typeof(data[index].point)!="undefined")
+					{
+						overlay.move( data[index].point , data[index].direction, data[index].speed);
+					}
+				}
+			}
+		}
+		self.setTack = function(iTack)
+		{
+			tackindex = iTack;
+			tacktime = windindex;
+		}
+		self.getTack = function()
+		{
+			return tackindex;
+		}
+		self.canTack = function()
+		{
+			if ((windindex-tacktime)>tackdelay) return true;
+			else return false;
+		}
+		self.setTackDelay = function(iDelay)
+		{
+			tackdelay = iDelay;
+		}
+		self.getPath = function()
+		{
+			var returnArray = new Array();
+			var path = line.getPath();
+			for (var i=0; i<path.getLength(); i=i+10)
+			{
+				var coord = path.getAt(i);
+				returnArray.push([coord.lat(),coord.lng()]);
+			}
+			
+			return returnArray;
+		}
+		self.showName = function(iBlShow)
+		{
+			if (overlay!=null) overlay.showName(iBlShow);
+		}
+		self.showSpeed = function(iBlShow)
+		{
+			if (overlay!=null) overlay.showSpeed(iBlShow);
+		}
+		self.showDirection = function(iBlShow)
+		{
+			if (overlay!=null) overlay.showDirection(iBlShow);
+		}
+		self.showData = function(iBlShow)
+		{
+			if (overlay!=null)
+			{	
+				overlay.showName(iBlShow);
+				overlay.showSpeed(iBlShow);
+				overlay.showDirection(iBlShow);
+			}
+		}
+		self.show = function()
+		{
+			if (overlay!=null) overlay.show();
+		}
+		self.hide = function()
+		{
+			if (overlay!=null) overlay.hide();
+		}
+		
+		init();
+		
+		return self;
+	}
+	
+	
+</script>
+
+<div id="map_canvas"></div>
+<img id="wind_arrow" src="images/arrow.svg" />
+<div id="wind_value"></div>
+<div id="speed_value"></div>
+<div id="ranking_display"></div>
+<input id="button" type="button" value="Start" disabled />
+
+<div  class="info wait-for-map">
+	<div class="vertical">
+		<div class="slider">
+			<ul>
+			
+				<li>
+					<a id="top" name="top" class="placeholder"></a>
+					
+					<h1>SailRacer.net wind game</h1>
+					<p><b>It's all about tacking at the right moment.</b><p>
+					<p>Wind data is real from ultra-sonic weather station at Nanny Cay marina, BVI. So, no wind - no game.</p>
+					<p>Boats are always sailing close-hauled course. <br/>RRS are not applied - it's just about tacking.</p>
+					<p>Red is your boat. <br/>Black is a computer blindly following <a href="http://www.sailracer.net" target="_blank">SailRacer.net</a> app.</p>
+					<p>Tack costs 10% of speed for a second.</p>
+
+					<p><input id="play" type="button" value="Play"/> <a class="effect-scroll" href="#results">Leader board</a></p>
+					<div id="result"></div>
+				</li>
+				
+				<li>
+					<a id="results" name="results" class="placeholder"></a>
+					<div id="leader-board">
+					<div class='results'><h2 class='screen-only'>Top 10</h2><p><a href='/windgame/view.php?w=166070'>53m. Nik GER Fri 10:14 UTC</a></p><p><a href='/windgame/view.php?w=166071'>9m. RFD CAN Fri 10:14 UTC</a></p><p class='screen-only'>results in last day</p></div><div class='results'><h2 class='screen-only'>Countries</h2><p>GER 1</p><div class='scale' style='width:100%'></div><p>CAN 1</p><div class='scale' style='width:100%'></div></div>					</div>
+					<p><a class="effect-scroll" href="#top">Back</a></p>
+				</li>	
+			</ul>
+		</div>
+		<div id="ocean">
+		﻿<div id='ocean-wave' class='wave5'></div><div id='ocean-water'><p><b>Wind instrument is offline</b></p><p>Wind speed 5.4kn recorder 1 years ago.</br>Winners in last hour: 0/2</br>Totally played 842423 times</p></div>		</div>
+	</div>
+	<div class="login" style="display:none">
+		<h1>Sign in to play</h1>
+<form action="?signin" method="POST">              
+	
+	<p class='error' style="display:none"></p>
+	
+	<div class="field">
+		<input id="email" name="email" type="text" value="" placeholder="Email" autocomplete="off"/>
+	</div>
+	
+	<div class="field">
+		<input id="password" name="password" type="password" value="" placeholder="Password" autocomplete="off"/>
+	</div>
+	
+	<div class="field field-checkbox">
+		<label for="remember">Remember me</label>
+		<input id="remember" name="remember" type="checkbox" autocomplete="off"  />
+	</div>
+	
+	<div class="field">
+	<input type="submit" value="Sign in"/>
+	</div>
+	
+	<div class="field">
+		<div id="fb-register">Sign in with Facebook</div>
+	</div>
+	
+	
+	<div class="submitlabel">
+		<p><a href="?forgot">Forgot your password ?</a></p>
+		<p><a href="?signup">Sign up</a></p>
+	</div>
+	
+</form>
+
+	</div>
+</div>
+
+
+
+</body>
+</html>
