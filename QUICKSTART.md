@@ -1,74 +1,92 @@
-# 🌊 WindGame - Démarrage Rapide
+# 🌊 WindGame - Quick Start
 
-## Lancement en 2 étapes
+## Launch in 2 steps
 
-### 1. Démarrer le serveur
+### 1. Start the server
 
+**Recommended method (background):**
 ```bash
 ./start-server.sh
 ```
 
-Ou manuellement avec PHP:
-```bash
-php -S localhost:8000
-```
-
-Ou avec Python:
+**Alternative (foreground):**
 ```bash
 python3 server.py
 ```
 
-### 2. Ouvrir dans le navigateur
+**To stop the server:**
+```bash
+./stop-server.sh
+```
 
-Ouvrez votre navigateur à: **http://localhost:8000**
+### 2. Open in browser
 
-## ⚠️ Prérequis
+Open your browser at: **http://localhost:8000**
 
-- **PHP** (recommandé) ou **Python 3** installé
-  - Vérifiez PHP: `php -v`
-  - Vérifiez Python: `python3 --version`
-- Connexion Internet (pour Google Maps)
+## ⚠️ Prerequisites
 
-## 🎮 Comment jouer
+- **Python 3.x** installed
+  - Check: `python3 --version`
+- Internet connection (for Google Maps)
 
-1. La carte se charge automatiquement
-2. Cliquez sur **"Start"** pour commencer
-3. Cliquez sur **"Tack"** pour virer de bord
-4. Battez le bateau noir!
+## 🎮 How to Play
 
-## 🔧 Différences avec la version en ligne
+1. **Read the rules**: Info panel displays at startup
+2. Click **"Play"** to hide the panel
+3. Click **"Start"** to begin the race (countdown 3-2-1)
+4. Click **"Tack"** to change tack at the right moment
+5. **Watch the ranking** in real-time on the right
+6. Beat the black boat to win!
 
-- ✅ **Données de vent simulées** (au lieu de la vraie station météo)
-- ✅ **Pas besoin de connexion** (sauf pour Google Maps)
-- ✅ **Pas d'authentification requise**
+## 🏆 Achievements
+
+Win with a good margin to get an achievement:
+- **100m+ lead**: "Outstanding!" 🌟
+- **50-99m**: "Great job!" ⭐
+- **20-49m**: "Well done!" ✨
+
+## 🔧 Differences from online version
+
+- ✅ **Local Python server** (replaces PHP)
+- ✅ **Simulated wind data** (instead of real weather station)
+- ✅ **No authentication** (play directly)
+- ✅ **Real-time ranking** during race
+- ✅ **Auto-scroll to results** at end of game
 
 ## 📁 Structure
 
 ```
 windgame/
-├── index.html          ← Page principale
-├── start-server.sh     ← Script de lancement
-├── css/                ← Styles
-├── js/                 ← Code JavaScript
-├── images/             ← Images et icônes
-├── scripts/            ← Backend PHP (simulé)
-└── README.md           ← Documentation complète
+├── index.html          ← Main game page
+├── server.py           ← Python server (emulates PHP endpoints)
+├── start-server.sh     ← Launch script
+├── css/                ← Styles + wave animations
+├── js/                 ← JavaScript code (navigation, boats)
+├── images/             ← Images, SVG, wave textures
+└── resdata/            ← Results data (leaderboard)
 ```
 
-## ❓ Problèmes courants
+## ❓ Common Issues
 
-**La carte ne s'affiche pas?**
-→ Vérifiez votre connexion Internet
+**Map doesn't display?**
+→ Check your Internet connection
+→ Open browser console (F12)
 
-**Erreur de serveur?**
-→ Vérifiez que PHP ou Python est installé
-→ PHP: `php -v`
-→ Python: `python3 --version`
+**Server doesn't start?**
+→ Check that Python 3 is installed: `python3 --version`
+→ Check that port 8000 is free
 
-**Port 8000 déjà utilisé?**
-→ PHP: `php -S localhost:8080`
-→ Python: Modifiez `server.py` ligne 134
+**Port 8000 already in use?**
+→ Edit `server.py` line 230: change `8000` to `8080`
+
+**Start button stays grayed out?**
+→ Wait 2 seconds (loading wind data)
+→ Reload the page
+
+**Boats don't appear?**
+→ Wait for countdown to finish (3-2-1)
+→ Check console for errors
 
 ---
 
-Pour plus de détails, voir [README.md](README.md)
+For more details, see [README.md](README.md)

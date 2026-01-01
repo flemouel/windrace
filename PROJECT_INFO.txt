@@ -1,46 +1,69 @@
 ╔══════════════════════════════════════════════════════════════╗
-║           🌊 WINDGAME - VERSION LOCALE 🌊                    ║
+║           🌊 WINDGAME - LOCAL VERSION 🌊                     ║
 ╚══════════════════════════════════════════════════════════════╝
 
-📦 INSTALLATION TERMINÉE AVEC SUCCÈS !
+📦 INSTALLATION SUCCESSFUL!
 
-📁 Structure du projet:
-   ├── index.html              Page principale du jeu
-   ├── server.py               Serveur Python (recommandé)
-   ├── start-server.sh         Script de lancement automatique
-   ├── QUICKSTART.md           Guide de démarrage rapide
-   ├── README.md               Documentation complète
+📁 Project structure:
+   ├── index.html              Main game page
+   ├── server.py               Python development server
+   ├── start-server.sh         Automatic launch script
+   ├── stop-server.sh          Server stop script
+   ├── QUICKSTART.md           Quick start guide
+   ├── README.md               Complete documentation
    │
-   ├── css/                    Feuilles de style (5 fichiers)
-   ├── js/                     Scripts JavaScript (5 fichiers)
-   ├── images/                 Images et icônes (2 fichiers)
-   ├── scripts/                Backend PHP simulé (4 fichiers)
-   └── generated/              Contenu dynamique
+   ├── css/                    Stylesheets
+   │   ├── screen.css          Main and responsive styles
+   │   └── waves.css           Wave animations (25 levels)
+   ├── js/                     JavaScript scripts
+   │   ├── boat.js             Navigation logic
+   │   └── usgsoverlay.js      Boat display on Google Maps
+   ├── images/                 Images and textures
+   │   ├── wave1.png           Light waves (5-50px)
+   │   ├── wave2.png           Medium waves (100x20-65px)
+   │   └── wave3.png           Strong waves (50-100px)
+   └── resdata/                Results data
+       └── table.html          Simulated leaderboard
 
-🚀 DÉMARRAGE RAPIDE:
-   1. Lancez: ./start-server.sh
-   2. Ouvrez: http://localhost:8000
+🚀 QUICK START:
+   1. Launch: ./start-server.sh (background)
+      or:     python3 server.py (foreground)
+   2. Open: http://localhost:8000
+   3. Stop: ./stop-server.sh
 
-✅ FONCTIONNALITÉS:
-   • Simulation de voile en temps réel
-   • Données de vent simulées (réalistes)
-   • Google Maps intégré
-   • Système de scoring
-   • Leaderboard
+✅ FEATURES:
+   • Real-time sailing simulation
+   • Simulated wind data (realistic)
+   • Integrated Google Maps
+   • Performance-based scoring system
+   • Real-time ranking during race
+   • Auto-scroll to results
+   • Wave animations based on wind strength
 
-🌐 ACCÈS INTERNET REQUIS POUR:
+🏆 ACHIEVEMENTS:
+   • 100m+ lead → "Outstanding!"
+   • 50-99m lead → "Great job!"
+   • 20-49m lead → "Well done!"
+
+🌐 INTERNET REQUIRED FOR:
    • Google Maps API
    • Google Fonts
    • jQuery (CDN)
 
-💻 COMPATIBILITÉ:
-   • PHP 7.0+ (optionnel)
-   • Python 3.6+ (recommandé)
-   • Navigateurs modernes
+💻 PREREQUISITES:
+   • Python 3.x
+   • Modern browser
+   • Internet connection
 
 📖 DOCUMENTATION:
-   • Guide rapide: QUICKSTART.md
-   • Détails complets: README.md
+   • Quick guide: QUICKSTART.md
+   • Full details: README.md
 
-🎮 BON JEU !
+🔧 ARCHITECTURE:
+   • Backend: Python server (emulates PHP endpoints)
+   • Frontend: JavaScript + jQuery + Google Maps API
+   • No database (all in memory)
+   • No authentication required
+
+🎮 ENJOY THE GAME!
 

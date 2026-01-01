@@ -57,7 +57,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         elif path == '/scripts/save.php':
             self.handle_save()
         # Route pour table.html (leaderboard)
-        elif path == '/generated/table.html':
+        elif path == '/resdata/table.html':
             self.handle_leaderboard()
         # Route pour wind.php
         elif path == '/scripts/wind.php':
@@ -109,17 +109,30 @@ class WindGameHandler(SimpleHTTPRequestHandler):
 
     def handle_record(self):
         """Enregistre les résultats du jeu"""
-        # Lire les données POST (on les ignore pour la simulation)
+        # Parse the URL to get query parameters
+        parsed = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(parsed.query)
+
+        # Lire les données POST si présentes
         content_length = int(self.headers.get('Content-Length', 0))
         if content_length:
             self.rfile.read(content_length)
 
-        # Générer un achievement basé sur un score aléatoire
-        achievements = ["", "Well done!", "Great job!", "Outstanding!"]
+        # Récupérer le finalresult depuis les paramètres GET
+        finalresult = int(query.get('finalresult', [0])[0])
+
+        # Déterminer le badge/achievement basé sur la performance (comme record.php)
+        achievement = ""
+        if finalresult >= 100:
+            achievement = "Outstanding!"
+        elif finalresult >= 50:
+            achievement = "Great job!"
+        elif finalresult >= 20:
+            achievement = "Well done!"
 
         response = {
             'id': random.randint(100000, 999999),
-            'achievement': random.choice(achievements)
+            'achievement': achievement
         }
 
         self.send_json_response(response)

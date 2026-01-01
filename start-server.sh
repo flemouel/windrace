@@ -1,21 +1,55 @@
 #!/bin/bash
 
-# Script de démarrage du serveur local WindGame
-echo "🌊 Démarrage du serveur WindGame..."
+# WindGame local server startup script
+PIDFILE=".server.pid"
+LOGFILE=".server.log"
+
+# Check if server is already running
+if [ -f "$PIDFILE" ]; then
+    PID=$(cat "$PIDFILE")
+    if ps -p $PID > /dev/null 2>&1; then
+        echo "⚠️  Server is already running (PID: $PID)"
+        echo "📍 URL: http://localhost:8000"
+        echo "🛑 Use ./stop-server.sh to stop it"
+        exit 1
+    else
+        # PID exists but process is no longer active
+        rm -f "$PIDFILE"
+    fi
+fi
+
+# Check if Python3 is available
+if ! command -v python3 &> /dev/null; then
+    echo "❌ Error: Python3 required"
+    echo "Install Python3 to continue"
+    echo "macOS: brew install python3"
+    echo "Ubuntu: sudo apt install python3"
+    exit 1
+fi
+
+echo "🌊 Starting WindGame server in background..."
 echo "📍 URL: http://localhost:8000"
-echo "⛵ Appuyez sur Ctrl+C pour arrêter le serveur"
+echo "📝 Logs: $LOGFILE"
 echo ""
 
-# Vérifier si PHP est disponible
-if command -v php &> /dev/null; then
-    echo "Utilisation du serveur PHP..."
-    php -S localhost:8000
-# Sinon utiliser Python
-elif command -v python3 &> /dev/null; then
-    echo "Utilisation du serveur Python..."
-    python3 server.py
+# Start server in background
+nohup python3 backend/server.py > "$LOGFILE" 2>&1 &
+SERVER_PID=$!
+
+# Save PID
+echo $SERVER_PID > "$PIDFILE"
+
+# Wait a bit to check server starts correctly
+sleep 2
+
+# Check if process is still active
+if ps -p $SERVER_PID > /dev/null 2>&1; then
+    echo "✅ Server started successfully (PID: $SERVER_PID)"
+    echo "🛑 Use ./stop-server.sh to stop it"
+    echo "📊 Use 'tail -f $LOGFILE' to view logs"
 else
-    echo "❌ Erreur: PHP ou Python3 requis"
-    echo "Installez PHP ou Python3 pour continuer"
+    echo "❌ Error: Server failed to start"
+    echo "📝 Check $LOGFILE for details"
+    rm -f "$PIDFILE"
     exit 1
 fi
