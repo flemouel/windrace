@@ -6,12 +6,13 @@
 
 📁 Project structure:
    ├── index.html              Main game page
-   ├── server.py               Python development server
    ├── start-server.sh         Automatic launch script
    ├── stop-server.sh          Server stop script
    ├── QUICKSTART.md           Quick start guide
    ├── README.md               Complete documentation
    │
+   ├── backend/                Backend server
+   │   └── server.py           Python development server
    ├── css/                    Stylesheets
    │   ├── screen.css          Main and responsive styles
    │   └── waves.css           Wave animations (25 levels)
@@ -22,18 +23,20 @@
    │   ├── wave1.png           Light waves (5-50px)
    │   ├── wave2.png           Medium waves (100x20-65px)
    │   └── wave3.png           Strong waves (50-100px)
+   ├── winddata/               Wind data
+   │   └── wind_data.json      Real wind data (direction + speed)
    └── resdata/                Results data
        └── table.html          Simulated leaderboard
 
 🚀 QUICK START:
    1. Launch: ./start-server.sh (background)
-      or:     python3 server.py (foreground)
+      or:     python3 backend/server.py (foreground)
    2. Open: http://localhost:8000
    3. Stop: ./stop-server.sh
 
 ✅ FEATURES:
    • Real-time sailing simulation
-   • Simulated wind data (realistic)
+   • Real wind data from winddata/wind_data.json
    • Integrated Google Maps
    • Performance-based scoring system
    • Real-time ranking during race

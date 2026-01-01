@@ -11,7 +11,7 @@
 
 **Alternative (foreground):**
 ```bash
-python3 server.py
+python3 backend/server.py
 ```
 
 **To stop the server:**
@@ -48,7 +48,7 @@ Win with a good margin to get an achievement:
 ## 🔧 Differences from online version
 
 - ✅ **Local Python server** (replaces PHP)
-- ✅ **Simulated wind data** (instead of real weather station)
+- ✅ **Real wind data** from winddata/wind_data.json (direction + speed)
 - ✅ **No authentication** (play directly)
 - ✅ **Real-time ranking** during race
 - ✅ **Auto-scroll to results** at end of game
@@ -58,11 +58,15 @@ Win with a good margin to get an achievement:
 ```
 windgame/
 ├── index.html          ← Main game page
-├── server.py           ← Python server (emulates PHP endpoints)
 ├── start-server.sh     ← Launch script
+├── stop-server.sh      ← Stop script
+├── backend/            ← Backend server
+│   └── server.py       ← Python server (emulates PHP endpoints)
 ├── css/                ← Styles + wave animations
 ├── js/                 ← JavaScript code (navigation, boats)
 ├── images/             ← Images, SVG, wave textures
+├── winddata/           ← Wind data
+│   └── wind_data.json  ← Real wind data (direction + speed)
 └── resdata/            ← Results data (leaderboard)
 ```
 
@@ -77,7 +81,7 @@ windgame/
 → Check that port 8000 is free
 
 **Port 8000 already in use?**
-→ Edit `server.py` line 230: change `8000` to `8080`
+→ Edit `backend/server.py` line 255: change `8000` to `8080`
 
 **Start button stays grayed out?**
 → Wait 2 seconds (loading wind data)

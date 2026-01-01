@@ -72,7 +72,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
     def load_real_wind_data(cls):
         """Charge les vraies données de vent du site"""
         if cls._real_wind_data is None:
-            wind_data_path = os.path.join(os.path.dirname(__file__), 'winddata', 'wind_data.json')
+            wind_data_path = os.path.join(os.path.dirname(__file__), '..', 'winddata', 'wind_data.json')
             try:
                 with open(wind_data_path, 'r') as f:
                     cls._real_wind_data = json.load(f)
