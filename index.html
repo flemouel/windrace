@@ -268,6 +268,7 @@
 	var myboat_name = "My boat";
 	var srboat_name = "SailRacer boat";
 	var geoboat_name = "Geo boat";
+	var courseDistance = startdistance;
 	
 	function loadLeaderboard()
 	{
@@ -721,6 +722,7 @@
 			mark_top = getCoords(map_center, bearing, startdistance/2);
 			mark = new google.maps.Marker({position:mark_top, map: map	});
 			initial_boat_location = getCoords(map_center, bearing+180, startdistance/2);
+			courseDistance = google.maps.geometry.spherical.computeDistanceBetween(initial_boat_location, mark_top);
 			
 						
 			var bounds = new google.maps.LatLngBounds();
@@ -931,7 +933,7 @@
 
 			function recordWinner(winner)
 			{
-				var progress = Math.round(startdistance - winner.distance);
+				var progress = Math.round(courseDistance - winner.distance);
 				$.getJSON("scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:progress, boat_name: winner.name, tacks:tacks_log, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}).done(function(response)
 				{
 					onGameFinish(response["id"], response["achievement"]);

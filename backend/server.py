@@ -146,6 +146,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             'boat_name': boat_name,
             'score': finalresult,
             'timestamp': starttime,
+            'recordtime': int(time.time()),
             'tacks': tacks,
             'start_lat': start_lat,
             'start_lng': start_lng,
@@ -295,12 +296,13 @@ Totally played {total} times</p>
             "<h2 class='screen-only'>Top 10</h2>",
             "<table class='leaderboard'>",
             "<thead><tr>"
-            "<th>Distance traveled</th>"
+            "<th>Distance to mark</th>"
             "<th>Boat</th>"
             "<th>Straight-line distance</th>"
-            "<th>Lat</th>"
-            "<th>Long</th>"
-            "<th>Date</th>"
+            "<th>Start (Lat/long)</th>"
+            "<th>Mark (Lat/Long)</th>"
+            "<th>Course start date</th>"
+            "<th>Record time</th>"
             "</tr></thead>",
             "<tbody>"
         ]
@@ -309,6 +311,8 @@ Totally played {total} times</p>
             name = entry.get('boat_name', 'Unknown')
             ts = entry.get('timestamp', 0)
             when = time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(ts))
+            record_ts = entry.get('recordtime', 0)
+            record_when = time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(record_ts)) if record_ts else "-"
             start_lat = entry.get('start_lat', None)
             start_lng = entry.get('start_lng', None)
             finish_lat = entry.get('finish_lat', None)
@@ -327,6 +331,7 @@ Totally played {total} times</p>
                 f"<td>{lat_cell}</td>"
                 f"<td>{long_cell}</td>"
                 f"<td>{when}</td>"
+                f"<td>{record_when}</td>"
                 "</tr>"
             )
         lines.append("</tbody></table>")
