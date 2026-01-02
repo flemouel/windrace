@@ -14,7 +14,6 @@
 	background: #4394f2 url(../images/login-background.png) bottom left;
 	background-size:cover;
 	color:#FFFFFF;
-	/* Visible pour debug - sera caché plus tard */
 }
 .avatar
 {
@@ -25,7 +24,7 @@
 }
 .wait-for-map
 {
-	/* Panneau d'informations - affiché en mode local pour montrer les résultats */
+	/* Info panel - shown in local mode to display results */
 }
 
 .login
@@ -85,7 +84,7 @@
 
 .slider .effect-scroll
 {
-	/* Effet de scroll via ancre HTML - pas de positionnement absolu */
+	/* Scroll effect - no absolute positioning */
 }
 
 #leader-board

@@ -273,7 +273,7 @@
     this.angle_ = isNaN(this.angle_)?0:this.angle_;
 	this.speed_ = isNaN(this.speed_)?0:this.speed_;
     this.point_  = point;
-	// console.log(point.lat()+" "+point.lng()) // Commenté pour réduire le spam
+	// console.log(point.lat()+" "+point.lng()) // Commented out to reduce spam
     this.draw();
   }
  

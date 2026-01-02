@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Serveur HTTP simple pour WindGame avec support des endpoints PHP simulés
+Simple HTTP server for WindGame with simulated PHP endpoints.
 """
 
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -13,28 +13,28 @@ import os
 
 class WindGameHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
-        # Parse the URL
+        # Parse the URL.
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
 
-        # Route pour service.php (données de vent)
+        # Route for service.php (wind data).
         if path == '/scripts/service.php':
             self.handle_wind_service(query)
-        # Route pour wind.php (état du vent)
+        # Route for wind.php (wind status).
         elif path == '/scripts/wind.php':
             self.handle_wind_status()
-        # Route pour record.php (enregistrement des scores via GET)
+        # Route for record.php (record scores via GET).
         elif path == '/scripts/record.php':
             self.handle_record()
-        # Route pour avatar.php (avatar utilisateur)
+        # Route for avatar.php (user avatar).
         elif path == '/images/avatar.php':
             self.handle_avatar()
-        # Route pour boat.svg.php (image du bateau)
+        # Route for boat.svg.php (boat image).
         elif path == '/images/boat.svg.php':
             self.handle_boat_svg(query)
         else:
-            # Servir les fichiers statiques normalement
+            # Serve static files normally.
             super().do_GET()
 
     def do_POST(self):
@@ -42,63 +42,63 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         path = parsed.path
         query_params = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
 
-        # Debug: afficher les détails de la requête POST
+        # Debug: print POST request details.
         print(f"[DEBUG] POST request - Full path: {self.path}")
         print(f"[DEBUG] POST request - Parsed path: '{path}'")
         print(f"[DEBUG] POST request - Query params: {query_params}")
 
-        # Route pour authentification (redirect vers page principale)
+        # Route for authentication (redirect to main page).
         if (path == '/' or path == '') and 'signin' in query_params:
             self.handle_signin()
-        # Route pour record.php (enregistrement des scores)
+        # Route for record.php (record scores).
         elif path == '/scripts/record.php':
             self.handle_record()
-        # Route pour save.php (sauvegarde pour partage)
+        # Route for save.php (share/save).
         elif path == '/scripts/save.php':
             self.handle_save()
-        # Route pour table.html (leaderboard)
+        # Route for table.html (leaderboard).
         elif path == '/resdata/table.html':
             self.handle_leaderboard()
-        # Route pour wind.php
+        # Route for wind.php.
         elif path == '/scripts/wind.php':
             self.handle_wind_status()
         else:
             self.send_error(404)
 
-    # Charger les vraies données du site au démarrage
+    # Load real site wind data at startup.
     _real_wind_data = None
 
     @classmethod
     def load_real_wind_data(cls):
-        """Charge les vraies données de vent du site"""
+        """Load real site wind data."""
         if cls._real_wind_data is None:
             wind_data_path = os.path.join(os.path.dirname(__file__), '..', 'winddata', 'wind_data.json')
             try:
                 with open(wind_data_path, 'r') as f:
                     cls._real_wind_data = json.load(f)
-                    print(f"✓ Données réelles chargées: {len(cls._real_wind_data['direction'])} points")
+                    print(f"✓ Real data loaded: {len(cls._real_wind_data['direction'])} points")
             except FileNotFoundError:
-                print(f"⚠ Fichier de données introuvable: {wind_data_path}")
+                print(f"⚠ Data file not found: {wind_data_path}")
                 cls._real_wind_data = None
         return cls._real_wind_data
 
     def handle_wind_service(self, query):
-        """Retourne les vraies données de vent du site sailracer.net"""
+        """Return real wind data from sailracer.net."""
         timestamp = int(query.get('timestamp', [time.time()])[0])
 
-        # Charger les vraies données
+        # Load real data.
         real_data = self.load_real_wind_data()
 
         if real_data:
-            # Utiliser les vraies données du site
+            # Use real site data.
             response = {
                 'timestamp': real_data['timestamp'],
                 'direction': real_data['direction'],
                 'speed': real_data['speed']
             }
         else:
-            # Fallback si les données ne sont pas disponibles
-            print("⚠ Utilisation de données de secours")
+            # Fallback if data is unavailable.
+            print("⚠ Using fallback data")
             response = {
                 'timestamp': timestamp,
                 'direction': [45.0] * 6001,
@@ -108,20 +108,20 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         self.send_json_response(response)
 
     def handle_record(self):
-        """Enregistre les résultats du jeu"""
-        # Parse the URL to get query parameters
+        """Record game results."""
+        # Parse the URL to get query parameters.
         parsed = urllib.parse.urlparse(self.path)
         query = urllib.parse.parse_qs(parsed.query)
 
-        # Lire les données POST si présentes
+        # Read POST data if present.
         content_length = int(self.headers.get('Content-Length', 0))
         if content_length:
             self.rfile.read(content_length)
 
-        # Récupérer le finalresult depuis les paramètres GET
+        # Read finalresult from GET params.
         finalresult = int(query.get('finalresult', [0])[0])
 
-        # Déterminer le badge/achievement basé sur la performance (comme record.php)
+        # Determine achievement badge based on performance (like record.php).
         achievement = ""
         if finalresult >= 100:
             achievement = "Outstanding!"
@@ -138,7 +138,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         self.send_json_response(response)
 
     def handle_save(self):
-        """Sauvegarde une partie pour partage"""
+        """Save a run for sharing."""
         content_length = int(self.headers.get('Content-Length', 0))
         if content_length:
             self.rfile.read(content_length)
@@ -151,7 +151,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         self.wfile.write(track_id.encode())
 
     def handle_leaderboard(self):
-        """Retourne le leaderboard"""
+        """Return the leaderboard."""
         html = """<div class='results'>
 <h2 class='screen-only'>Top 10</h2>
 <p><a href='/windgame/view.php?w=166070'>53m. Nik GER Today 10:14 UTC</a></p>
@@ -172,7 +172,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         self.wfile.write(html.encode())
 
     def handle_wind_status(self):
-        """Retourne l'état du vent"""
+        """Return wind status."""
         wind_speed = 5.4 + random.uniform(0, 3)
         winners = random.randint(0, 5)
         total = 842423 + random.randint(1, 100)
@@ -191,19 +191,19 @@ Totally played {total} times</p>
         self.wfile.write(html.encode())
 
     def handle_signin(self):
-        """Simule une authentification - redirige vers la page principale"""
-        # Lire et ignorer les données POST
+        """Simulate auth and redirect to the main page."""
+        # Read and ignore POST data.
         content_length = int(self.headers.get('Content-Length', 0))
         if content_length:
             self.rfile.read(content_length)
 
-        # Rediriger vers la page principale (authentification simulée réussie)
+        # Redirect to the main page (simulated auth success).
         self.send_response(303)  # See Other
         self.send_header('Location', '/')
         self.end_headers()
 
     def handle_avatar(self):
-        """Génère un avatar SVG par défaut"""
+        """Generate a default SVG avatar."""
         colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c']
         color = random.choice(colors)
 
@@ -219,10 +219,10 @@ Totally played {total} times</p>
         self.wfile.write(svg.encode())
 
     def handle_boat_svg(self, query):
-        """Génère un SVG de bateau avec la couleur demandée (format original du site)"""
+        """Generate a boat SVG with the requested color (site original format)."""
         color = query.get('color', ['ff0000'])[0]
 
-        # SVG original du site sailracer.net
+        # Original SVG from sailracer.net.
         svg = f'''<svg
 	xmlns="http://www.w3.org/2000/svg"
 	xmlns:se="http://svg-edit.googlecode.com"
@@ -246,7 +246,7 @@ Totally played {total} times</p>
         self.wfile.write(svg.encode())
 
     def send_json_response(self, data):
-        """Envoie une réponse JSON"""
+        """Send a JSON response."""
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
@@ -255,8 +255,8 @@ Totally played {total} times</p>
 def run(port=8000):
     server_address = ('', port)
     httpd = HTTPServer(server_address, WindGameHandler)
-    print(f"🌊 Serveur WindGame démarré sur http://localhost:{port}")
-    print(f"⛵ Appuyez sur Ctrl+C pour arrêter")
+    print(f"🌊 WindGame server started at http://localhost:{port}")
+    print(f"⛵ Press Ctrl+C to stop")
     print()
     httpd.serve_forever()
 
