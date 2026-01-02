@@ -252,6 +252,7 @@
 	var course_line = null;
 	var myboat = null;
 	var srboat = null;
+	var lrboat = null;
 	var left_layline = null;
 	var rigth_layline = null;
 	var center_line = null;
@@ -413,6 +414,7 @@
 		
 		if (myboat!=null) {myboat.clear(); myboat = null;}
 		if (srboat!=null) {srboat.clear(); srboat = null;}
+		if (lrboat!=null) {lrboat.clear(); lrboat = null;}
 		
 		if (mark!=null) mark.setMap(null);
 		if (left_layline!=null) left_layline.setMap(null);
@@ -512,9 +514,13 @@
 		bearing = google.maps.geometry.spherical.computeHeading(initial_boat_location, mark_top);		
 		srboat = new Boat({id:'srboat',boatName:'', color:'000000', point:initial_boat_location, direction:bearing+tackangle});
 		myboat = new Boat({id:'myboat',boatName:'My boat', color:'ff0000', point:initial_boat_location, direction:bearing+tackangle});
+		lrboat = new Boat({id:'lrboat',boatName:'LR boat', color:'00aa00', point:initial_boat_location, direction:bearing+tackangle});
 		srboat.showName(false);
 		srboat.showSpeed(false);
 		srboat.showDirection(false);
+		lrboat.showName(false);
+		lrboat.showSpeed(false);
+		lrboat.showDirection(false);
 		
 		var tacks_raw = tacks_string.split(",");
 		for (var i=0; i<tacks_raw.length; i++)
@@ -702,13 +708,18 @@
 			
 			srboat = new Boat({id:"srboat",boatName:"SailRacer boat", color:"000000", point:initial_boat_location, direction:bearing+tackangle});
 			myboat = new Boat({id:"myboat",boatName:"My boat", color:"ff0000", point:initial_boat_location, direction:bearing+tackangle});
+			lrboat = new Boat({id:"lrboat",boatName:"LR boat", color:"00aa00", point:initial_boat_location, direction:bearing+tackangle});
 
 			srboat.showName(true);
 			srboat.showSpeed(true);
 			srboat.showDirection(true);
+			lrboat.showName(true);
+			lrboat.showSpeed(true);
+			lrboat.showDirection(true);
 
 			srboat.show();
 			myboat.show();
+			lrboat.show();
 			console.log("Boats ready!");
 
 			$("#wind_arrow").show();
