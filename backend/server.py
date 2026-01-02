@@ -12,6 +12,9 @@ import urllib.parse
 import os
 
 class WindGameHandler(SimpleHTTPRequestHandler):
+    LEADERBOARD_JSON = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'resdata.json')
+    LEADERBOARD_HTML = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'table.html')
+
     def do_GET(self):
         # Parse the URL.
         parsed = urllib.parse.urlparse(self.path)
@@ -120,6 +123,13 @@ class WindGameHandler(SimpleHTTPRequestHandler):
 
         # Read finalresult from GET params.
         finalresult = int(query.get('finalresult', [0])[0])
+        boat_name = query.get('boat_name', ['Unknown boat'])[0]
+        starttime = int(query.get('starttime', [int(time.time())])[0])
+        tacks = query.get('tacks', [''])[0]
+        start_lat = float(query.get('start_lat', [0])[0])
+        start_lng = float(query.get('start_lng', [0])[0])
+        finish_lat = float(query.get('finish_lat', [0])[0])
+        finish_lng = float(query.get('finish_lng', [0])[0])
 
         # Determine achievement badge based on performance (like record.php).
         achievement = ""
@@ -130,8 +140,26 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         elif finalresult >= 20:
             achievement = "Well done!"
 
-        response = {
+        leaderboard = self.load_leaderboard()
+        entry = {
             'id': random.randint(100000, 999999),
+            'boat_name': boat_name,
+            'score': finalresult,
+            'timestamp': starttime,
+            'tacks': tacks,
+            'start_lat': start_lat,
+            'start_lng': start_lng,
+            'finish_lat': finish_lat,
+            'finish_lng': finish_lng
+        }
+        leaderboard.append(entry)
+        leaderboard.sort(key=lambda e: e.get('score', 0), reverse=True)
+        leaderboard = leaderboard[:10]
+        self.save_leaderboard(leaderboard)
+        self.save_leaderboard_html(leaderboard)
+
+        response = {
+            'id': entry['id'],
             'achievement': achievement
         }
 
@@ -152,19 +180,11 @@ class WindGameHandler(SimpleHTTPRequestHandler):
 
     def handle_leaderboard(self):
         """Return the leaderboard."""
-        html = """<div class='results'>
-<h2 class='screen-only'>Top 10</h2>
-<p><a href='/windgame/view.php?w=166070'>53m. Nik GER Today 10:14 UTC</a></p>
-<p><a href='/windgame/view.php?w=166071'>45m. John USA Today 09:32 UTC</a></p>
-<p><a href='/windgame/view.php?w=166072'>38m. Marie FRA Today 08:15 UTC</a></p>
-<p class='screen-only'>results in last day</p>
-</div>
-<div class='results'>
-<h2 class='screen-only'>Countries</h2>
-<p>GER 3</p><div class='scale' style='width:100%'></div>
-<p>USA 2</p><div class='scale' style='width:80%'></div>
-<p>FRA 2</p><div class='scale' style='width:80%'></div>
-</div>"""
+        if os.path.exists(self.LEADERBOARD_HTML):
+            with open(self.LEADERBOARD_HTML, 'r') as f:
+                html = f.read()
+        else:
+            html = self.render_leaderboard_html([])
 
         self.send_response(200)
         self.send_header('Content-type', 'text/html; charset=utf-8')
@@ -251,6 +271,48 @@ Totally played {total} times</p>
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
+
+    def load_leaderboard(self):
+        """Load leaderboard entries from JSON."""
+        if not os.path.exists(self.LEADERBOARD_JSON):
+            return []
+        try:
+            with open(self.LEADERBOARD_JSON, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            return []
+
+    def save_leaderboard(self, entries):
+        """Save leaderboard entries to JSON."""
+        os.makedirs(os.path.dirname(self.LEADERBOARD_JSON), exist_ok=True)
+        with open(self.LEADERBOARD_JSON, 'w') as f:
+            json.dump(entries, f)
+
+    def render_leaderboard_html(self, entries):
+        """Render leaderboard HTML from entries."""
+        lines = [
+            "<div class='results'>",
+            "<h2 class='screen-only'>Top 10</h2>"
+        ]
+        for entry in entries:
+            score = entry.get('score', 0)
+            name = entry.get('boat_name', 'Unknown')
+            ts = entry.get('timestamp', 0)
+            when = time.strftime('%a %H:%M UTC', time.gmtime(ts))
+            lines.append(f"<p><a href='/windgame/view.php?w={entry.get('id', 0)}'>{score}m. {name} {when}</a></p>")
+        lines.append("<p class='screen-only'>results in last day</p>")
+        lines.append("</div>")
+        lines.append("<div class='results'>")
+        lines.append("<h2 class='screen-only'>Countries</h2>")
+        lines.append("</div>")
+        return "\n".join(lines)
+
+    def save_leaderboard_html(self, entries):
+        """Write the leaderboard HTML file."""
+        os.makedirs(os.path.dirname(self.LEADERBOARD_HTML), exist_ok=True)
+        html = self.render_leaderboard_html(entries)
+        with open(self.LEADERBOARD_HTML, 'w') as f:
+            f.write(html)
 
 def run(port=8000):
     server_address = ('', port)

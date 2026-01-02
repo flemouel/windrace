@@ -268,6 +268,9 @@
 	var windcache = new Array();
 	var windcache_length = 600;
 	var bearing = 0;
+	var myboat_name = "My boat";
+	var srboat_name = "SailRacer boat";
+	var geoboat_name = "Geo boat";
 	
 	$(document).ready(function()
 	{
@@ -518,8 +521,8 @@
 			
 		bearing = google.maps.geometry.spherical.computeHeading(initial_boat_location, mark_top);		
 		srboat = new Boat({id:'srboat',boatName:'', color:'000000', point:initial_boat_location, direction:bearing+tackangle});
-		myboat = new Boat({id:'myboat',boatName:'My boat', color:'ff0000', point:initial_boat_location, direction:bearing+tackangle});
-		geoboat = new Boat({id:'geoboat',boatName:'Geo boat', color:'00aa00', point:initial_boat_location, direction:bearing+tackangle});
+		myboat = new Boat({id:'myboat',boatName:myboat_name, color:'ff0000', point:initial_boat_location, direction:bearing+tackangle});
+		geoboat = new Boat({id:'geoboat',boatName:geoboat_name, color:'00aa00', point:initial_boat_location, direction:bearing+tackangle});
 		srboat.showName(false);
 		srboat.showSpeed(false);
 		srboat.showDirection(false);
@@ -718,9 +721,9 @@
 			black_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
 			green_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
 			
-			srboat = new Boat({id:"srboat",boatName:"SailRacer boat", color:"000000", point:initial_boat_location, direction:bearing+tackangle});
-			myboat = new Boat({id:"myboat",boatName:"My boat", color:"ff0000", point:initial_boat_location, direction:bearing+tackangle});
-			geoboat = new Boat({id:"geoboat",boatName:"Geo boat", color:"00aa00", point:initial_boat_location, direction:bearing+tackangle});
+			srboat = new Boat({id:"srboat",boatName:srboat_name, color:"000000", point:initial_boat_location, direction:bearing+tackangle});
+			myboat = new Boat({id:"myboat",boatName:myboat_name, color:"ff0000", point:initial_boat_location, direction:bearing+tackangle});
+			geoboat = new Boat({id:"geoboat",boatName:geoboat_name, color:"00aa00", point:initial_boat_location, direction:bearing+tackangle});
 
 			srboat.showName(true);
 			srboat.showSpeed(true);
@@ -892,12 +895,38 @@
 			if (myboat!=null) red_tacks.push([myboat.point.lat(),myboat.point.lng()]);
 			if (srboat!=null) black_tacks.push([srboat.point.lat(),srboat.point.lng()]);
 			if (geoboat!=null) green_tacks.push([geoboat.point.lat(),geoboat.point.lng()]);
-			
-			
-			$.getJSON( "scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:finalresult, tacks:tacks_log, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}).done(function(response)
+
+			var boatResults = [];
+			if (myboat!=null) boatResults.push({name: myboat_name, distance: mydistance});
+			if (srboat!=null) boatResults.push({name: srboat_name, distance: srdistance});
+			if (geoboat!=null) boatResults.push({name: geoboat_name, distance: geodistance});
+
+			var minDistance = null;
+			for (var i=0; i<boatResults.length; i++)
 			{
-				onGameFinish(response["id"], response["achievement"]);
-			});
+				if (minDistance === null || boatResults[i].distance < minDistance) minDistance = boatResults[i].distance;
+			}
+
+			var winEpsilon = 0.5; // meters, avoid floating tie issues
+			var winners = [];
+			for (var i=0; i<boatResults.length; i++)
+			{
+				if (Math.abs(boatResults[i].distance - minDistance) <= winEpsilon) winners.push(boatResults[i]);
+			}
+
+			function recordWinner(winner)
+			{
+				var progress = Math.round(startdistance - winner.distance);
+				$.getJSON("scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:progress, boat_name: winner.name, tacks:tacks_log, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}).done(function(response)
+				{
+					onGameFinish(response["id"], response["achievement"]);
+				});
+			}
+
+			for (var i=0; i<winners.length; i++)
+			{
+				recordWinner(winners[i]);
+			}
 				
 			
 		}
