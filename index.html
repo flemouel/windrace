@@ -205,10 +205,7 @@
 			if ($("#chat").length) $("#chat").show();
 
 		}
-		$.post("resdata/table.html",null,function(response)
-        {
-			$("#leader-board").html(response);
-		});
+		loadLeaderboard();
 		$.post("scripts/wind.php",null,function(response)
         {
 			$("#ocean").html(response);
@@ -272,9 +269,21 @@
 	var srboat_name = "SailRacer boat";
 	var geoboat_name = "Geo boat";
 	
+	function loadLeaderboard()
+	{
+		$.post("resdata/table.html",null,function(response)
+		{
+			$("#leader-board").html(response);
+		}).fail(function()
+		{
+			$("#leader-board").html("<p>Leaderboard unavailable.</p>");
+		});
+	}
+
 	$(document).ready(function()
 	{
 		console.log("Document ready! Button element:", $("#button").length);
+		loadLeaderboard();
 
 		$("#button").on('click',function(e)
 		{
@@ -609,11 +618,14 @@
 					
 					srdistance = google.maps.geometry.spherical.computeDistanceBetween(srboat.point, mark_top);
 					mydistance = google.maps.geometry.spherical.computeDistanceBetween(myboat.point, mark_top);
-					finalresult = Math.round(srdistance - mydistance);
+					var leaderDistance = mydistance;
+					if (srboat!=null) leaderDistance = Math.min(leaderDistance, srdistance);
+					if (geoboat!=null) leaderDistance = Math.min(leaderDistance, geodistance);
+					finalresult = Math.round(leaderDistance - mydistance);
 					distance[windindex] = mydistance;
 					result[windindex] = finalresult;
 				
-					if ((mydistance<20)||(srdistance<20)) finished = true;
+					if ((mydistance<20)||(srdistance<20)||(geodistance<20)) finished = true;
 					
 					if (wind_track)
 					{
@@ -872,12 +884,15 @@
 					if (rec!=null) green_tacks.push(rec);
 				}
 				
-				finalresult = Math.round(srdistance - mydistance);
+				var leaderDistance = mydistance;
+				if (srboat!=null) leaderDistance = Math.min(leaderDistance, srdistance);
+				if (geoboat!=null) leaderDistance = Math.min(leaderDistance, geodistance);
+				finalresult = Math.round(leaderDistance - mydistance);
 				$("#speed_value").text(finalresult+" m");
 
 				updateRanking();
 
-				if ((mydistance<20)||(srdistance<20)) finished = true;
+				if ((mydistance<20)||(srdistance<20)||(geodistance<20)) finished = true;
 			
 				windindex++;
 			}
@@ -1411,7 +1426,8 @@
 				<li>
 					<a id="results" name="results" class="placeholder"></a>
 					<div id="leader-board">
-					<div class='results'><h2 class='screen-only'>Top 10</h2><p><a href='/windgame/view.php?w=166070'>53m. Nik GER Fri 10:14 UTC</a></p><p><a href='/windgame/view.php?w=166071'>9m. RFD CAN Fri 10:14 UTC</a></p><p class='screen-only'>results in last day</p></div><div class='results'><h2 class='screen-only'>Countries</h2><p>GER 1</p><div class='scale' style='width:100%'></div><p>CAN 1</p><div class='scale' style='width:100%'></div></div>					</div>
+						<p>Loading leaderboard...</p>
+					</div>
 					<p><a class="effect-scroll" href="#top">Back</a></p>
 				</li>	
 			</ul>

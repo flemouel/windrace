@@ -292,18 +292,44 @@ Totally played {total} times</p>
         """Render leaderboard HTML from entries."""
         lines = [
             "<div class='results'>",
-            "<h2 class='screen-only'>Top 10</h2>"
+            "<h2 class='screen-only'>Top 10</h2>",
+            "<table class='leaderboard'>",
+            "<thead><tr>"
+            "<th>Distance traveled</th>"
+            "<th>Boat</th>"
+            "<th>Straight-line distance</th>"
+            "<th>Lat</th>"
+            "<th>Long</th>"
+            "<th>Date</th>"
+            "</tr></thead>",
+            "<tbody>"
         ]
         for entry in entries:
             score = entry.get('score', 0)
             name = entry.get('boat_name', 'Unknown')
             ts = entry.get('timestamp', 0)
-            when = time.strftime('%a %H:%M UTC', time.gmtime(ts))
-            lines.append(f"<p><a href='/windgame/view.php?w={entry.get('id', 0)}'>{score}m. {name} {when}</a></p>")
-        lines.append("<p class='screen-only'>results in last day</p>")
-        lines.append("</div>")
-        lines.append("<div class='results'>")
-        lines.append("<h2 class='screen-only'>Countries</h2>")
+            when = time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(ts))
+            start_lat = entry.get('start_lat', None)
+            start_lng = entry.get('start_lng', None)
+            finish_lat = entry.get('finish_lat', None)
+            finish_lng = entry.get('finish_lng', None)
+            if None in (start_lat, start_lng, finish_lat, finish_lng):
+                straight = "-"
+            else:
+                straight = f"{self.haversine_m(start_lat, start_lng, finish_lat, finish_lng):.1f} m"
+            lat_cell = "-" if None in (start_lat, start_lng) else f"{start_lat:.5f} / {start_lng:.5f}"
+            long_cell = "-" if None in (finish_lat, finish_lng) else f"{finish_lat:.5f} / {finish_lng:.5f}"
+            lines.append(
+                "<tr>"
+                f"<td>{score} m</td>"
+                f"<td>{name}</td>"
+                f"<td>{straight}</td>"
+                f"<td>{lat_cell}</td>"
+                f"<td>{long_cell}</td>"
+                f"<td>{when}</td>"
+                "</tr>"
+            )
+        lines.append("</tbody></table>")
         lines.append("</div>")
         return "\n".join(lines)
 
@@ -313,6 +339,16 @@ Totally played {total} times</p>
         html = self.render_leaderboard_html(entries)
         with open(self.LEADERBOARD_HTML, 'w') as f:
             f.write(html)
+
+    def haversine_m(self, lat1, lon1, lat2, lon2):
+        """Return great-circle distance in meters."""
+        r = 6371000.0
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlambda = math.radians(lon2 - lon1)
+        a = math.sin(dphi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0) ** 2
+        return 2.0 * r * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
 
 def run(port=8000):
     server_address = ('', port)
