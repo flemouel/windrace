@@ -239,8 +239,10 @@
 	var finalresult = 0;
 	var srdistance = startdistance;
 	var mydistance = startdistance;
+	var geodistance = startdistance;
 	var red_tacks = new Array();
 	var black_tacks = new Array();
+	var green_tacks = new Array();
 	var tacks_log = new Array();
 	var map = null;
 	var mark = null;
@@ -252,7 +254,7 @@
 	var course_line = null;
 	var myboat = null;
 	var srboat = null;
-	var lrboat = null;
+	var geoboat = null;
 	var left_layline = null;
 	var rigth_layline = null;
 	var center_line = null;
@@ -401,9 +403,11 @@
 		finalresult = 0;
 		srdistance = startdistance;
 		mydistance = startdistance;
+		geodistance = startdistance;
 		
 		red_tacks = new Array();
 		black_tacks = new Array();
+		green_tacks = new Array();
 		tacks_log = new Array();
 		
 		started = false;
@@ -414,7 +418,7 @@
 		
 		if (myboat!=null) {myboat.clear(); myboat = null;}
 		if (srboat!=null) {srboat.clear(); srboat = null;}
-		if (lrboat!=null) {lrboat.clear(); lrboat = null;}
+		if (geoboat!=null) {geoboat.clear(); geoboat = null;}
 		
 		if (mark!=null) mark.setMap(null);
 		if (left_layline!=null) left_layline.setMap(null);
@@ -484,6 +488,7 @@
 			updateLaylines(winddirection[windindex],getWindAverage(windcache))
 			srboat.headingByWind(winddirection[windindex],bearing);
 			myboat.headingByWind(winddirection[windindex],bearing);
+			if (geoboat!=null) geoboat.headingByWind(winddirection[windindex],bearing);
 
 			if (myboat.getTack()==1) tacks_log.push("P"+windindex);
 			else tacks_log.push("S"+windindex);
@@ -514,13 +519,13 @@
 		bearing = google.maps.geometry.spherical.computeHeading(initial_boat_location, mark_top);		
 		srboat = new Boat({id:'srboat',boatName:'', color:'000000', point:initial_boat_location, direction:bearing+tackangle});
 		myboat = new Boat({id:'myboat',boatName:'My boat', color:'ff0000', point:initial_boat_location, direction:bearing+tackangle});
-		lrboat = new Boat({id:'lrboat',boatName:'LR boat', color:'00aa00', point:initial_boat_location, direction:bearing+tackangle});
+		geoboat = new Boat({id:'geoboat',boatName:'Geo boat', color:'00aa00', point:initial_boat_location, direction:bearing+tackangle});
 		srboat.showName(false);
 		srboat.showSpeed(false);
 		srboat.showDirection(false);
-		lrboat.showName(false);
-		lrboat.showSpeed(false);
-		lrboat.showDirection(false);
+		geoboat.showName(false);
+		geoboat.showSpeed(false);
+		geoboat.showDirection(false);
 		
 		var tacks_raw = tacks_string.split(",");
 		for (var i=0; i<tacks_raw.length; i++)
@@ -593,6 +598,11 @@
 					{
 						moveBoat_method2(srboat,winddirection[windindex], step, avg);
 					}
+					if (geoboat!=null)
+					{
+						var rec = moveBoat_method1(geoboat,winddirection[windindex], step);
+						if (rec!=null) green_tacks.push(rec);
+					}
 					
 					srdistance = google.maps.geometry.spherical.computeDistanceBetween(srboat.point, mark_top);
 					mydistance = google.maps.geometry.spherical.computeDistanceBetween(myboat.point, mark_top);
@@ -664,6 +674,7 @@
 			myboat.moveToIndex(index);
 		}
 		if (srboat!=null) srboat.moveToIndex(index);
+		if (geoboat!=null) geoboat.moveToIndex(index);
 	}
 	
 	
@@ -705,21 +716,22 @@
 						
 			red_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
 			black_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
+			green_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
 			
 			srboat = new Boat({id:"srboat",boatName:"SailRacer boat", color:"000000", point:initial_boat_location, direction:bearing+tackangle});
 			myboat = new Boat({id:"myboat",boatName:"My boat", color:"ff0000", point:initial_boat_location, direction:bearing+tackangle});
-			lrboat = new Boat({id:"lrboat",boatName:"LR boat", color:"00aa00", point:initial_boat_location, direction:bearing+tackangle});
+			geoboat = new Boat({id:"geoboat",boatName:"Geo boat", color:"00aa00", point:initial_boat_location, direction:bearing+tackangle});
 
 			srboat.showName(true);
 			srboat.showSpeed(true);
 			srboat.showDirection(true);
-			lrboat.showName(true);
-			lrboat.showSpeed(true);
-			lrboat.showDirection(true);
+			geoboat.showName(true);
+			geoboat.showSpeed(true);
+			geoboat.showDirection(true);
 
 			srboat.show();
 			myboat.show();
-			lrboat.show();
+			geoboat.show();
 			console.log("Boats ready!");
 
 			$("#wind_arrow").show();
@@ -752,6 +764,7 @@
 		
 		srboat.headingByWind(bearing,bearing);
 		myboat.headingByWind(bearing,bearing);
+		if (geoboat!=null) geoboat.headingByWind(bearing,bearing);
 		
 		window.setTimeout(initialized,2000);
 	}
@@ -791,6 +804,7 @@
 		updateLaylines(winddirection[windindex],getWindAverage(windcache))
 		srboat.headingByWind(winddirection[windindex],bearing);
 		myboat.headingByWind(winddirection[windindex],bearing);
+		if (geoboat!=null) geoboat.headingByWind(winddirection[windindex],bearing);
 		
 		window.clearTimeout(processIdleTimeout);
 		if (reload) loadDataIdle();
@@ -848,6 +862,13 @@
 					if (srdistance<200) srboat.setTackDelay(10);
 				}
 				
+				if (geoboat!=null)
+				{
+					geodistance = google.maps.geometry.spherical.computeDistanceBetween(geoboat.point, mark_top);
+					var rec = moveBoat_method1(geoboat,wind, step);
+					if (rec!=null) green_tacks.push(rec);
+				}
+				
 				finalresult = Math.round(srdistance - mydistance);
 				$("#speed_value").text(finalresult+" m");
 
@@ -870,6 +891,7 @@
 			
 			if (myboat!=null) red_tacks.push([myboat.point.lat(),myboat.point.lng()]);
 			if (srboat!=null) black_tacks.push([srboat.point.lat(),srboat.point.lng()]);
+			if (geoboat!=null) green_tacks.push([geoboat.point.lat(),geoboat.point.lng()]);
 			
 			
 			$.getJSON( "scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:finalresult, tacks:tacks_log, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}).done(function(response)
@@ -905,6 +927,15 @@
 				name: "SailRacer boat",
 				distance: srdistance,
 				color: "#000000"
+			});
+		}
+		
+		if (geoboat != null && geodistance !== undefined)
+		{
+			boats.push({
+				name: "Geo boat",
+				distance: geodistance,
+				color: "#00aa00"
 			});
 		}
 
