@@ -89,12 +89,10 @@
 		{
 			var buttonText = $("#play").val();
 
-			// Si c'est "Try again" ou "Play again", on doit reset pour recommencer
 			if (buttonText === "Try again" || buttonText === "Play again") {
 				reset();
 			}
 
-			// Cacher le panneau info
 			if ($(".info").is(":visible")) {
 				$(".info").slideUp(200);
 			}
@@ -196,18 +194,14 @@
 		{
 			track_achievement = "";
 			$("#result").html("<h3>Lost by "+(0-finalresult)+"m</h3>");
-			console.log("Setting play button to 'Try again' - button exists:", $("#play").length);
 			$("#play").val("Try again").show();
-			console.log("Play button display after show():", $("#play").css("display"));
 		}
 		else
 		{
 			track_achievement = achievement;
 			if (achievement=="") $("#result").html("<h3>Won by "+finalresult+"m</h3>");
 			else $("#result").html("<h3>Won by "+finalresult+"m<br/>"+achievement+"</h3>");
-			console.log("Setting play button to 'Play again' - button exists:", $("#play").length);
 			$("#play").val("Play again").show();
-			console.log("Play button display after show():", $("#play").css("display"));
 			if ($("#chat").length) $("#chat").show();
 
 		}
@@ -223,7 +217,6 @@
 		if ($("#social").length) $("#social").show();
 		$("#button").slideUp(200,function(){
 			$(".info").slideDown(200, function(){
-				// Scroller vers le div result après l'animation slideDown
 				var resultElement = document.getElementById('result');
 				if (resultElement) {
 					resultElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -276,10 +269,6 @@
 	$(document).ready(function()
 	{
 		console.log("Document ready! Button element:", $("#button").length);
-
-		// Ne pas cacher le panneau info au démarrage - il sera affiché par initialized()
-		// $(".info").hide();
-		// $("#play").hide(); // Commenté pour afficher le bouton Play dès le début
 
 		$("#button").on('click',function(e)
 		{
@@ -400,7 +389,7 @@
 		map.panTo(map_center);
 		map.setZoom(15);
 
-		// if(isMobile()==false) onChartChange(591); // Désactivé pour mode local
+		// if(isMobile()==false) onChartChange(591);
 
 		reset();
 	}
@@ -441,8 +430,8 @@
 		bearing = 0;
 
 		$("#result").html("");
-		$("#play").val("Play").show(); // Afficher le bouton Play
-		$("#button").show(); // Afficher le bouton Start
+		$("#play").val("Play").show();
+		$("#button").show();
 
 		loadDataIdle();
 	}
@@ -458,21 +447,19 @@
 		{
 			windcache.push(winddirection[i]);
 		}
-		// console.log(windcache); // Commenté pour réduire le spam
 	}
 	
 	function loadDataIdle()
 	{
 
-		//console.log("load", initialize);
 		$.getJSON("scripts/service.php?length="+windcache_length,null,function(response)
         {
 			initWindCache(response);
 			bearing = getWindAverage(windcache)["avg"];
-			// console.log("Bearing calculated:", bearing); // Commenté pour réduire le spam
+			console.log("Bearing calculated:", bearing);
 			if (isNaN(bearing) || bearing === undefined) {
 				console.error("Invalid bearing value:", bearing);
-				bearing = 45; // Valeur par défaut
+				bearing = 45; // Default
 			}
 			init();
 			processIdle();
@@ -720,15 +707,13 @@
 			srboat.showSpeed(true);
 			srboat.showDirection(true);
 
-			// Show the boats
 			srboat.show();
 			myboat.show();
-			console.log("Boats shown!");
+			console.log("Boats ready!");
 
 			$("#wind_arrow").show();
 			updateWindArrow(bearing);
 
-			// Initialize ranking display immediately after boats are created
 			updateRanking();
 
 		}
@@ -765,10 +750,7 @@
 							
 	function initialized()
 	{
-		// Au premier démarrage, le panneau est déjà visible (pas besoin de slideDown)
-		// Après un reset suite à "Try again", le panneau a été caché par l'utilisateur
-		// et doit rester caché jusqu'au prochain onGameFinish()
-		// Donc cette fonction ne fait rien
+
 	}
 	
 	var processIdleTimeout = 0;
@@ -858,7 +840,6 @@
 				finalresult = Math.round(srdistance - mydistance);
 				$("#speed_value").text(finalresult+" m");
 
-				// Update ranking display
 				updateRanking();
 
 				if ((mydistance<20)||(srdistance<20)) finished = true;
@@ -896,7 +877,6 @@
 
 	function updateRanking()
 	{
-		// Create array of boats with their distances
 		var boats = [];
 
 		if (myboat != null && mydistance !== undefined)
@@ -917,10 +897,8 @@
 			});
 		}
 
-		// Sort by distance (ascending - closest to finish first)
 		boats.sort(function(a, b) { return a.distance - b.distance; });
 
-		// Build HTML for ranking display
 		var html = "<h3>Ranking</h3>";
 		for (var i = 0; i < boats.length; i++)
 		{
@@ -1187,7 +1165,6 @@
 		
 		self.clear = function()
 		{
-			//console.log("remove", "flomboat");
 			if (overlay!=null) overlay.setMap(null);
 			overlay = null;
 			line.setMap(null);
