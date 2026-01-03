@@ -185,9 +185,9 @@
 	var track_id = 0;
 	var track_achievement = "";
 	
-	function onGameFinish(id,achievement,recordtime)
+	function onGameFinish(id,achievement,recordtime,totalSailed)
 	{
-		console.log("onGameFinish called - id:", id, "achievement:", achievement, "recordtime:", recordtime, "finalresult:", finalresult);
+		console.log("onGameFinish called - id:", id, "achievement:", achievement, "recordtime:", recordtime, "finalresult:", finalresult, "totalSailed:", totalSailed);
 		track_id = id;
 		var achievementText = "";
 		if (achievement)
@@ -200,16 +200,23 @@
 			}
 		}
 
+		var distanceText = "";
+		if (totalSailed && totalSailed > 0)
+		{
+			var efficiency = Math.round((courseDistance / totalSailed) * 100);
+			distanceText = "<br/>Distance sailed: " + totalSailed + "m (efficiency: " + efficiency + "%)";
+		}
+
 		if (finalresult<0)
 		{
 			track_achievement = "";
-			$("#result").html("<h3>Lost by "+(0-finalresult)+"m"+achievementText+"</h3>");
+			$("#result").html("<h3>Lost by "+(0-finalresult)+"m"+achievementText+distanceText+"</h3>");
 			$("#play").val("Try again").show();
 		}
 		else
 		{
 			track_achievement = achievement;
-			$("#result").html("<h3>Won by "+finalresult+"m"+achievementText+"</h3>");
+			$("#result").html("<h3>Won by "+finalresult+"m"+achievementText+distanceText+"</h3>");
 			$("#play").val("Play again").show();
 			if ($("#chat").length) $("#chat").show();
 
@@ -899,7 +906,9 @@
 				if (srboat!=null) leaderDistance = Math.min(leaderDistance, srdistance);
 				if (geoboat!=null) leaderDistance = Math.min(leaderDistance, geodistance);
 				finalresult = Math.round(leaderDistance - mydistance);
-				$("#speed_value").text(finalresult+" m");
+
+				var myTotalDist = Math.round(myboat.getTotalDistance());
+				$("#speed_value").html(finalresult+" m<br/><span style='font-size:12pt;font-weight:normal'>(sailed: "+myTotalDist+"m)</span>");
 
 				updateRanking();
 
@@ -923,9 +932,9 @@
 			if (geoboat!=null) green_tacks.push([geoboat.point.lat(),geoboat.point.lng()]);
 
 			var boatResults = [];
-			if (myboat!=null) boatResults.push({name: myboat_name, distance: mydistance});
-			if (srboat!=null) boatResults.push({name: srboat_name, distance: srdistance});
-			if (geoboat!=null) boatResults.push({name: geoboat_name, distance: geodistance});
+			if (myboat!=null) boatResults.push({name: myboat_name, distance: mydistance, boat: myboat});
+			if (srboat!=null) boatResults.push({name: srboat_name, distance: srdistance, boat: srboat});
+			if (geoboat!=null) boatResults.push({name: geoboat_name, distance: geodistance, boat: geoboat});
 
 			var minDistance = null;
 			for (var i=0; i<boatResults.length; i++)
@@ -943,9 +952,10 @@
 			function recordWinner(winner)
 			{
 				var progress = Math.round(courseDistance - winner.distance);
-				$.getJSON("scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:progress, boat_name: winner.name, tacks:tacks_log, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}).done(function(response)
+				var totalSailed = Math.round(winner.boat.getTotalDistance());
+				$.getJSON("scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:progress, boat_name: winner.name, tacks:tacks_log, total_sailed:totalSailed, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}).done(function(response)
 				{
-					onGameFinish(response["id"], response["achievement"], response["recordtime"]);
+					onGameFinish(response["id"], response["achievement"], response["recordtime"], response["total_sailed"]);
 				});
 			}
 
@@ -1246,7 +1256,8 @@
 		var tackindex = -1; //starboard
 		var tacktime = 0;
 		var tackdelay = 20; // indexes
-	
+		var totalDistance = 0; 
+
 		var line = new google.maps.Polyline({
 				  path: [self.point],
 				  strokeColor: "#"+color,
@@ -1265,6 +1276,7 @@
 			if (overlay!=null) overlay.setMap(null);
 			overlay = null;
 			line.setMap(null);
+			totalDistance = 0;
 		}
 		self.tack = function()
 		{
@@ -1296,11 +1308,15 @@
 			if (boatdirection<0) boatdirection = boatdirection + 360;
 			
 			//console.log("moveByWind "+iDirection+" "+iDistance+" "+iHeading+" "+boatdirection+" "+tackindex);
-			
+
+			var previousPoint = self.point;
 			self.point = getCoords(self.point, boatdirection, iDistance);
-			
+
+			var actualDistance = google.maps.geometry.spherical.computeDistanceBetween(previousPoint, self.point);
+			totalDistance += actualDistance;
+
 						if (overlay!=null)overlay.move( self.point , boatdirection, iDistance);
-						
+
 			var path = line.getPath();
 			path.push(self.point);
 		}
@@ -1399,7 +1415,11 @@
 		{
 			if (overlay!=null) overlay.hide();
 		}
-		
+		self.getTotalDistance = function()
+		{
+			return totalDistance;
+		}
+
 		init();
 		
 		return self;

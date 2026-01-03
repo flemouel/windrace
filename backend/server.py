@@ -126,19 +126,21 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         boat_name = query.get('boat_name', ['Unknown boat'])[0]
         starttime = int(query.get('starttime', [int(time.time())])[0])
         tacks = query.get('tacks', [''])[0]
+        total_sailed = int(query.get('total_sailed', [0])[0])
         start_lat = float(query.get('start_lat', [0])[0])
         start_lng = float(query.get('start_lng', [0])[0])
         finish_lat = float(query.get('finish_lat', [0])[0])
         finish_lng = float(query.get('finish_lng', [0])[0])
 
-        # Determine achievement badge based on performance (like record.php).
+        # Determine achievement badge based on performance
         achievement = ""
-        if finalresult >= 100:
-            achievement = "Outstanding!"
-        elif finalresult >= 50:
-            achievement = "Great job!"
-        elif finalresult >= 20:
-            achievement = "Well done!"
+        if finalresult > 0:
+            if finalresult >= 100:
+                achievement = "Outstanding!"
+            elif finalresult >= 50:
+                achievement = "Great job!"
+            elif finalresult >= 20:
+                achievement = "Well done!"
 
         leaderboard = self.load_leaderboard()
         recordtime = int(time.time())
@@ -148,6 +150,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 existing.get('boat_name') == boat_name
                 and existing.get('score') == finalresult
                 and existing.get('timestamp') == starttime
+                and existing.get('total_sailed') == total_sailed
                 and existing.get('start_lat') == start_lat
                 and existing.get('start_lng') == start_lng
                 and existing.get('finish_lat') == finish_lat
@@ -160,6 +163,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             achievement = "Record already saved"
             record_id = duplicate.get('id')
             recordtime = duplicate.get('recordtime', recordtime)
+            total_sailed = duplicate.get('total_sailed', total_sailed)
         else:
             entry = {
                 'id': random.randint(100000, 999999),
@@ -168,6 +172,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 'timestamp': starttime,
                 'recordtime': recordtime,
                 'tacks': tacks,
+                'total_sailed': total_sailed,
                 'start_lat': start_lat,
                 'start_lng': start_lng,
                 'finish_lat': finish_lat,
@@ -183,7 +188,8 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         response = {
             'id': record_id,
             'achievement': achievement,
-            'recordtime': recordtime
+            'recordtime': recordtime,
+            'total_sailed': total_sailed
         }
 
         self.send_json_response(response)
@@ -321,6 +327,8 @@ Totally played {total} times</p>
             "<th>Distance to mark (&lt;20m)</th>"
             "<th>Boat</th>"
             "<th>Straight-line distance</th>"
+            "<th>Sailed</th>"
+            "<th>Efficiency</th>"
             "<th>Start (Lat/long)</th>"
             "<th>Mark (Lat/Long)</th>"
             "<th>Course start date</th>"
@@ -339,10 +347,17 @@ Totally played {total} times</p>
             start_lng = entry.get('start_lng', None)
             finish_lat = entry.get('finish_lat', None)
             finish_lng = entry.get('finish_lng', None)
+            total_sailed = entry.get('total_sailed', 0)
+
             if None in (start_lat, start_lng, finish_lat, finish_lng):
                 straight = "-"
+                efficiency = "-"
             else:
-                straight = f"{self.haversine_m(start_lat, start_lng, finish_lat, finish_lng):.1f} m"
+                straight_dist = self.haversine_m(start_lat, start_lng, finish_lat, finish_lng)
+                straight = f"{straight_dist:.1f} m"
+                efficiency = f"{int((straight_dist / total_sailed) * 100)}%"
+
+            sailed_cell = f"{total_sailed} m"
             lat_cell = "-" if None in (start_lat, start_lng) else f"{start_lat:.5f} / {start_lng:.5f}"
             long_cell = "-" if None in (finish_lat, finish_lng) else f"{finish_lat:.5f} / {finish_lng:.5f}"
             lines.append(
@@ -350,6 +365,8 @@ Totally played {total} times</p>
                 f"<td>{score} m</td>"
                 f"<td>{name}</td>"
                 f"<td>{straight}</td>"
+                f"<td>{sailed_cell}</td>"
+                f"<td>{efficiency}</td>"
                 f"<td>{lat_cell}</td>"
                 f"<td>{long_cell}</td>"
                 f"<td>{when}</td>"
