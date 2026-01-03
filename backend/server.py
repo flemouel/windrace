@@ -141,27 +141,49 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             achievement = "Well done!"
 
         leaderboard = self.load_leaderboard()
-        entry = {
-            'id': random.randint(100000, 999999),
-            'boat_name': boat_name,
-            'score': finalresult,
-            'timestamp': starttime,
-            'recordtime': int(time.time()),
-            'tacks': tacks,
-            'start_lat': start_lat,
-            'start_lng': start_lng,
-            'finish_lat': finish_lat,
-            'finish_lng': finish_lng
-        }
-        leaderboard.append(entry)
-        leaderboard.sort(key=lambda e: e.get('score', 0), reverse=True)
-        leaderboard = leaderboard[:10]
-        self.save_leaderboard(leaderboard)
-        self.save_leaderboard_html(leaderboard)
+        recordtime = int(time.time())
+        duplicate = None
+        for existing in leaderboard:
+            if (
+                existing.get('boat_name') == boat_name
+                and existing.get('score') == finalresult
+                and existing.get('timestamp') == starttime
+                and existing.get('start_lat') == start_lat
+                and existing.get('start_lng') == start_lng
+                and existing.get('finish_lat') == finish_lat
+                and existing.get('finish_lng') == finish_lng
+            ):
+                duplicate = existing
+                break
+
+        if duplicate:
+            achievement = "Record already saved"
+            record_id = duplicate.get('id')
+            recordtime = duplicate.get('recordtime', recordtime)
+        else:
+            entry = {
+                'id': random.randint(100000, 999999),
+                'boat_name': boat_name,
+                'score': finalresult,
+                'timestamp': starttime,
+                'recordtime': recordtime,
+                'tacks': tacks,
+                'start_lat': start_lat,
+                'start_lng': start_lng,
+                'finish_lat': finish_lat,
+                'finish_lng': finish_lng
+            }
+            leaderboard.append(entry)
+            leaderboard.sort(key=lambda e: e.get('score', 0), reverse=True)
+            leaderboard = leaderboard[:10]
+            self.save_leaderboard(leaderboard)
+            self.save_leaderboard_html(leaderboard)
+            record_id = entry['id']
 
         response = {
-            'id': entry['id'],
-            'achievement': achievement
+            'id': record_id,
+            'achievement': achievement,
+            'recordtime': recordtime
         }
 
         self.send_json_response(response)
@@ -296,7 +318,7 @@ Totally played {total} times</p>
             "<h2 class='screen-only'>Top 10</h2>",
             "<table class='leaderboard'>",
             "<thead><tr>"
-            "<th>Distance to mark</th>"
+            "<th>Distance to mark (&lt;20m)</th>"
             "<th>Boat</th>"
             "<th>Straight-line distance</th>"
             "<th>Start (Lat/long)</th>"

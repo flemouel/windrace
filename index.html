@@ -185,22 +185,31 @@
 	var track_id = 0;
 	var track_achievement = "";
 	
-	function onGameFinish(id,achievement)
+	function onGameFinish(id,achievement,recordtime)
 	{
-		console.log("onGameFinish called - id:", id, "achievement:", achievement, "finalresult:", finalresult);
+		console.log("onGameFinish called - id:", id, "achievement:", achievement, "recordtime:", recordtime, "finalresult:", finalresult);
 		track_id = id;
+		var achievementText = "";
+		if (achievement)
+		{
+			achievementText = "<br/>" + achievement;
+			if (recordtime)
+			{
+				var when = new Date(recordtime * 1000);
+				achievementText += "<br/>Recorded at " + when.toISOString().replace("T", " ").slice(0, 16) + " UTC";
+			}
+		}
 
 		if (finalresult<0)
 		{
 			track_achievement = "";
-			$("#result").html("<h3>Lost by "+(0-finalresult)+"m</h3>");
+			$("#result").html("<h3>Lost by "+(0-finalresult)+"m"+achievementText+"</h3>");
 			$("#play").val("Try again").show();
 		}
 		else
 		{
 			track_achievement = achievement;
-			if (achievement=="") $("#result").html("<h3>Won by "+finalresult+"m</h3>");
-			else $("#result").html("<h3>Won by "+finalresult+"m<br/>"+achievement+"</h3>");
+			$("#result").html("<h3>Won by "+finalresult+"m"+achievementText+"</h3>");
 			$("#play").val("Play again").show();
 			if ($("#chat").length) $("#chat").show();
 
@@ -936,7 +945,7 @@
 				var progress = Math.round(courseDistance - winner.distance);
 				$.getJSON("scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:progress, boat_name: winner.name, tacks:tacks_log, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}).done(function(response)
 				{
-					onGameFinish(response["id"], response["achievement"]);
+					onGameFinish(response["id"], response["achievement"], response["recordtime"]);
 				});
 			}
 
