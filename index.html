@@ -253,7 +253,7 @@
 	var srdistance = startdistance;
 	var mydistance = startdistance;
 	var geodistance = startdistance;
-	var lr1distance = startdistance;
+	var kaldistance = startdistance;
 	var red_tacks = new Array();
 	var black_tacks = new Array();
 	var green_tacks = new Array();
@@ -270,7 +270,7 @@
 	var myboat = null;
 	var srboat = null;
 	var geoboat = null;
-	var lrboat1 = null;
+	var kalboat = null;
 	var left_layline = null;
 	var rigth_layline = null;
 	var center_line = null;
@@ -287,7 +287,7 @@
 	var myboat_name = "My boat";
 	var srboat_name = "SailRacer boat";
 	var geoboat_name = "Geo boat";
-	var lrboat1_name = "LR boat 1";
+	var kalboat_name = "Kal boat";
 	var courseDistance = startdistance;
 	
 	function loadLeaderboard()
@@ -453,7 +453,7 @@
 		if (myboat!=null) {myboat.clear(); myboat = null;}
 		if (srboat!=null) {srboat.clear(); srboat = null;}
 		if (geoboat!=null) {geoboat.clear(); geoboat = null;}
-		if (lrboat1!=null) {lrboat1.clear(); lrboat1 = null;}
+		if (kalboat!=null) {kalboat.clear(); kalboat = null;}
 		
 		if (mark!=null) mark.setMap(null);
 		if (left_layline!=null) left_layline.setMap(null);
@@ -524,7 +524,7 @@
 			srboat.headingByWind(winddirection[windindex],bearing);
 			myboat.headingByWind(winddirection[windindex],bearing);
 			if (geoboat!=null) geoboat.headingByWind(winddirection[windindex],bearing);
-			if (lrboat1!=null) lrboat1.headingByWind(winddirection[windindex],bearing);
+			if (kalboat!=null) kalboat.headingByWind(winddirection[windindex],bearing);
 
 			if (myboat.getTack()==1) tacks_log.push("P"+windindex);
 			else tacks_log.push("S"+windindex);
@@ -556,16 +556,16 @@
 		srboat = new Boat({id:'srboat',boatName:'', color:'000000', point:initial_boat_location, direction:bearing+tackangle});
 		myboat = new Boat({id:'myboat',boatName:myboat_name, color:'ff0000', point:initial_boat_location, direction:bearing+tackangle});
 		geoboat = new Boat({id:'geoboat',boatName:geoboat_name, color:'00aa00', point:initial_boat_location, direction:bearing+tackangle});
-		lrboat1 = new Boat({id:'lrboat1',boatName:lrboat1_name, color:'9933ff', point:initial_boat_location, direction:bearing+tackangle});
+		kalboat = new Boat({id:'kalboat',boatName:kalboat_name, color:'9933ff', point:initial_boat_location, direction:bearing+tackangle});
 		srboat.showName(false);
 		srboat.showSpeed(false);
 		srboat.showDirection(false);
 		geoboat.showName(false);
 		geoboat.showSpeed(false);
 		geoboat.showDirection(false);
-		lrboat1.showName(false);
-		lrboat1.showSpeed(false);
-		lrboat1.showDirection(false);
+		kalboat.showName(false);
+		kalboat.showSpeed(false);
+		kalboat.showDirection(false);
 		
 		var tacks_raw = tacks_string.split(",");
 		for (var i=0; i<tacks_raw.length; i++)
@@ -590,7 +590,7 @@
 			srboat.headingByWind(winddirection[windindex],bearing);
 			myboat.headingByWind(winddirection[windindex],bearing);
 			if (geoboat!=null) geoboat.headingByWind(winddirection[windindex],bearing);
-			if (lrboat1!=null) lrboat1.headingByWind(winddirection[windindex],bearing);
+			if (kalboat!=null) kalboat.headingByWind(winddirection[windindex],bearing);
 
 			var slider =  $("<div></div>").appendTo($( "#map_scroll" )).slider(
 			{
@@ -720,7 +720,7 @@
 		}
 		if (srboat!=null) srboat.moveToIndex(index);
 		if (geoboat!=null) geoboat.moveToIndex(index);
-		if (lrboat1!=null) lrboat1.moveToIndex(index);
+		if (kalboat!=null) kalboat.moveToIndex(index);
 	}
 	
 	
@@ -769,7 +769,7 @@
 			srboat = new Boat({id:"srboat",boatName:srboat_name, color:"000000", point:initial_boat_location, direction:bearing+tackangle});
 			myboat = new Boat({id:"myboat",boatName:myboat_name, color:"ff0000", point:initial_boat_location, direction:bearing+tackangle});
 			geoboat = new Boat({id:"geoboat",boatName:geoboat_name, color:"00aa00", point:initial_boat_location, direction:bearing+tackangle});
-			lrboat1 = new Boat({id:"lrboat1",boatName:lrboat1_name, color:"9933ff", point:initial_boat_location, direction:bearing+tackangle});
+			kalboat = new Boat({id:"kalboat",boatName:kalboat_name, color:"9933ff", point:initial_boat_location, direction:bearing+tackangle});
 
 			srboat.showName(true);
 			srboat.showSpeed(true);
@@ -777,14 +777,14 @@
 			geoboat.showName(true);
 			geoboat.showSpeed(true);
 			geoboat.showDirection(true);
-			lrboat1.showName(true);
-			lrboat1.showSpeed(true);
-			lrboat1.showDirection(true);
+			kalboat.showName(true);
+			kalboat.showSpeed(true);
+			kalboat.showDirection(true);
 
 			srboat.show();
 			myboat.show();
 			geoboat.show();
-			lrboat1.show();
+			kalboat.show();
 			console.log("Boats ready!");
 
 			$("#wind_arrow").show();
@@ -818,7 +818,7 @@
 		srboat.headingByWind(bearing,bearing);
 		myboat.headingByWind(bearing,bearing);
 		if (geoboat!=null) geoboat.headingByWind(bearing,bearing);
-		if (lrboat1!=null) lrboat1.headingByWind(bearing,bearing);
+		if (kalboat!=null) kalboat.headingByWind(bearing,bearing);
 		
 		window.setTimeout(initialized,2000);
 	}
@@ -859,7 +859,7 @@
 		srboat.headingByWind(winddirection[windindex],bearing);
 		myboat.headingByWind(winddirection[windindex],bearing);
 		if (geoboat!=null) geoboat.headingByWind(winddirection[windindex],bearing);
-		if (lrboat1!=null) lrboat1.headingByWind(winddirection[windindex],bearing);
+		if (kalboat!=null) kalboat.headingByWind(winddirection[windindex],bearing);
 
 		window.clearTimeout(processIdleTimeout);
 		if (reload) loadDataIdle();
@@ -924,17 +924,17 @@
 					if (rec!=null) green_tacks.push(rec);
 				}
 
-				if (lrboat1!=null)
+				if (kalboat!=null)
 				{
-					lr1distance = google.maps.geometry.spherical.computeDistanceBetween(lrboat1.point, mark_top);
-					var rec = moveBoat_kalman(lrboat1,wind, step, average);
+					kaldistance = google.maps.geometry.spherical.computeDistanceBetween(kalboat.point, mark_top);
+					var rec = moveBoat_kalman(kalboat,wind, step, average);
 					if (rec!=null) violet_tacks.push(rec);
 				}
 
 				var leaderDistance = mydistance;
 				if (srboat!=null) leaderDistance = Math.min(leaderDistance, srdistance);
 				if (geoboat!=null) leaderDistance = Math.min(leaderDistance, geodistance);
-				if (lrboat1!=null) leaderDistance = Math.min(leaderDistance, lr1distance);
+				if (kalboat!=null) leaderDistance = Math.min(leaderDistance, kaldistance);
 				finalresult = Math.round(leaderDistance - mydistance);
 
 				var myTotalDist = Math.round(myboat.getTotalDistance());
@@ -942,7 +942,7 @@
 
 				updateRanking();
 
-				if ((mydistance<20)||(srdistance<20)||(geodistance<20)||(lr1distance<20)) finished = true;
+				if ((mydistance<20)||(srdistance<20)||(geodistance<20)||(kaldistance<20)) finished = true;
 
 				windindex++;
 			}
@@ -960,13 +960,13 @@
 			if (myboat!=null) red_tacks.push([myboat.point.lat(),myboat.point.lng()]);
 			if (srboat!=null) black_tacks.push([srboat.point.lat(),srboat.point.lng()]);
 			if (geoboat!=null) green_tacks.push([geoboat.point.lat(),geoboat.point.lng()]);
-			if (lrboat1!=null) violet_tacks.push([lrboat1.point.lat(),lrboat1.point.lng()]);
+			if (kalboat!=null) violet_tacks.push([kalboat.point.lat(),kalboat.point.lng()]);
 
 			var boatResults = [];
 			if (myboat!=null) boatResults.push({name: myboat_name, distance: mydistance, boat: myboat});
 			if (srboat!=null) boatResults.push({name: srboat_name, distance: srdistance, boat: srboat});
 			if (geoboat!=null) boatResults.push({name: geoboat_name, distance: geodistance, boat: geoboat});
-			if (lrboat1!=null) boatResults.push({name: lrboat1_name, distance: lr1distance, boat: lrboat1});
+			if (kalboat!=null) boatResults.push({name: kalboat_name, distance: kaldistance, boat: kalboat});
 
 			var minDistance = null;
 			for (var i=0; i<boatResults.length; i++)
@@ -1036,11 +1036,11 @@
 			});
 		}
 
-		if (lrboat1 != null && lr1distance !== undefined)
+		if (kalboat != null && kaldistance !== undefined)
 		{
 			boats.push({
-				name: "LR boat 1",
-				distance: lr1distance,
+				name: "Kal boat",
+				distance: kaldistance,
 				color: "#9933ff"
 			});
 		}
