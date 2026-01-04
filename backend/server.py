@@ -56,9 +56,6 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         # Route for record.php (record scores).
         elif path == '/scripts/record.php':
             self.handle_record()
-        # Route for save.php (share/save).
-        elif path == '/scripts/save.php':
-            self.handle_save()
         # Route for table.html (leaderboard).
         elif path == '/resdata/table.html':
             self.handle_leaderboard()
@@ -193,19 +190,6 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         }
 
         self.send_json_response(response)
-
-    def handle_save(self):
-        """Save a run for sharing."""
-        content_length = int(self.headers.get('Content-Length', 0))
-        if content_length:
-            self.rfile.read(content_length)
-
-        track_id = f"{int(time.time())}_{random.randint(1000, 9999)}"
-
-        self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
-        self.end_headers()
-        self.wfile.write(track_id.encode())
 
     def handle_leaderboard(self):
         """Return the leaderboard."""

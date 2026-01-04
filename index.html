@@ -6,18 +6,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="keywords" content="wind game, online sailing game" />
 	<meta name="description" content="Wind data is real from ultra-sonic weather station at Nanny Cay marina, BVI. So, no wind - no game. Boats are always sailing close-hauled course. RRS are not applied - it's just about tacking."/>
-			
-	<meta property="og:title" content="Wind game is about tacking at the right moment" />
-	<meta property="og:site_name" content="Wind game"/>
-	<meta property="og:description" content="Wind data is real from ultra-sonic weather station at Nanny Cay marina, BVI. So, no wind - no game. Boats are always sailing close-hauled course. RRS are not applied - it's just about tacking." />
-	<meta property="og:image:url" content="https://www.sailracer.net/windgame/images/share.png" />
-	<meta property="og:image:type" content="image/png">
-	<meta property="og:image:width" content="600">
-	<meta property="og:image:height" content="314">
-	<meta property="og:image:height" content="314">
-	<meta property="og:url" content="https://www.sailracer.net/windgame/">
-	<meta property="fb:app_id" content="169851579738903">
-	
+
 	<link rel="shortcut icon" href="favicon.ico"/>
 	<link rel="icon" href="favicon.ico"/>
 	<link rel="icon" type="image/png" href="icon.png" />
@@ -43,10 +32,8 @@
 
 	<script  type="text/javascript">
 	
-	var share_url = "https://www.sailracer.net/windgame";
-	
 	// google
-	
+
 	 var _gaq = _gaq || [];
 	_gaq.push(['_setAccount', 'UA-6616951-4']);
 	_gaq.push(['_trackPageview']);
@@ -56,18 +43,6 @@
 	ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
 	var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
 	})();
-	  
-	// facebook
-	
-	window.fbAsyncInit = function() {FB.init({appId:'169851579738903',cookie:true, xfbml:true,version: 'v2.4'});};
-
-	(function(d, s, id){
-	var js, fjs = d.getElementsByTagName(s)[0];
-	if (d.getElementById(id)) {return;}
-	js = d.createElement(s); js.id = id;
-	js.src = "//connect.facebook.net/en_US/sdk.js";
-	fjs.parentNode.insertBefore(js, fjs);
-	}(document, 'script', 'facebook-jssdk'));
 	
 	$(document).ready(function() 
 	{	
@@ -76,12 +51,6 @@
 			var url = e.target.href;
 			var hash = url.substring(url.indexOf("#")+1);					
 			$(".slider").animate({scrollTop: ($("#"+hash).offset().top-$(".slider").offset().top) },1000);
-			return false;
-		});
-		
-		$("#fb-register").on('click',function(e) 
-		{
-			FB.login(function(response) {if (response.authResponse) {window.location.href="facebook.php";}},{scope: 'email'});
 			return false;
 		});
 		
@@ -98,67 +67,6 @@
 			}
 			$("#chat").hide();
 			return false;
-		});
-		
-		$("#share").click(function() 
-		{
-			if (mark_top!=null)
-			{
-				
-				var name = "I have won wind game by "+finalresult+"m.";
-				var link = share_url+"/view.php?w="+track_id;
-				
-				if (finalresult<0)
-				{
-					name = "I have lost wind game by "+(0-finalresult)+"m.";
-					link = share_url+"/view.php?l="+track_id;
-				}
-				else if (track_achievement!="")
-				{
-					name += " "+track_achievement+"!";
-				}
-				
-				$("#share").attr("disabled", true);
-				$("#share").val("Sharing");
-				
-				$.post( "scripts/save.php", {"start":{lat:initial_boat_location.lat(),lng:initial_boat_location.lng()},"mark":{lat:mark_top.lat(),lng:mark_top.lng()},"black":black_tacks,"red":red_tacks,"green":green_tacks,"violet":violet_tacks}).done(function( response ) 
-				{
-					$("#share").removeAttr("disabled");
-					$("#share").val("Share on facebook");
-					//var picture = share_url+"/.share/"+response+".png";
-					
-					
-					FB.ui({
-						app_id: '169851579738903',
-						method: 'share',
-						display: 'iframe',
-						hashtag: 'windgame',
-						href: link,
-						//quote: name,
-						
-						
-						
-						
-					}, function(response){});
-
-				});
-			}
-		});
-		
-		$( "#tweet" ).click(function() 
-		{
-			if (mark_top!=null)
-			{
-				var text = escape("I have won a wind game by "+finalresult+"m. Try it yourself - it's about tacking at the right moment @sailracernet");
-				var link = escape(share_url);
-				
-				if (finalresult<0)
-				{
-					text = escape("I have lost a wind game by "+(0-finalresult)+"m. Try it yourself - it's about tacking at the right moment @sailracernet");
-				}
-				
-				location.href="https://twitter.com/share?url="+link+"&text="+text;	
-			}
 		});
 		
 		$("#avatar").mouseenter(function() 
@@ -182,13 +90,9 @@
 		
 	});
 	
-	var track_id = 0;
-	var track_achievement = "";
-	
 	function onGameFinish(id,achievement,recordtime,totalSailed)
 	{
 		console.log("onGameFinish called - id:", id, "achievement:", achievement, "recordtime:", recordtime, "finalresult:", finalresult, "totalSailed:", totalSailed);
-		track_id = id;
 		var achievementText = "";
 		if (achievement)
 		{
@@ -209,13 +113,11 @@
 
 		if (finalresult<0)
 		{
-			track_achievement = "";
 			$("#result").html("<h3>Lost by "+(0-finalresult)+"m"+achievementText+distanceText+"</h3>");
 			$("#play").val("Try again").show();
 		}
 		else
 		{
-			track_achievement = achievement;
 			$("#result").html("<h3>Won by "+finalresult+"m"+achievementText+distanceText+"</h3>");
 			$("#play").val("Play again").show();
 			if ($("#chat").length) $("#chat").show();
@@ -227,7 +129,6 @@
 			$("#ocean").html(response);
 		});
 
-		if ($("#social").length) $("#social").show();
 		$("#button").slideUp(200,function(){
 			$(".info").slideDown(200, function(){
 				var resultElement = document.getElementById('result');
@@ -1702,11 +1603,6 @@
 	<div class="field">
 	<input type="submit" value="Sign in"/>
 	</div>
-	
-	<div class="field">
-		<div id="fb-register">Sign in with Facebook</div>
-	</div>
-	
 	
 	<div class="submitlabel">
 		<p><a href="?forgot">Forgot your password ?</a></p>
