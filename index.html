@@ -472,8 +472,13 @@
 	var tacks = new Array();
 	var previewtimeoutid = null;
 	
-	function loadDataPreview()
-	{
+function loadDataPreview(mapCenter, bearingParam, startdistanceParam, windcacheLengthParam, timestampParam)
+{
+		map_center = mapCenter;
+		bearing = bearingParam;
+		startdistance = startdistanceParam;
+		windcache_length = windcacheLengthParam;
+		timestamp = timestampParam;
 				
 		mark = new google.maps.Marker({position:mark_top, map: map	});
 				
@@ -482,7 +487,7 @@
 		bounds.extend(initial_boat_location);
 		map.fitBounds(bounds);
 			
-		bearing = google.maps.geometry.spherical.computeHeading(initial_boat_location, mark_top);
+		bearing = google.maps.geometry.spherical.computeHeading(initial_boat_location, mark_top);		
 		srboat = new Boat({id:'srboat',boatName:'', color:'000000', point:initial_boat_location, direction:bearing+tackangle});
 		myboat = new Boat({id:'myboat',boatName:myboat_name, color:'ff0000', point:initial_boat_location, direction:bearing+tackangle});
 		geoboat = new Boat({id:'geoboat',boatName:geoboat_name, color:'00aa00', point:initial_boat_location, direction:bearing+tackangle});
