@@ -79,10 +79,14 @@
 
 			var startIndex = windcache_length;
 			var endIndex = windindex;
-			$("#replay_slider").attr("min", startIndex);
-			$("#replay_slider").attr("max", endIndex);
-			$("#replay_slider").val(startIndex).show();
-			display(startIndex);
+			loadDataPreview(map_center, bearing, startdistance, windcache_length, starttime, windindex, tacks_log.join(","), function()
+			{
+				endIndex = windindex;
+				$("#replay_slider").attr("min", startIndex);
+				$("#replay_slider").attr("max", endIndex);
+				$("#replay_slider").val(startIndex).show();
+				display(startIndex);
+			});
 			return false;
 		});
 
@@ -453,8 +457,8 @@
 			updateLaylines(winddirection[windindex],getWindAverage(windcache))
 			srboat.headingByWind(winddirection[windindex],bearing);
 			myboat.headingByWind(winddirection[windindex],bearing);
-			if (geoboat!=null) geoboat.headingByWind(winddirection[windindex],bearing);
-			if (kalboat!=null) kalboat.headingByWind(winddirection[windindex],bearing);
+			geoboat.headingByWind(winddirection[windindex],bearing);
+			kalboat.headingByWind(winddirection[windindex],bearing);
 
 			if (myboat.getTack()==1) tacks_log.push("P"+windindex);
 			else tacks_log.push("S"+windindex);
@@ -471,14 +475,63 @@
 	var chartdata = new Array();
 	var tacks = new Array();
 	var previewtimeoutid = null;
+	var chartsReady = false;
+	var chartsLoading = false;
+	var chartsCallbacks = new Array();
+
+	function ensureChartsReady(iCallback)
+	{
+		if (typeof(google)!="undefined" && google.visualization && google.visualization.LineChart)
+		{
+			chartsReady = true;
+			if (typeof(iCallback)=="function") iCallback();
+			return;
+		}
+		if (typeof(iCallback)=="function") chartsCallbacks.push(iCallback);
+		if (chartsLoading) return;
+		chartsLoading = true;
+
+		var script = document.createElement("script");
+		script.src = "https://www.gstatic.com/charts/loader.js";
+		script.onload = function()
+		{
+			if (typeof(google)=="undefined" || !google.charts)
+			{
+				chartsLoading = false;
+				var pending = chartsCallbacks.slice();
+				chartsCallbacks = new Array();
+				for (var i=0; i<pending.length; i++) pending[i]();
+				return;
+			}
+			google.charts.load("current", {packages:["corechart"]});
+			google.charts.setOnLoadCallback(function()
+			{
+				chartsReady = true;
+				chartsLoading = false;
+				var pending = chartsCallbacks.slice();
+				chartsCallbacks = new Array();
+				for (var i=0; i<pending.length; i++) pending[i]();
+			});
+		};
+		script.onerror = function()
+		{
+			chartsLoading = false;
+			var pending = chartsCallbacks.slice();
+			chartsCallbacks = new Array();
+			for (var i=0; i<pending.length; i++) pending[i]();
+		};
+		document.head.appendChild(script);
+	}
 	
-function loadDataPreview(mapCenter, bearingParam, startdistanceParam, windcacheLengthParam, timestampParam)
+function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windcacheLengthParam, timestampParam, finishindexParam, tackslogParam, onReady)
 {
-		map_center = mapCenter;
-		bearing = bearingParam;
-		startdistance = startdistanceParam;
-		windcache_length = windcacheLengthParam;
-		timestamp = timestampParam;
+	map_center = mapcenterParam;
+	bearing = bearingParam;
+	startdistance = startdistanceParam;
+	windcache_length = windcacheLengthParam;
+	starttime = timestampParam;
+	finishindex = finishindexParam;
+	tacks_string = tackslogParam || "";
 				
 		mark = new google.maps.Marker({position:mark_top, map: map	});
 				
@@ -516,7 +569,7 @@ function loadDataPreview(mapCenter, bearingParam, startdistanceParam, windcacheL
 		
 		init();
 		
-		$.getJSON("scripts/service.php?timestamp="+timestamp,null,function(response)
+	$.getJSON("scripts/service.php?timestamp="+starttime,null,function(response)
 		{
 			initWindCache(response);
 			
@@ -524,8 +577,8 @@ function loadDataPreview(mapCenter, bearingParam, startdistanceParam, windcacheL
 			updateLaylines(winddirection[windindex],getWindAverage(windcache))
 			srboat.headingByWind(winddirection[windindex],bearing);
 			myboat.headingByWind(winddirection[windindex],bearing);
-			if (geoboat!=null) geoboat.headingByWind(winddirection[windindex],bearing);
-			if (kalboat!=null) kalboat.headingByWind(winddirection[windindex],bearing);
+			geoboat.headingByWind(winddirection[windindex],bearing);
+			kalboat.headingByWind(winddirection[windindex],bearing);
 
 			var slider =  $("<div></div>").appendTo($( "#map_scroll" )).slider(
 			{
@@ -625,8 +678,12 @@ function loadDataPreview(mapCenter, bearingParam, startdistanceParam, windcacheL
 			  vAxis: { direction: 1, textPosition: 'in', minValue: 30 }
 			};
 
-			chart = new google.visualization.LineChart(document.getElementById('curve_chart'));
-			chart.draw(chartdata, options);
+			ensureChartsReady(function()
+			{
+				chart = new google.visualization.LineChart(document.getElementById('curve_chart'));
+				chart.draw(chartdata, options);
+			});
+			if (typeof(onReady)=="function") onReady();
 		});
 	}
 	
@@ -767,10 +824,7 @@ function loadDataPreview(mapCenter, bearingParam, startdistanceParam, windcacheL
 		
 		window.setTimeout(initialized,2000);
 	}
-	
-	
-							
-							
+				
 	function initialized()
 	{
 
