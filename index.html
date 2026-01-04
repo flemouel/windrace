@@ -46,6 +46,8 @@
 	
 	$(document).ready(function() 
 	{	
+		$("#replay").hide();
+		$("#replay_slider").hide();
 		$("a.effect-scroll").on('click',function(e) 
 		{
 			var url = e.target.href;
@@ -67,6 +69,27 @@
 			}
 			$("#chat").hide();
 			return false;
+		});
+
+		$("#replay").on('click',function(e)
+		{
+			if ($(".info").is(":visible")) {
+				$(".info").slideUp(200);
+			}
+
+			var startIndex = windcache_length;
+			var endIndex = windindex;
+			$("#replay_slider").attr("min", startIndex);
+			$("#replay_slider").attr("max", endIndex);
+			$("#replay_slider").val(startIndex).show();
+			display(startIndex);
+			return false;
+		});
+
+		$("#replay_slider").on('input change',function(e)
+		{
+			var index = parseInt($(this).val(), 10);
+			if (!isNaN(index)) display(index);
 		});
 		
 		$("#avatar").mouseenter(function() 
@@ -115,11 +138,15 @@
 		{
 			$("#result").html("<h3>Lost by "+(0-finalresult)+"m"+achievementText+distanceText+"</h3>");
 			$("#play").val("Try again").show();
+		$("#replay").show();
+		$("#replay_slider").hide();
 		}
 		else
 		{
 			$("#result").html("<h3>Won by "+finalresult+"m"+achievementText+distanceText+"</h3>");
 			$("#play").val("Play again").show();
+		$("#replay").show();
+		$("#replay_slider").hide();
 			if ($("#chat").length) $("#chat").show();
 
 		}
@@ -193,7 +220,7 @@
 	
 	function loadLeaderboard()
 	{
-		$.post("resdata/table.html",null,function(response)
+		$.post("resdata/record_table.html",null,function(response)
 		{
 			$("#leader-board").html(response);
 		}).fail(function()
@@ -347,6 +374,8 @@
 		
 		started = false;
 		finished = false;
+		$("#replay").hide();
+		$("#replay_slider").hide();
 		
 		mark_top = null;
 		initial_boat_location = null;
@@ -605,14 +634,24 @@
 	
 	function display(index)
 	{
-		chart.setSelection([{row:index-windcache_length,column:null}]);
+		if (chart!=null)
+		{
+			chart.setSelection([{row:index-windcache_length,column:null}]);
+		}
+		if (typeof(winddirection[index])=="undefined") return;
 		
 		$("#wind_value").text(windspeed[index]+" kn"); 
 		
 		var avg = {avg:average[index],max:maximum[index]};
+		if (typeof(avg.avg)=="undefined" || isNaN(avg.avg))
+		{
+			var start = Math.max(0, index - windcache_length + 1);
+			var slice = winddirection.slice(start, index + 1);
+			if (slice.length>0) avg = getWindAverage(slice);
+		}
 		mydistance = distance[index];
 		updateWindArrow(winddirection[index]);
-		updateLaylines(winddirection[index],avg);
+		if (typeof(avg.avg)!="undefined" && !isNaN(avg.avg)) updateLaylines(winddirection[index],avg);
 		
 		if (myboat!=null)
 		{
@@ -1549,6 +1588,7 @@
 <div id="speed_value"></div>
 <div id="ranking_display"></div>
 <input id="button" type="button" value="Start" disabled />
+<input id="replay_slider" type="range" />
 
 <div  class="info wait-for-map">
 	<div class="vertical">
@@ -1565,7 +1605,7 @@
 					<p>Red is your boat. <br/>Black is a computer blindly following <a href="http://www.sailracer.net" target="_blank">SailRacer.net</a> app.</p>
 					<p>Tack costs 10% of speed for a second.</p>
 
-					<p><input id="play" type="button" value="Play"/> <a class="effect-scroll" href="#results">Leader board</a></p>
+					<p><input id="play" type="button" value="Play"/> <input id="replay" type="button" value="Replay"/> <a class="effect-scroll" href="#results">Leader board</a></p>
 					<div id="result"></div>
 				</li>
 				

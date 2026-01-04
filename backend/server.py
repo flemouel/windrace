@@ -12,8 +12,8 @@ import urllib.parse
 import os
 
 class WindGameHandler(SimpleHTTPRequestHandler):
-    LEADERBOARD_JSON = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'resdata.json')
-    LEADERBOARD_HTML = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'table.html')
+    LEADERBOARD_JSON = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'record_data.json')
+    LEADERBOARD_HTML = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'record_table.html')
 
     def do_GET(self):
         # Parse the URL.
@@ -56,8 +56,8 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         # Route for record.php (record scores).
         elif path == '/scripts/record.php':
             self.handle_record()
-        # Route for table.html (leaderboard).
-        elif path == '/resdata/table.html':
+        # Route for record_table.html (leaderboard).
+        elif path == '/resdata/record_table.html':
             self.handle_leaderboard()
         # Route for wind.php.
         elif path == '/scripts/wind.php':
