@@ -441,6 +441,7 @@
 		red_tacks = new Array();
 		black_tacks = new Array();
 		green_tacks = new Array();
+		violet_tacks = new Array();
 		tacks_log = new Array();
 		
 		started = false;
@@ -452,6 +453,7 @@
 		if (myboat!=null) {myboat.clear(); myboat = null;}
 		if (srboat!=null) {srboat.clear(); srboat = null;}
 		if (geoboat!=null) {geoboat.clear(); geoboat = null;}
+		if (lrboat1!=null) {lrboat1.clear(); lrboat1 = null;}
 		
 		if (mark!=null) mark.setMap(null);
 		if (left_layline!=null) left_layline.setMap(null);
@@ -636,11 +638,11 @@
 					}
 					if (srboat!=null)
 					{
-						moveBoat_method2(srboat,winddirection[windindex], step, avg);
+						moveBoat_corridorMeanWind(srboat,winddirection[windindex], step, avg);
 					}
 					if (geoboat!=null)
 					{
-						var rec = moveBoat_method1(geoboat,winddirection[windindex], step);
+						var rec = moveBoat_geometric(geoboat,winddirection[windindex], step);
 						if (rec!=null) green_tacks.push(rec);
 					}
 					
@@ -910,7 +912,7 @@
 				if (srboat!=null)
 				{
 					srdistance = google.maps.geometry.spherical.computeDistanceBetween(srboat.point, mark_top);
-					var rec = moveBoat_method2(srboat,wind, step, average);
+					var rec = moveBoat_corridorMeanWind(srboat,wind, step, average);
 					if (rec!=null) black_tacks.push(rec);
 					if (srdistance<200) srboat.setTackDelay(10);
 				}
@@ -918,14 +920,14 @@
 				if (geoboat!=null)
 				{
 					geodistance = google.maps.geometry.spherical.computeDistanceBetween(geoboat.point, mark_top);
-					var rec = moveBoat_method1(geoboat,wind, step);
+					var rec = moveBoat_geometric(geoboat,wind, step);
 					if (rec!=null) green_tacks.push(rec);
 				}
 
 				if (lrboat1!=null)
 				{
 					lr1distance = google.maps.geometry.spherical.computeDistanceBetween(lrboat1.point, mark_top);
-					var rec = moveBoat_method3(lrboat1,wind, step);
+					var rec = moveBoat_kalman(lrboat1,wind, step, average);
 					if (rec!=null) violet_tacks.push(rec);
 				}
 
@@ -1093,12 +1095,28 @@
 	
 	
 	
-	function moveBoat_method1(iBoat,iWindDirection, iDistance)
+	function moveBoat_geometric(iBoat,iWindDirection, iDistance)
 	{
+		// moveBoat_geometric(iBoat, iWindDirection, iDistance)
+		// Strategy: purely geometric tack decision based on wind vs bearing to mark.
+		// Inputs:
+		// - iWindDirection: raw wind direction (deg)
+		// Key variables:
+		// - heading: bearing from boat to mark (deg)
+		// - shift: wind minus heading, normalized to [-180, 180]
+		// Decision:
+		// - shift < 0 => tack to port (tack=1), shift >= 0 => tack to starboard (tack=-1)
+		// - Uses boat canTack() cooldown; no wind-mean or volatility logic.
+		// Examples (aggressiveness):
+		// - Conservative: increase tackdelay (e.g., 30) to reduce tacks.
+		// - Aggressive: reduce tackdelay (e.g., 10) to allow frequent tacks.
 		var record = null;
 		if (iBoat!=null)
 		{
 			var heading = Math.round(google.maps.geometry.spherical.computeHeading(iBoat.point, mark_top));
+			var distanceToMark = google.maps.geometry.spherical.computeDistanceBetween(iBoat.point, mark_top);
+			if (distanceToMark<200) iBoat.setTackDelay(10);
+			else iBoat.setTackDelay(20);
 			
 			var shift = iWindDirection-heading;
 			if (shift<-180) shift = 360 + shift;
@@ -1133,8 +1151,23 @@
 		return record;
 	}
 	
-	function moveBoat_method2(iBoat,iWindDirection, iDistance, iAverage)
+	function moveBoat_corridorMeanWind(iBoat,iWindDirection, iDistance, iAverage)
 	{
+		// moveBoat_corridorMeanWind(iBoat, iWindDirection, iDistance, iAverage)
+		// Strategy: use mean-wind oscillation inside a central corridor, otherwise fall back to geometric logic outside the corridor.
+		// Inputs:
+		// - iWindDirection: raw wind direction (deg)
+		// - iAverage.avg: mean wind direction (deg)
+		// Key variables:
+		// - heading: bearing from boat to mark (deg)
+		// - shift: wind minus heading, normalized to [-180, 180]
+		// - corridor: width around heading (43*0.5)
+		// Decision:
+		// - Inside corridor: tack by sign of (wind - mean wind)
+		// - Outside corridor: return moveBoat_geometric(...)
+		// Examples (aggressiveness):
+		// - Conservative: narrower corridor (43*0.4) + higher tackdelay.
+		// - Aggressive: wider corridor (43*0.6) + lower tackdelay.
 		var record = null;
 		if (iBoat!=null)
 		{
@@ -1146,7 +1179,7 @@
 			
 			if (Math.abs(shift)<43*0.5)
 			{
-				// in between 80% laylines
+				// in between 50% laylines
 				var wshift = iWindDirection-iAverage["avg"];
 				if (wshift<-180) wshift = 360 + wshift;
 				if (wshift>180) wshift = wshift - 360;
@@ -1180,49 +1213,150 @@
 			}
 			else
 			{
-				return moveBoat_method1(iBoat,iWindDirection, iDistance);
+				return moveBoat_geometric(iBoat,iWindDirection, iDistance);
 			}
 		}
 		return record;
 	}
 
-	function moveBoat_method3(iBoat,iWindDirection, iDistance)
+	function moveBoat_kalman(iBoat,iWindDirection, iDistance, iAverage)
 	{
 		var record = null;
 		if (iBoat!=null)
 		{
-			iBoat.setTackDelay(40);
-			var heading = Math.round(google.maps.geometry.spherical.computeHeading(iBoat.point, mark_top));
-
-			var shift = iWindDirection-heading;
-			if (shift<-180) shift = 360 + shift;
-			if (shift>180) shift = shift - 360;
-
-			if (shift<0)
+			// moveBoat_kalman(iBoat, iWindDirection, iDistance, iAverage)
+			// Strategy: Kalman-filter wind direction, act within a narrow corridor, use dynamic tack
+			// thresholds, and fall back to geometric logic outside the corridor.
+			// Inputs:
+			// - iWindDirection: raw wind direction (deg)
+			// - iAverage.avg: mean wind direction (deg)
+			// Key variables:
+			// - corridor: width around heading (43*0.4)
+			// - volN: volatility normalization from 60s window, 1..6 deg
+			// - spdN: wind speed normalization, 4.5..11 kn
+			// - q/r: Kalman noise terms (q=0.5+2.0*volN, r=clamp(2.0-1.5*volN,0.2,2.0))
+			// - tackThreshold: clamp(2+3*spdN-5*volN, 0.5, 6)
+			// Decision:
+			// - Inside corridor: compare filtered wind vs mean wind, tack if |wshift| >= tackThreshold.
+			// - Outside corridor: return moveBoat_geometric(...)
+			// Examples (aggressiveness):
+			// - corridor: 43*0.3 conservative vs 43*0.5 aggressive
+			// - tackThreshold: clamp(3+4*spdN-3*volN, 2, 10) conservative vs
+			//   clamp(2+3*spdN-5*volN, 0.5, 6) aggressive
+			// - q/r: q=0.3..1.0 & r=1.5..3.0 conservative vs q=1.0..3.0 & r=0.2..1.0 aggressive
+			function wrap180(iValue)
 			{
-				if (iBoat.getTack()==-1)
+				var v = iValue;
+				if (v<-180) v = 360 + v;
+				if (v>180) v = v - 360;
+				return v;
+			}
+			function wrap360(iValue)
+			{
+				var v = iValue % 360;
+				if (v<0) v = 360 + v;
+				return v;
+			}
+			function clamp(iValue, iMin, iMax)
+			{
+				return Math.max(iMin, Math.min(iValue, iMax));
+			}
+			function sliceLast(iArray, iCount)
+			{
+				if (iArray.length<=iCount) return iArray.slice();
+				return iArray.slice(iArray.length - iCount);
+			}
+			function circMean(iArray)
+			{
+				var s = 0;
+				var c = 0;
+				for (var i=0; i<iArray.length; i++)
 				{
-					if (iBoat.canTack())
-					{
-						iBoat.setTack(1);
-						record = [iBoat.point.lat(),iBoat.point.lng()];
-					}
-
+					var r = toRadians(iArray[i]);
+					s += Math.sin(r);
+					c += Math.cos(r);
 				}
+				if (s==0 && c==0) return 0;
+				var deg = toDegrees(Math.atan2(s, c));
+				return wrap360(deg);
+			}
+			function circStdDev(iArray, iMean)
+			{
+				var sum = 0;
+				for (var i=0; i<iArray.length; i++)
+				{
+					var d = wrap180(iArray[i]-iMean);
+					sum += d*d;
+				}
+				return Math.sqrt(sum/iArray.length);
+			}
+
+			var heading = Math.round(google.maps.geometry.spherical.computeHeading(iBoat.point, mark_top));
+			var corridor = 43*0.4;
+
+			var volBuf = sliceLast(windcache, 60);
+			var volMean = circMean(volBuf);
+			var vol = (volBuf.length>=2) ? circStdDev(volBuf, volMean) : 0;
+			var volN = clamp((vol-1)/(6-1), 0, 1);
+			var speed = windspeed[windindex] || 0;
+			var spdN = clamp((speed-4.5)/(11-4.5), 0, 1);
+
+			var q = 0.5 + 2.0*volN;
+			var r = clamp(2.0 - 1.5*volN, 0.2, 2.0);
+
+			if (typeof(iBoat._kfAngle)=="undefined")
+			{
+				iBoat._kfAngle = iWindDirection;
+				iBoat._kfP = 1.0;
+			}
+
+			var pred = iBoat._kfAngle;
+			var pPred = iBoat._kfP + q;
+			var residual = wrap180(iWindDirection - pred);
+			var kGain = pPred/(pPred + r);
+			var filtered = wrap360(pred + kGain*residual);
+			var pUpd = (1 - kGain)*pPred;
+			iBoat._kfAngle = filtered;
+			iBoat._kfP = pUpd;
+
+			var shift = wrap180(filtered - heading);
+			if (Math.abs(shift)<corridor)
+			{
+				var wshift = wrap180(filtered - iAverage["avg"]);
+			var tackThreshold = clamp(2 + 3*spdN - 5*volN, 0.5, 6);
+
+				if (Math.abs(wshift)>=tackThreshold)
+				{
+					if (wshift<0)
+					{
+						if (iBoat.getTack()==-1)
+						{
+							if (iBoat.canTack())
+							{
+								iBoat.setTack(1);
+								record = [iBoat.point.lat(),iBoat.point.lng()];
+							}
+						}
+					}
+					else
+					{
+						if (iBoat.getTack()==1)
+						{
+							if (iBoat.canTack())
+							{
+								iBoat.setTack(-1);
+								record = [iBoat.point.lat(),iBoat.point.lng()];
+							}
+						}
+					}
+				}
+
+				iBoat.moveByWind(iWindDirection, iDistance, heading);
 			}
 			else
 			{
-				if (iBoat.getTack()==1)
-				{
-					if (iBoat.canTack())
-					{
-						iBoat.setTack(-1);
-						record = [iBoat.point.lat(),iBoat.point.lng()];
-					}
-				}
+				return moveBoat_geometric(iBoat,iWindDirection, iDistance);
 			}
-
-			iBoat.moveByWind(iWindDirection, iDistance, heading);
 		}
 		return record;
 	}
