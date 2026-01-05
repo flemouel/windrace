@@ -532,7 +532,10 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 	starttime = timestampParam;
 	finishindex = finishindexParam;
 	tacks_string = tackslogParam || "";
-				
+			
+		mark_top = getCoords(map_center, bearing, startdistance/2);
+		initial_boat_location = getCoords(map_center, bearing+180, startdistance/2);
+
 		mark = new google.maps.Marker({position:mark_top, map: map	});
 				
 		var bounds = new google.maps.LatLngBounds();
@@ -540,7 +543,6 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		bounds.extend(initial_boat_location);
 		map.fitBounds(bounds);
 			
-		bearing = google.maps.geometry.spherical.computeHeading(initial_boat_location, mark_top);		
 		srboat = new Boat({id:'srboat',boatName:'', color:'000000', point:initial_boat_location, direction:bearing+tackangle});
 		myboat = new Boat({id:'myboat',boatName:myboat_name, color:'ff0000', point:initial_boat_location, direction:bearing+tackangle});
 		geoboat = new Boat({id:'geoboat',boatName:geoboat_name, color:'00aa00', point:initial_boat_location, direction:bearing+tackangle});
@@ -597,6 +599,10 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 				}
 			});
 			
+			finished = false;
+			windindex = windcache_length;
+			chartdata = new Array();
+
 			while(!finished)
 			{
 				if (windindex<windspeed.length)
@@ -615,7 +621,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 					var ad = avg["avg"];
 					if (ad>180) ad = ad - 360;
 					
-					chartdata.addRow([windindex, wd, ad]);
+					chartdata.push([windindex, wd, ad]);
 					
 					// move boats
 					if (myboat!=null)
@@ -680,8 +686,20 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 
 			ensureChartsReady(function()
 			{
-				chart = new google.visualization.LineChart(document.getElementById('curve_chart'));
-				chart.draw(chartdata, options);
+				var container = document.getElementById('curve_chart');
+				if (container != null) {
+					var dataTable = new google.visualization.DataTable();
+					dataTable.addColumn('number', 'Index');
+					dataTable.addColumn('number', 'Wind');
+					dataTable.addColumn('number', 'Average');
+
+					for (var i = 0; i < chartdata.length; i++) {
+						dataTable.addRow(chartdata[i]);
+					}
+
+    				chart = new google.visualization.LineChart(container);
+    				chart.draw(dataTable, options);
+				}
 			});
 			if (typeof(onReady)=="function") onReady();
 		});
