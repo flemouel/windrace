@@ -81,7 +81,7 @@
 			var endIndex = windindex;
 			loadDataPreview(map_center, bearing, startdistance, windcache_length, starttime, windindex, tacks_log.join(","), function()
 			{
-				endIndex = windindex;
+				endIndex = windindex - 1;
 				$("#replay_slider").attr("min", startIndex);
 				$("#replay_slider").attr("max", endIndex);
 				$("#replay_slider").val(startIndex).show();
@@ -624,32 +624,23 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 					chartdata.push([windindex, wd, ad]);
 					
 					// move boats
-					if (myboat!=null)
-					{
-						if (typeof(tacks[windindex])!="undefined") myboat.setTack(tacks[windindex]);
-						var bearingToMark = Math.round(google.maps.geometry.spherical.computeHeading(myboat.point, mark_top));
-						myboat.moveByWind(winddirection[windindex],step,bearingToMark);	
-					}
-					if (srboat!=null)
-					{
-						moveBoat_corridorMeanWind(srboat,winddirection[windindex], step, avg);
-					}
-					if (geoboat!=null)
-					{
-						var rec = moveBoat_geometric(geoboat,winddirection[windindex], step);
-						if (rec!=null) green_tacks.push(rec);
-					}
+					if (typeof(tacks[windindex])!="undefined") myboat.setTack(tacks[windindex]);
+					var bearingToMark = Math.round(google.maps.geometry.spherical.computeHeading(myboat.point, mark_top));
+					myboat.moveByWind(winddirection[windindex],step,bearingToMark);	
+					moveBoat_corridorMeanWind(srboat,winddirection[windindex], step, avg);
+					moveBoat_geometric(geoboat,winddirection[windindex], step);
+					moveBoat_kalman(kalboat,winddirection[windindex], step, avg);
 					
 					srdistance = google.maps.geometry.spherical.computeDistanceBetween(srboat.point, mark_top);
 					mydistance = google.maps.geometry.spherical.computeDistanceBetween(myboat.point, mark_top);
-					var leaderDistance = mydistance;
-					if (srboat!=null) leaderDistance = Math.min(leaderDistance, srdistance);
-					if (geoboat!=null) leaderDistance = Math.min(leaderDistance, geodistance);
+					geodistance = google.maps.geometry.spherical.computeDistanceBetween(geoboat.point, mark_top);
+					kaldistance = google.maps.geometry.spherical.computeDistanceBetween(kalboat.point, mark_top);
+					var leaderDistance = Math.min(mydistance, srdistance, geodistance, kaldistance);
 					finalresult = Math.round(leaderDistance - mydistance);
 					distance[windindex] = mydistance;
 					result[windindex] = finalresult;
 				
-					if ((mydistance<20)||(srdistance<20)||(geodistance<20)) finished = true;
+					if ((mydistance<20)||(srdistance<20)||(geodistance<20)||(kaldistance<20)) finished = true;
 					
 					if (wind_track)
 					{
