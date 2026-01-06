@@ -305,6 +305,7 @@ Totally played {total} times</p>
         """Render leaderboard HTML from entries."""
         lines = [
             "<div class='results'>",
+            "<a id='results' name='results' class='placeholder'></a>",
             "<h2 class='screen-only'>Top 10</h2>",
             "<table class='leaderboard'>",
             "<thead><tr>"
