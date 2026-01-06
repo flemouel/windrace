@@ -168,6 +168,23 @@
 	background: #2d7ad3;
 }
 
+.leaderboard-replay
+{
+	padding: 4px 10px;
+	font-size: 11pt;
+	background: #4394f2;
+	color: white;
+	border: 2px solid white;
+	border-radius: 5px;
+	cursor: pointer;
+	font-weight: bold;
+}
+
+.leaderboard-replay:hover
+{
+	background: #2d7ad3;
+}
+
 #replay_slider
 {
 	position: fixed;

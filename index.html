@@ -71,58 +71,36 @@
 			return false;
 		});
 
-			$("#replay").on('click',function(e)
-			{
-				if ($(".info").is(":visible")) {
-					$(".info").slideUp(200);
-				}
+		$("#replay").on('click',function(e)
+		{
+			startReplay(starttime, windindex, tacks_log.join(","));
+			return false;
+		});
 
-				replayQueue = new Array();
-				replayDrainActive = false;
-				replayLastIndex = null;
+		$("#leader-board").on('click', '.leaderboard-replay', function(e)
+		{
+			var startTimeValue = parseInt($(this).data("starttime"), 10);
+			var finishIndexValue = parseInt($(this).data("finishindex"), 10);
+			var tacksValue = $(this).data("tacks") || "";
+			if (isNaN(startTimeValue)) return false;
+			if (isNaN(finishIndexValue)) finishIndexValue = windindex;
+			startReplay(startTimeValue, finishIndexValue, tacksValue);
+			return false;
+		});
 
-				$("#replay_back").show();
-
-				if (myboat!=null) myboat.clear();
-				if (srboat!=null) srboat.clear();
-				if (geoboat!=null) geoboat.clear();
-				if (kalboat!=null) kalboat.clear();
-				if (mark!=null) mark.setMap(null);
-				if (wind_track!=null) wind_track.setMap(null);
-				if (average_track!=null) average_track.setMap(null);
-				if (left_layline!=null) left_layline.setMap(null);
-				if (rigth_layline!=null) rigth_layline.setMap(null);
-				if (center_line!=null) center_line.setMap(null);
-				if (left_arc!=null) left_arc.setMap(null);
-				if (right_arc!=null) right_arc.setMap(null);
-				if (course_line!=null) course_line.setMap(null);
-
-				var startIndex = windcache_length;
-				var endIndex = windindex;
-				loadDataPreview(map_center, bearing, startdistance, windcache_length, starttime, windindex, tacks_log.join(","), function()
-				{
-					endIndex = windindex - 1;
-					$("#replay_slider").attr("min", startIndex);
-					$("#replay_slider").attr("max", endIndex);
-					$("#replay_slider").val(startIndex).show();
-					enqueueReplayIndex(startIndex);
-				});
-				return false;
-			});
-
-			$("#replay_back").on('click',function(e)
-			{
-				$("#replay_slider").hide();
-				$("#map_scroll .ui-slider").hide();
+		$("#replay_back").on('click',function(e)
+		{
+			$("#replay_slider").hide();
+			$("#map_scroll .ui-slider").hide();
 				$("#replay_back").hide();
 				$(".info").slideDown(200);
 				return false;
 			});
 
-			$("#replay_slider").on('input change',function(e)
-			{
-				var index = parseInt($(this).val(), 10);
-				if (!isNaN(index)) enqueueReplayIndex(index);
+		$("#replay_slider").on('input change',function(e)
+		{
+			var index = parseInt($(this).val(), 10);
+			if (!isNaN(index)) enqueueReplayIndex(index);
 			});
 		
 		$("#avatar").mouseenter(function() 
@@ -393,9 +371,9 @@
 		reset();
 	}
 	
-	function reset()
-	{
-		starttime = 0;
+		function reset()
+		{
+			starttime = 0;
 		finalresult = 0;
 		srdistance = startdistance;
 		mydistance = startdistance;
@@ -440,8 +418,46 @@
 		$("#play").val("Play").show();
 		$("#button").show();
 
-		loadDataIdle();
-	}
+			loadDataIdle();
+		}
+
+		function startReplay(startTimeValue, finishIndexValue, tacksValue)
+		{
+			if ($(".info").is(":visible")) {
+				$(".info").slideUp(200);
+			}
+
+			replayQueue = new Array();
+			replayDrainActive = false;
+			replayLastIndex = null;
+
+			$("#replay_back").show();
+
+			if (myboat!=null) myboat.clear();
+			if (srboat!=null) srboat.clear();
+			if (geoboat!=null) geoboat.clear();
+			if (kalboat!=null) kalboat.clear();
+			if (mark!=null) mark.setMap(null);
+			if (wind_track!=null) wind_track.setMap(null);
+			if (average_track!=null) average_track.setMap(null);
+			if (left_layline!=null) left_layline.setMap(null);
+			if (rigth_layline!=null) rigth_layline.setMap(null);
+			if (center_line!=null) center_line.setMap(null);
+			if (left_arc!=null) left_arc.setMap(null);
+			if (right_arc!=null) right_arc.setMap(null);
+			if (course_line!=null) course_line.setMap(null);
+
+			var startIndex = windcache_length;
+			var endIndex = finishIndexValue;
+			loadDataPreview(map_center, bearing, startdistance, windcache_length, startTimeValue, finishIndexValue, tacksValue, function()
+			{
+				endIndex = windindex - 1;
+				$("#replay_slider").attr("min", startIndex);
+				$("#replay_slider").attr("max", endIndex);
+				$("#replay_slider").val(startIndex).show();
+				enqueueReplayIndex(startIndex);
+			});
+		}
 	
 	function initWindCache(response)
 	{
@@ -1105,7 +1121,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 			{
 				var progress = Math.round(courseDistance - winner.distance);
 				var totalSailed = Math.round(winner.boat.getTotalDistance());
-				$.getJSON("scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:progress, boat_name: winner.name, tacks:tacks_log, total_sailed:totalSailed, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}).done(function(response)
+				$.getJSON("scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:progress, boat_name: winner.name, tacks:tacks_log.join(","), total_sailed:totalSailed, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}).done(function(response)
 				{
 					onGameFinish(response["id"], response["achievement"], response["recordtime"], response["total_sailed"]);
 				});

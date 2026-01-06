@@ -5,6 +5,7 @@ Simple HTTP server for WindGame with simulated PHP endpoints.
 
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import json
+import html
 import random
 import time
 import math
@@ -123,6 +124,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         boat_name = query.get('boat_name', ['Unknown boat'])[0]
         starttime = int(query.get('starttime', [int(time.time())])[0])
         tacks = query.get('tacks', [''])[0]
+        finishindex = int(query.get('finishindex', [0])[0])
         total_sailed = int(query.get('total_sailed', [0])[0])
         start_lat = float(query.get('start_lat', [0])[0])
         start_lng = float(query.get('start_lng', [0])[0])
@@ -152,6 +154,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 and existing.get('start_lng') == start_lng
                 and existing.get('finish_lat') == finish_lat
                 and existing.get('finish_lng') == finish_lng
+                and existing.get('finishindex') == finishindex
             ):
                 duplicate = existing
                 break
@@ -173,7 +176,8 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 'start_lat': start_lat,
                 'start_lng': start_lng,
                 'finish_lat': finish_lat,
-                'finish_lng': finish_lng
+                'finish_lng': finish_lng,
+                'finishindex': finishindex
             }
             leaderboard.append(entry)
             leaderboard.sort(key=lambda e: e.get('score', 0), reverse=True)
@@ -318,6 +322,7 @@ Totally played {total} times</p>
             "<th>Mark (Lat/Long)</th>"
             "<th>Course start date</th>"
             "<th>Record time</th>"
+            "<th>Replay</th>"
             "</tr></thead>",
             "<tbody>"
         ]
@@ -328,6 +333,8 @@ Totally played {total} times</p>
             when = time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(ts))
             record_ts = entry.get('recordtime', 0)
             record_when = time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(record_ts)) if record_ts else "-"
+            finishindex = entry.get('finishindex', 0)
+            tacks = html.escape(str(entry.get('tacks', '')))
             start_lat = entry.get('start_lat', None)
             start_lng = entry.get('start_lng', None)
             finish_lat = entry.get('finish_lat', None)
@@ -356,6 +363,7 @@ Totally played {total} times</p>
                 f"<td>{long_cell}</td>"
                 f"<td>{when}</td>"
                 f"<td>{record_when}</td>"
+                f"<td><button class='leaderboard-replay' data-starttime='{ts}' data-finishindex='{finishindex}' data-tacks='{tacks}'>Replay</button></td>"
                 "</tr>"
             )
         lines.append("</tbody></table>")
