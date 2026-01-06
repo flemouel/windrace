@@ -77,6 +77,10 @@
 					$(".info").slideUp(200);
 				}
 
+				replayQueue = new Array();
+				replayDrainActive = false;
+				replayLastIndex = null;
+
 				if (myboat!=null) myboat.clear();
 				if (srboat!=null) srboat.clear();
 				if (geoboat!=null) geoboat.clear();
@@ -95,20 +99,20 @@
 				var endIndex = windindex;
 				loadDataPreview(map_center, bearing, startdistance, windcache_length, starttime, windindex, tacks_log.join(","), function()
 				{
-				endIndex = windindex - 1;
-				$("#replay_slider").attr("min", startIndex);
-				$("#replay_slider").attr("max", endIndex);
-				$("#replay_slider").val(startIndex).show();
-				display(startIndex);
-			});
+					endIndex = windindex - 1;
+					$("#replay_slider").attr("min", startIndex);
+					$("#replay_slider").attr("max", endIndex);
+					$("#replay_slider").val(startIndex).show();
+					enqueueReplayIndex(startIndex);
+				});
 			return false;
 		});
 
-		$("#replay_slider").on('input change',function(e)
-		{
-			var index = parseInt($(this).val(), 10);
-			if (!isNaN(index)) display(index);
-		});
+			$("#replay_slider").on('input change',function(e)
+			{
+				var index = parseInt($(this).val(), 10);
+				if (!isNaN(index)) enqueueReplayIndex(index);
+			});
 		
 		$("#avatar").mouseenter(function() 
 		{
@@ -488,7 +492,49 @@
 	var chart = null;
 	var chartdata = new Array();
 	var tacks = new Array();
-	var previewtimeoutid = null;
+		var previewtimeoutid = null;
+		var replayQueue = new Array();
+		var replayDrainActive = false;
+		var replayLastIndex = null;
+
+		function enqueueReplayIndex(iValue)
+		{
+			if (typeof(iValue)!="number" || isNaN(iValue)) return;
+			var lastQueued = (replayQueue.length>0) ? replayQueue[replayQueue.length-1] : null;
+			if (lastQueued === iValue) return;
+			replayQueue.push(iValue);
+			if (!replayDrainActive) drainReplayQueue();
+		}
+
+		function drainReplayQueue()
+		{
+			if (replayQueue.length===0)
+			{
+				replayDrainActive = false;
+				return;
+			}
+			replayDrainActive = true;
+			var value = replayQueue.shift();
+			if (replayLastIndex === null)
+			{
+				display(value);
+				replayLastIndex = value;
+				window.setTimeout(drainReplayQueue,0);
+				return;
+			}
+			if (value === replayLastIndex)
+			{
+				window.setTimeout(drainReplayQueue,0);
+				return;
+			}
+			var step = (value > replayLastIndex) ? 1 : -1;
+			for (var i=replayLastIndex + step; (step>0 ? i<=value : i>=value); i=i+step)
+			{
+				display(i);
+			}
+			replayLastIndex = value;
+			window.setTimeout(drainReplayQueue,0);
+		}
 	var chartsReady = false;
 	var chartsLoading = false;
 	var chartsCallbacks = new Array();
@@ -621,15 +667,11 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 				min: windcache_length,
 				step: 1,
 				max: finishindex-2,
-				slide: function( event, ui ) 
-				{
-					window.clearTimeout(previewtimeoutid);
-					previewtimeoutid = window.setTimeout(function()
+					slide: function( event, ui ) 
 					{
-						display(ui.value);
-					},2); 
-				}
-			});
+						enqueueReplayIndex(ui.value);
+					}
+				});
 			
 			finished = false;
 			windindex = windcache_length;
