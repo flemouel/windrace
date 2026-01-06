@@ -81,6 +81,8 @@
 				replayDrainActive = false;
 				replayLastIndex = null;
 
+				$("#replay_back").show();
+
 				if (myboat!=null) myboat.clear();
 				if (srboat!=null) srboat.clear();
 				if (geoboat!=null) geoboat.clear();
@@ -105,8 +107,17 @@
 					$("#replay_slider").val(startIndex).show();
 					enqueueReplayIndex(startIndex);
 				});
-			return false;
-		});
+				return false;
+			});
+
+			$("#replay_back").on('click',function(e)
+			{
+				$("#replay_slider").hide();
+				$("#map_scroll .ui-slider").hide();
+				$("#replay_back").hide();
+				$(".info").slideDown(200);
+				return false;
+			});
 
 			$("#replay_slider").on('input change',function(e)
 			{
@@ -160,18 +171,20 @@
 		{
 			$("#result").html("<h3>Lost by "+(0-finalresult)+"m"+achievementText+distanceText+"</h3>");
 			$("#play").val("Try again").show();
-		$("#replay").show();
-		$("#replay_slider").hide();
-		}
-		else
-		{
-			$("#result").html("<h3>Won by "+finalresult+"m"+achievementText+distanceText+"</h3>");
-			$("#play").val("Play again").show();
-		$("#replay").show();
-		$("#replay_slider").hide();
-			if ($("#chat").length) $("#chat").show();
+			$("#replay").show();
+			$("#replay_slider").hide();
+			$("#replay_back").hide();
+			}
+			else
+			{
+				$("#result").html("<h3>Won by "+finalresult+"m"+achievementText+distanceText+"</h3>");
+				$("#play").val("Play again").show();
+			$("#replay").show();
+			$("#replay_slider").hide();
+			$("#replay_back").hide();
+				if ($("#chat").length) $("#chat").show();
 
-		}
+			}
 		loadLeaderboard();
 		$.post("scripts/wind.php",null,function(response)
         {
@@ -396,8 +409,9 @@
 		
 		started = false;
 		finished = false;
-		$("#replay").hide();
-		$("#replay_slider").hide();
+			$("#replay").hide();
+			$("#replay_slider").hide();
+			$("#replay_back").hide();
 		
 		mark_top = null;
 		initial_boat_location = null;
@@ -603,7 +617,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		bounds.extend(initial_boat_location);
 		map.fitBounds(bounds);
 			
-		srboat = new Boat({id:'srboat',boatName:'', color:'000000', point:initial_boat_location, direction:bearing+tackangle});
+		srboat = new Boat({id:'srboat',boatName:srboat_name, color:'000000', point:initial_boat_location, direction:bearing+tackangle});
 		myboat = new Boat({id:'myboat',boatName:myboat_name, color:'ff0000', point:initial_boat_location, direction:bearing+tackangle});
 		geoboat = new Boat({id:'geoboat',boatName:geoboat_name, color:'00aa00', point:initial_boat_location, direction:bearing+tackangle});
 		kalboat = new Boat({id:'kalboat',boatName:kalboat_name, color:'9933ff', point:initial_boat_location, direction:bearing+tackangle});
@@ -624,15 +638,18 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		setupPreviewBoat(myboat);
 		setupPreviewBoat(geoboat);
 		setupPreviewBoat(kalboat);
-		srboat.showName(false);
+		srboat.showName(true);
 		srboat.showSpeed(false);
-		srboat.showDirection(false);
-		geoboat.showName(false);
+		srboat.showDirection(true);
+		myboat.showName(true);
+		myboat.showSpeed(false);
+		myboat.showDirection(true);
+		geoboat.showName(true);
 		geoboat.showSpeed(false);
-		geoboat.showDirection(false);
-		kalboat.showName(false);
+		geoboat.showDirection(true);
+		kalboat.showName(true);
 		kalboat.showSpeed(false);
-		kalboat.showDirection(false);
+		kalboat.showDirection(true);
 		
 		var tacks_raw = tacks_string.split(",");
 		for (var i=0; i<tacks_raw.length; i++)
@@ -1673,6 +1690,14 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 				}
 			}
 		}
+		self.previewMove = function(iPoint, iDirection, iSpeed)
+		{
+			if (overlay!=null && typeof(iPoint)!="undefined")
+			{
+				self.point = iPoint;
+				overlay.move(iPoint, iDirection, iSpeed);
+			}
+		}
 		self.setTack = function(iTack)
 		{
 			tackindex = iTack;
@@ -1757,6 +1782,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 <div id="ranking_display"></div>
 <input id="button" type="button" value="Start" disabled />
 <input id="replay_slider" type="range" />
+<input id="replay_back" type="button" value="Back" />
 
 <div  class="info wait-for-map">
 	<div class="vertical">
