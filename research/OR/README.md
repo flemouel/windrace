@@ -32,14 +32,14 @@ Game-like movement model:
 Run the commands from inside `research/OR`:
 ```bash
 python3 mpc_simplemove.py \
-  --wind winddata/wind_data.json \
+  --wind ../../winddata/wind_data.json \
   --start-lat 18.3814282 --start-lng -64.5666047 \
   --finish-lat 18.4085703 --finish-lng -64.5333926
 ```
 
 ```bash
 python3 mpc_realmove.py \
-  --wind winddata/wind_data.json \
+  --wind ../../winddata/wind_data.json \
   --start-lat 18.3814282 --start-lng -64.5666047 \
   --finish-lat 18.4085703 --finish-lng -64.5333926
 ```
@@ -47,22 +47,22 @@ python3 mpc_realmove.py \
 ### Detailed examples
 ```bash
 python3 mpc_simplemove.py \
-  --wind winddata/wind_data.json \
+  --wind ../../winddata/wind_data.json \
   --start-lat 18.3814282 --start-lng -64.5666047 \
   --finish-lat 18.4085703 --finish-lng -64.5333926 \
   --horizon 90 \
-  --tackangle 40 \
+  --tackangle 43 \
   --goal 15 \
   --alpha 1.2
 ```
 
 ```bash
 python3 mpc_realmove.py \
-  --wind winddata/wind_data.json \
+  --wind ../../winddata/wind_data.json \
   --start-lat 18.3814282 --start-lng -64.5666047 \
   --finish-lat 18.4085703 --finish-lng -64.5333926 \
   --horizon 90 \
-  --tackangle 40 \
+  --tackangle 43 \
   --goal 15 \
   --alpha 1.2 \
   --near-threshold 200 \
