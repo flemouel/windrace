@@ -124,6 +124,8 @@
 		
 	});
 	
+
+
 	function onGameFinish(id,achievement,recordtime,totalSailed)
 	{
 		console.log("onGameFinish called - id:", id, "achievement:", achievement, "recordtime:", recordtime, "finalresult:", finalresult, "totalSailed:", totalSailed);
@@ -195,10 +197,10 @@
 	var mydistance = startdistance;
 	var geodistance = startdistance;
 	var kaldistance = startdistance;
-	var red_tacks = new Array();
-	var black_tacks = new Array();
-	var green_tacks = new Array();
-	var violet_tacks = new Array();
+	var myboat_tacks = new Array();
+	var srboat_tacks = new Array();
+	var geoboat_tacks = new Array();
+	var kalboat_tacks = new Array();
 	var tacks_log = new Array();
 	var map = null;
 	var mark = null;
@@ -226,11 +228,13 @@
 	var windcache_length = 600;
 	var bearing = 0;
 	var myboat_name = "My boat";
-var srboat_name = "[RBC] SailRacer boat";
-var geoboat_name = "[RBC] Geo boat";
-var kalboat_name = "[RBC] Kal boat";
+	var srboat_name = "[RBC] SailRacer boat";
+	var geoboat_name = "[RBC] Geo boat";
+	var kalboat_name = "[RBC] Kal boat";
 	var courseDistance = startdistance;
 	
+
+
 	function loadLeaderboard()
 	{
 		$.post("resdata/record_table.html",null,function(response)
@@ -256,7 +260,7 @@ var kalboat_name = "[RBC] Kal boat";
 				if (myboat!=null)
 				{
 					myboat.tack();
-					red_tacks.push([myboat.point.lat(),myboat.point.lng()]);
+					myboat_tacks.push([myboat.point.lat(),myboat.point.lng()]);
 					if (myboat.getTack()==1) tacks_log.push("P"+windindex);
 					else tacks_log.push("S"+windindex);
 				}
@@ -282,6 +286,8 @@ var kalboat_name = "[RBC] Kal boat";
 		
 	});
 	
+
+
 	function isMobile() 
 	{ 
 		if( navigator.userAgent.match(/Android/i)
@@ -299,6 +305,8 @@ var kalboat_name = "[RBC] Kal boat";
 			return false;
 		}
 	}
+
+
 	function readyWithGoogle()
 	{ 
 		
@@ -379,10 +387,10 @@ var kalboat_name = "[RBC] Kal boat";
 		mydistance = startdistance;
 		geodistance = startdistance;
 		
-		red_tacks = new Array();
-		black_tacks = new Array();
-		green_tacks = new Array();
-		violet_tacks = new Array();
+		myboat_tacks = new Array();
+		srboat_tacks = new Array();
+		geoboat_tacks = new Array();
+		kalboat_tacks = new Array();
 		tacks_log = new Array();
 		
 		started = false;
@@ -459,6 +467,8 @@ var kalboat_name = "[RBC] Kal boat";
 			});
 		}
 	
+
+
 	function initWindCache(response)
 	{
 		starttime = response["timestamp"];
@@ -472,6 +482,8 @@ var kalboat_name = "[RBC] Kal boat";
 		}
 	}
 	
+
+
 	function loadDataIdle()
 	{
 
@@ -492,6 +504,8 @@ var kalboat_name = "[RBC] Kal boat";
 		});
 
 	}
+
+
 	function loadData(timestamp)
 	{
 
@@ -568,6 +582,7 @@ var kalboat_name = "[RBC] Kal boat";
 	var chartsReady = false;
 	var chartsLoading = false;
 	var chartsCallbacks = new Array();
+
 
 	function ensureChartsReady(iCallback)
 	{
@@ -831,6 +846,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 	var result = new Array();
 	var distance = new Array();
 	
+
+
 	function display(index)
 	{
 		if (chart!=null)
@@ -864,6 +881,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 	
 	
 	var countdown = 3;
+
+
 	function runCountdown()
 	{
 		console.log("runCountdown called, countdown value:", countdown);
@@ -882,6 +901,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		countdown--;
 	}
 	
+
+
 	function init()
 	{
 		
@@ -900,10 +921,10 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 			map.fitBounds(bounds);
 			
 						
-			red_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
-			black_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
-			green_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
-			violet_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
+			myboat_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
+			srboat_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
+			geoboat_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
+			kalboat_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
 
 			srboat = new Boat({id:"srboat",boatName:srboat_name, color:"000000", point:initial_boat_location, direction:bearing+tackangle});
 			myboat = new Boat({id:"myboat",boatName:myboat_name, color:"ff0000", point:initial_boat_location, direction:bearing+tackangle});
@@ -962,6 +983,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		window.setTimeout(initialized,2000);
 	}
 				
+
+
 	function initialized()
 	{
 
@@ -969,6 +992,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 	
 	var processIdleTimeout = 0;
 	
+
+
 	function processIdle()
 	{
 		var reload = false;
@@ -1002,6 +1027,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		else processIdleTimeout = window.setTimeout(processIdle,1000);
 	}
 	
+
+
 	function process()
 	{
 		console.log("process() called - started:", started, "finished:", finished, "windindex:", windindex);
@@ -1049,7 +1076,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 				{
 					srdistance = google.maps.geometry.spherical.computeDistanceBetween(srboat.point, mark_top);
 					var rec = moveBoat_corridorMeanWind(srboat,wind, step, average);
-					if (rec!=null) black_tacks.push(rec);
+					if (rec!=null) srboat_tacks.push(rec);
 					if (srdistance<200) srboat.setTackDelay(10);
 				}
 				
@@ -1057,14 +1084,14 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 				{
 					geodistance = google.maps.geometry.spherical.computeDistanceBetween(geoboat.point, mark_top);
 					var rec = moveBoat_geometric(geoboat,wind, step);
-					if (rec!=null) green_tacks.push(rec);
+					if (rec!=null) geoboat_tacks.push(rec);
 				}
 
 				if (kalboat!=null)
 				{
 					kaldistance = google.maps.geometry.spherical.computeDistanceBetween(kalboat.point, mark_top);
 					var rec = moveBoat_kalman(kalboat,wind, step, average);
-					if (rec!=null) violet_tacks.push(rec);
+					if (rec!=null) kalboat_tacks.push(rec);
 				}
 
 				var leaderDistance = mydistance;
@@ -1093,10 +1120,10 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 			started = false;
 			$("#button").attr("disabled","true");
 			
-			if (myboat!=null) red_tacks.push([myboat.point.lat(),myboat.point.lng()]);
-			if (srboat!=null) black_tacks.push([srboat.point.lat(),srboat.point.lng()]);
-			if (geoboat!=null) green_tacks.push([geoboat.point.lat(),geoboat.point.lng()]);
-			if (kalboat!=null) violet_tacks.push([kalboat.point.lat(),kalboat.point.lng()]);
+			if (myboat!=null) myboat_tacks.push([myboat.point.lat(),myboat.point.lng()]);
+			if (srboat!=null) srboat_tacks.push([srboat.point.lat(),srboat.point.lng()]);
+			if (geoboat!=null) geoboat_tacks.push([geoboat.point.lat(),geoboat.point.lng()]);
+			if (kalboat!=null) kalboat_tacks.push([kalboat.point.lat(),kalboat.point.lng()]);
 
 			var boatResults = [];
 			if (myboat!=null) boatResults.push({name: myboat_name, distance: mydistance, boat: myboat});
@@ -1140,6 +1167,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		}
 		
 	}
+
 
 	function updateRanking()
 	{
@@ -1199,6 +1227,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		$("#ranking_display").html(html);
 	}
 
+
 	function updateLaylines(wind,avg)
 	{
 		if (left_layline)
@@ -1231,6 +1260,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 	
 	
 	
+
+
 	function moveBoat_geometric(iBoat,iWindDirection, iDistance)
 	{
 		// moveBoat_geometric(iBoat, iWindDirection, iDistance)
@@ -1287,6 +1318,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		return record;
 	}
 	
+
+
 	function moveBoat_corridorMeanWind(iBoat,iWindDirection, iDistance, iAverage)
 	{
 		// moveBoat_corridorMeanWind(iBoat, iWindDirection, iDistance, iAverage)
@@ -1354,6 +1387,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		}
 		return record;
 	}
+
 
 	function moveBoat_kalman(iBoat,iWindDirection, iDistance, iAverage)
 	{
@@ -1497,6 +1531,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		return record;
 	}
 
+
 	function getWindAverage(iArray)
 	{
 		var first = iArray[0];
@@ -1526,6 +1561,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		return 	{avg:avg,max:max};
 	}
 	
+
+
 	function getVectorFromCoords(iX,iY)
 	{
 		if (iX<0)
@@ -1540,6 +1577,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		} 
 	}
 	
+
+
 	function getArc(center, initialBearing, finalBearing, radius) 
 	{ 
 		var points = 6; 
@@ -1555,6 +1594,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		return arr;
 	}
 	
+
+
 	function getCoords(iPoint,iDirection, iDistance)
 	{
 		if (iDirection>180) iDirection = iDirection - 360;
@@ -1571,6 +1612,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 	}
 	
 
+
 	function updateWindArrow(iDegrees)
 	{
 		$('#wind_arrow').css({'-webkit-transform' : 'rotate('+ (iDegrees+180) +'deg)',
@@ -1581,15 +1623,21 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 				 
 	}
 	
+
+
 	function toRadians(degrees)
 	{
 		return degrees*Math.PI/180;
 	}
+
+
 	function toDegrees(degrees)
 	{
 		return degrees*180/Math.PI;
 	}
 	
+
+
 	function Boat(iObjParams)
 	{
 		var params = iObjParams||{};

@@ -12,6 +12,7 @@ import math
 import urllib.parse
 import os
 
+
 class WindGameHandler(SimpleHTTPRequestHandler):
     LEADERBOARD_JSON = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'record_data.json')
     LEADERBOARD_HTML = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'record_table.html')
@@ -386,6 +387,7 @@ Totally played {total} times</p>
         dlambda = math.radians(lon2 - lon1)
         a = math.sin(dphi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0) ** 2
         return 2.0 * r * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+
 
 def run(port=8000):
     server_address = ('', port)
