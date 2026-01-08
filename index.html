@@ -201,6 +201,7 @@
 	var srboat_tacks = new Array();
 	var geoboat_tacks = new Array();
 	var kalboat_tacks = new Array();
+	var mpcboat_tacks = new Array();
 	var tacks_log = new Array();
 	var map = null;
 	var mark = null;
@@ -214,6 +215,7 @@
 	var srboat = null;
 	var geoboat = null;
 	var kalboat = null;
+	var mpcboat = null;
 	var left_layline = null;
 	var rigth_layline = null;
 	var center_line = null;
@@ -231,6 +233,7 @@
 	var srboat_name = "[RBC] SailRacer boat";
 	var geoboat_name = "[RBC] Geo boat";
 	var kalboat_name = "[RBC] Kal boat";
+	var mpcboat_name = "[MBC] MPC 90/1.2";
 	var courseDistance = startdistance;
 	
 
@@ -391,6 +394,7 @@
 		srboat_tacks = new Array();
 		geoboat_tacks = new Array();
 		kalboat_tacks = new Array();
+		mpcboat_tacks = new Array();
 		tacks_log = new Array();
 		
 		started = false;
@@ -406,6 +410,7 @@
 		if (srboat!=null) {srboat.clear(); srboat = null;}
 		if (geoboat!=null) {geoboat.clear(); geoboat = null;}
 		if (kalboat!=null) {kalboat.clear(); kalboat = null;}
+		if (mpcboat!=null) {mpcboat.clear(); mpcboat = null;}
 		
 		if (mark!=null) mark.setMap(null);
 		if (left_layline!=null) left_layline.setMap(null);
@@ -445,6 +450,7 @@
 			if (srboat!=null) srboat.clear();
 			if (geoboat!=null) geoboat.clear();
 			if (kalboat!=null) kalboat.clear();
+			if (mpcboat!=null) mpcboat.clear();
 			if (mark!=null) mark.setMap(null);
 			if (wind_track!=null) wind_track.setMap(null);
 			if (average_track!=null) average_track.setMap(null);
@@ -521,6 +527,7 @@
 			myboat.headingByWind(winddirection[windindex],bearing);
 			geoboat.headingByWind(winddirection[windindex],bearing);
 			kalboat.headingByWind(winddirection[windindex],bearing);
+			mpcboat.headingByWind(winddirection[windindex],bearing);
 
 			if (myboat.getTack()==1) tacks_log.push("P"+windindex);
 			else tacks_log.push("S"+windindex);
@@ -652,6 +659,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		myboat = new Boat({id:'myboat',boatName:myboat_name, color:'ff0000', point:initial_boat_location, direction:bearing+tackangle});
 		geoboat = new Boat({id:'geoboat',boatName:geoboat_name, color:'00aa00', point:initial_boat_location, direction:bearing+tackangle});
 		kalboat = new Boat({id:'kalboat',boatName:kalboat_name, color:'9933ff', point:initial_boat_location, direction:bearing+tackangle});
+		mpcboat = new Boat({id:'mpcboat',boatName:mpcboat_name, color:'00cc66', point:initial_boat_location, direction:bearing+tackangle});
 		function setupPreviewBoat(boat)
 		{
 			boat._previewData = new Array();
@@ -706,6 +714,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 			myboat.headingByWind(winddirection[windindex],bearing);
 			geoboat.headingByWind(winddirection[windindex],bearing);
 			kalboat.headingByWind(winddirection[windindex],bearing);
+			mpcboat.headingByWind(winddirection[windindex],bearing);
 
 			var slider =  $("<div></div>").appendTo($( "#map_scroll" )).slider(
 			{
@@ -930,6 +939,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 			myboat = new Boat({id:"myboat",boatName:myboat_name, color:"ff0000", point:initial_boat_location, direction:bearing+tackangle});
 			geoboat = new Boat({id:"geoboat",boatName:geoboat_name, color:"00aa00", point:initial_boat_location, direction:bearing+tackangle});
 			kalboat = new Boat({id:"kalboat",boatName:kalboat_name, color:"9933ff", point:initial_boat_location, direction:bearing+tackangle});
+			mpcboat = new Boat({id:"mpcboat",boatName:mpcboat_name, color:"00cc66", point:initial_boat_location, direction:bearing+tackangle});
 
 			srboat.showName(true);
 			srboat.showSpeed(true);
@@ -940,11 +950,15 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 			kalboat.showName(true);
 			kalboat.showSpeed(true);
 			kalboat.showDirection(true);
+			mpcboat.showName(true);
+			mpcboat.showSpeed(true);
+			mpcboat.showDirection(true);
 
 			srboat.show();
 			myboat.show();
 			geoboat.show();
 			kalboat.show();
+			mpcboat.show();
 			console.log("Boats ready!");
 
 			$("#wind_arrow").show();
@@ -975,10 +989,11 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		wind_track = new google.maps.Polyline({path:[],strokeColor: "#0000ff",strokeOpacity: 0.1,strokeWeight: 1,map:map}); 
 		average_track = new google.maps.Polyline({path: [],strokeColor: "#000000",strokeOpacity: 0.1,strokeWeight: 2,map:map}); 
 		
-		srboat.headingByWind(bearing,bearing);
-		myboat.headingByWind(bearing,bearing);
+		if (srboat!=null) srboat.headingByWind(bearing,bearing);
+		if (myboat!=null) myboat.headingByWind(bearing,bearing);
 		if (geoboat!=null) geoboat.headingByWind(bearing,bearing);
 		if (kalboat!=null) kalboat.headingByWind(bearing,bearing);
+		if (mpcboat!=null) mpcboat.headingByWind(bearing,bearing);
 		
 		window.setTimeout(initialized,2000);
 	}
@@ -1017,10 +1032,11 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 			
 		updateWindArrow(winddirection[windindex]);
 		updateLaylines(winddirection[windindex],getWindAverage(windcache))
-		srboat.headingByWind(winddirection[windindex],bearing);
-		myboat.headingByWind(winddirection[windindex],bearing);
+		if (srboat!=null) srboat.headingByWind(winddirection[windindex],bearing);
+		if (myboat!=null) myboat.headingByWind(winddirection[windindex],bearing);
 		if (geoboat!=null) geoboat.headingByWind(winddirection[windindex],bearing);
 		if (kalboat!=null) kalboat.headingByWind(winddirection[windindex],bearing);
+		if (mpcboat!=null) mpcboat.headingByWind(winddirection[windindex],bearing);
 
 		window.clearTimeout(processIdleTimeout);
 		if (reload) loadDataIdle();
