@@ -226,9 +226,9 @@
 	var windcache_length = 600;
 	var bearing = 0;
 	var myboat_name = "My boat";
-	var srboat_name = "SailRacer boat";
-	var geoboat_name = "Geo boat";
-	var kalboat_name = "Kal boat";
+var srboat_name = "[RBC] SailRacer boat";
+var geoboat_name = "[RBC] Geo boat";
+var kalboat_name = "[RBC] Kal boat";
 	var courseDistance = startdistance;
 	
 	function loadLeaderboard()
@@ -1156,8 +1156,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 
 		if (srboat != null && srdistance !== undefined)
 		{
-			boats.push({
-				name: "SailRacer boat",
+				boats.push({
+					name: srboat_name,
 				distance: srdistance,
 				color: "#000000"
 			});
@@ -1165,8 +1165,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		
 		if (geoboat != null && geodistance !== undefined)
 		{
-			boats.push({
-				name: "Geo boat",
+				boats.push({
+					name: geoboat_name,
 				distance: geodistance,
 				color: "#00aa00"
 			});
@@ -1174,8 +1174,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 
 		if (kalboat != null && kaldistance !== undefined)
 		{
-			boats.push({
-				name: "Kal boat",
+				boats.push({
+					name: kalboat_name,
 				distance: kaldistance,
 				color: "#9933ff"
 			});
