@@ -32,9 +32,6 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         # Route for record.php (record scores via GET).
         elif path == '/scripts/record.php':
             self.handle_record()
-        # Route for avatar.php (user avatar).
-        elif path == '/images/avatar.php':
-            self.handle_avatar()
         # Route for boat.svg.php (boat image).
         elif path == '/images/boat.svg.php':
             self.handle_boat_svg(query)
@@ -239,22 +236,6 @@ Totally played {total} times</p>
         self.send_response(303)  # See Other
         self.send_header('Location', '/')
         self.end_headers()
-
-    def handle_avatar(self):
-        """Generate a default SVG avatar."""
-        colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c']
-        color = random.choice(colors)
-
-        svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <circle cx="32" cy="32" r="32" fill="{color}"/>
-  <circle cx="32" cy="24" r="10" fill="white" opacity="0.8"/>
-  <path d="M 16 48 Q 16 36 32 36 Q 48 36 48 48" fill="white" opacity="0.8"/>
-</svg>'''
-
-        self.send_response(200)
-        self.send_header('Content-type', 'image/svg+xml')
-        self.end_headers()
-        self.wfile.write(svg.encode())
 
     def handle_boat_svg(self, query):
         """Generate a boat SVG with the requested color (site original format)."""
