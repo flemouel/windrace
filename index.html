@@ -149,7 +149,7 @@
 
 			}
 		loadLeaderboard();
-		$.post("scripts/wind.php",null,function(response)
+		$.post("scripts/wind-status.php",null,function(response)
         {
 			$("#ocean").html(response);
 		});
@@ -476,7 +476,7 @@
 	function loadDataIdle()
 	{
 
-		$.getJSON("scripts/service.php?length="+windcache_length,null,function(response)
+		$.getJSON("scripts/wind-data.php?length="+windcache_length,null,function(response)
         {
 			initWindCache(response);
 			bearing = getWindAverage(windcache)["avg"];
@@ -499,7 +499,7 @@
 	{
 
 		console.log("loadData called with timestamp:", timestamp);
-		$.getJSON("scripts/service.php?timestamp="+timestamp,null,function(response)
+		$.getJSON("scripts/wind-data.php?timestamp="+timestamp,null,function(response)
         {
 			console.log("Wind data loaded, response:", response);
 			initWindCache(response);
@@ -687,7 +687,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		
 		init();
 		
-	$.getJSON("scripts/service.php?timestamp="+starttime,null,function(response)
+	$.getJSON("scripts/wind-data.php?timestamp="+starttime,null,function(response)
 		{
 			initWindCache(response);
 			

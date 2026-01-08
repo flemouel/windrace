@@ -24,10 +24,10 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         query = urllib.parse.parse_qs(parsed.query)
 
         # Route for service.php (wind data).
-        if path == '/scripts/service.php':
+        if path == '/scripts/wind-data.php':
             self.handle_wind_service(query)
-        # Route for wind.php (wind status).
-        elif path == '/scripts/wind.php':
+        # Route for wind-status.php (wind status).
+        elif path == '/scripts/wind-status.php':
             self.handle_wind_status()
         # Route for record.php (record scores via GET).
         elif path == '/scripts/record.php':
@@ -58,8 +58,8 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         # Route for record_table.html (leaderboard).
         elif path == '/resdata/record_table.html':
             self.handle_leaderboard()
-        # Route for wind.php.
-        elif path == '/scripts/wind.php':
+        # Route for wind-status.php.
+        elif path == '/scripts/wind-status.php':
             self.handle_wind_status()
         else:
             self.send_error(404)
