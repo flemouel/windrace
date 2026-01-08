@@ -28,6 +28,12 @@ Game-like movement model:
 - 10-second speed reduction after a tack.
 - Uses the same speed conversion (`windspeed / 2.2`).
 
+### beam_search.py
+Global search approximation:
+- Explores tack/no-tack branches each step.
+- Keeps the best K states (beam width).
+- Uses the same movement logic as `mpc_realmove.py`.
+
 ## Usage
 Run the commands from inside `research/OR`:
 ```bash
@@ -39,6 +45,13 @@ python3 mpc_simplemove.py \
 
 ```bash
 python3 mpc_realmove.py \
+  --wind ../../winddata/wind_data.json \
+  --start-lat 18.3814282 --start-lng -64.5666047 \
+  --finish-lat 18.4085703 --finish-lng -64.5333926
+```
+
+```bash
+python3 beam_search.py \
   --wind ../../winddata/wind_data.json \
   --start-lat 18.3814282 --start-lng -64.5666047 \
   --finish-lat 18.4085703 --finish-lng -64.5333926
@@ -70,12 +83,28 @@ python3 mpc_realmove.py \
   --far-delay 20
 ```
 
+```bash
+python3 beam_realmove.py \
+  --wind ../../winddata/wind_data.json \
+  --start-lat 18.3814282 --start-lng -64.5666047 \
+  --finish-lat 18.4085703 --finish-lng -64.5333926 \
+  --horizon 6001 \
+  --tackangle 43 \
+  --goal 15 \
+  --alpha 0 \
+  --near-threshold 200 \
+  --near-delay 10 \
+  --far-delay 20 \
+  --beam-width 200
+```
+
 ## Key parameters
 - `--horizon`: lookahead window (seconds).
 - `--tackangle`: tack angle in degrees (default 43).
 - `--goal`: stop when distance to mark is below this threshold (meters).
 - `--alpha`: weight for remaining distance in the cost function.
 - `--near-threshold`, `--near-delay`, `--far-delay` (real move only): tack delay tuning.
+- `--beam-width` (beam search only): number of states kept per step.
 
 ## Output
 - `steps`: number of simulated steps.
@@ -86,4 +115,4 @@ python3 mpc_realmove.py \
 
 ## Notes
 - These are offline analysis tools, not integrated into the game loop.
-- `mpc_realmove.py` mirrors the in-game logic more closely.
+- `mpc_realmove.py` and `beam_realmove.py` mirror the in-game logic more closely.
