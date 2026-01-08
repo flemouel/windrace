@@ -1,8 +1,8 @@
-# MPC (Offline Planners)
+# OR (Offline Planners)
 
-This folder contains offline Model Predictive Control (MPC) planners for the WindGame.
-Each script simulates a receding-horizon tack/no-tack planner that minimizes sailed
-distance while reaching the mark.
+This folder contains offline Operation Research (OR) planners for the WindGame,
+including MPC and beam search. Each script simulates tack/no-tack planning that
+minimizes sailed distance while reaching the mark.
 
 ## What they do
 - Load wind direction/speed from a `--wind` JSON file.
