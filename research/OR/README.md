@@ -98,6 +98,19 @@ python3 beam_realmove.py \
   --beam-width 200
 ```
 
+### Verbose output
+```bash
+python3 mpc_realmove.py \
+  --wind ../../winddata/wind_data.json \
+  --start-lat 18.3814282 --start-lng -64.5666047 \
+  --finish-lat 18.4085703 --finish-lng -64.5333926 \
+  --horizon 90 \
+  --tackangle 43 \
+  --goal 20 \
+  --alpha 1.2 \
+  --verbose 2
+```
+
 ## Key parameters
 - `--horizon`: lookahead window (seconds).
 - `--tackangle`: tack angle in degrees (default 43).
@@ -105,6 +118,7 @@ python3 beam_realmove.py \
 - `--alpha`: weight for remaining distance in the cost function.
 - `--near-threshold`, `--near-delay`, `--far-delay` (real move only): tack delay tuning.
 - `--beam-width` (beam search only): number of states kept per step.
+- `--verbose`: `0` (quiet), `1` (summary), `2` (summary + trajectory).
 
 ## Output
 - `steps`: number of simulated steps.
@@ -112,6 +126,7 @@ python3 beam_realmove.py \
 - `total_sailed`: total sailed distance in meters.
 - `tacks`: list of tack decisions in the game format (`P123` or `S123`).
 - `total X tack decisions`: total count of tack events in the log.
+- `trajectory` (verbose level 2): one line per step, `index decision lat lng` (`KEEP`, `P`, `S`).
 
 ## Notes
 - These are offline analysis tools, not integrated into the game loop.

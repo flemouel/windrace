@@ -123,6 +123,7 @@ def mpc_plan_real(
     state.target_lat = finish_lat
     state.target_lng = finish_lng
     step_count = 0
+    trajectory = []
 
     while step_count < len(wind_speed):
         dist_to_mark = haversine_m(state.lat, state.lng, finish_lat, finish_lng)
@@ -150,14 +151,17 @@ def mpc_plan_real(
             )
             cost_b = travel_b + alpha * haversine_m(lat_b, lng_b, finish_lat, finish_lng)
 
+        decision = "KEEP"
         if cost_b < cost_a:
             state.set_tack(step_count, -state.tack_index)
             tack_label = "P" if state.tack_index == 1 else "S"
             tacks_log.append(f"{tack_label}{step_count}")
+            decision = tack_label
 
         heading = bearing_deg(state.lat, state.lng, finish_lat, finish_lng)
         step_dist = wind_speed[step_count] / 2.2
         move_by_wind_real(state, wind_dir[step_count], step_dist, heading, step_count, tackangle)
+        trajectory.append((step_count, decision, state.lat, state.lng))
         step_count += 1
 
     return {
@@ -167,6 +171,7 @@ def mpc_plan_real(
         "end_lng": state.lng,
         "distance_to_mark": haversine_m(state.lat, state.lng, finish_lat, finish_lng),
         "total_sailed": state.total_distance,
+        "trajectory": trajectory,
     }
 
 
@@ -184,6 +189,7 @@ def main():
     parser.add_argument("--near-threshold", type=float, default=200)
     parser.add_argument("--near-delay", type=int, default=10)
     parser.add_argument("--far-delay", type=int, default=20)
+    parser.add_argument("--verbose", type=int, default=1)
     args = parser.parse_args()
 
     wind_dir, wind_speed = load_wind_data(args.wind)
@@ -202,10 +208,15 @@ def main():
         near_delay=args.near_delay,
         far_delay=args.far_delay,
     )
-    print("steps:", result["steps"])
-    print("distance_to_mark:", round(result["distance_to_mark"], 2), "m")
-    print("total_sailed:", round(result["total_sailed"], 2), "m")
-    print("tacks:", result["tacks"][:10], "... total", len(result["tacks"]), "tack decisions")
+    if args.verbose >= 1:
+        print("steps:", result["steps"])
+        print("distance_to_mark:", round(result["distance_to_mark"], 2), "m")
+        print("total_sailed:", round(result["total_sailed"], 2), "m")
+        print("tacks:", result["tacks"][:10], "... total", len(result["tacks"]), "tack decisions")
+    if args.verbose >= 2:
+        print("trajectory:")
+        for step, decision, lat, lng in result["trajectory"]:
+            print(f"{step:04d} {decision} {lat:.7f} {lng:.7f}")
 
 
 if __name__ == "__main__":

@@ -25,6 +25,7 @@ class BeamState:
         self.boat = BoatState(lat, lng, tack_index, tack_time, tack_delay)
         self.tacks = []
         self.step_count = 0
+        self.trajectory = []
 
     def clone(self):
         cloned = BeamState(
@@ -37,6 +38,7 @@ class BeamState:
         cloned.boat.total_distance = self.boat.total_distance
         cloned.tacks = list(self.tacks)
         cloned.step_count = self.step_count
+        cloned.trajectory = list(self.trajectory)
         return cloned
 
 
@@ -89,6 +91,7 @@ def beam_search(
             keep_state = state.clone()
             move_by_wind_real(keep_state.boat, wind_dir[step], step_dist, heading, step, tackangle)
             keep_state.step_count = step + 1
+            keep_state.trajectory.append((step, "KEEP", keep_state.boat.lat, keep_state.boat.lng))
             next_states.append(keep_state)
 
             # Option B: tack now (if allowed)
@@ -99,6 +102,7 @@ def beam_search(
                 tack_state.tacks.append(f"{tack_label}{step}")
                 move_by_wind_real(tack_state.boat, wind_dir[step], step_dist, heading, step, tackangle)
                 tack_state.step_count = step + 1
+                tack_state.trajectory.append((step, tack_label, tack_state.boat.lat, tack_state.boat.lng))
                 next_states.append(tack_state)
 
         if not next_states:
@@ -141,6 +145,7 @@ def main():
     parser.add_argument("--near-threshold", type=float, default=200)
     parser.add_argument("--near-delay", type=int, default=10)
     parser.add_argument("--far-delay", type=int, default=20)
+    parser.add_argument("--verbose", type=int, default=1)
     args = parser.parse_args()
 
     wind_dir, wind_speed = load_wind_data(args.wind)
@@ -161,17 +166,23 @@ def main():
         far_delay=args.far_delay,
     )
     if best is None:
-        print("steps: 0")
-        print("distance_to_mark: -")
-        print("total_sailed: 0")
-        print("tacks: [] ... total 0 tack decisions")
+        if args.verbose >= 1:
+            print("steps: 0")
+            print("distance_to_mark: -")
+            print("total_sailed: 0")
+            print("tacks: [] ... total 0 tack decisions")
         return
 
     dist_to_mark = haversine_m(best.boat.lat, best.boat.lng, args.finish_lat, args.finish_lng)
-    print("steps:", best.step_count)
-    print("distance_to_mark:", round(dist_to_mark, 2), "m")
-    print("total_sailed:", round(best.boat.total_distance, 2), "m")
-    print("tacks:", best.tacks[:10], "... total", len(best.tacks), "tack decisions")
+    if args.verbose >= 1:
+        print("steps:", best.step_count)
+        print("distance_to_mark:", round(dist_to_mark, 2), "m")
+        print("total_sailed:", round(best.boat.total_distance, 2), "m")
+        print("tacks:", best.tacks[:10], "... total", len(best.tacks), "tack decisions")
+    if args.verbose >= 2:
+        print("trajectory:")
+        for step, decision, lat, lng in best.trajectory:
+            print(f"{step:04d} {decision} {lat:.7f} {lng:.7f}")
 
 
 if __name__ == "__main__":

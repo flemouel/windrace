@@ -106,6 +106,7 @@ def mpc_plan(wind_dir, wind_speed, start_lat, start_lng, finish_lat, finish_lng,
     step_count = 0
     total_sailed = 0.0
     max_steps = max_steps or len(wind_speed)
+    trajectory = []
 
     while step_count < max_steps:
         dist_to_mark = haversine_m(lat, lng, finish_lat, finish_lng)
@@ -125,15 +126,18 @@ def mpc_plan(wind_dir, wind_speed, start_lat, start_lng, finish_lat, finish_lng,
         )
         cost_b = travel_b + alpha * haversine_m(lat_b, lng_b, finish_lat, finish_lng)
 
+        decision = "KEEP"
         if cost_b < cost_a:
             tack_index = tack_b
             tack_label = "P" if tack_index == 1 else "S"
             tacks_log.append(f"{tack_label}{step_count}")
+            decision = tack_label
 
         # Execute 1-step move with chosen tack
         step_dist = wind_speed[step_count] / 2.2
         lat, lng = boat_step(lat, lng, wind_dir[step_count], step_dist, tack_index, tackangle)
         total_sailed += step_dist
+        trajectory.append((step_count, decision, lat, lng))
         step_count += 1
 
     return {
@@ -143,6 +147,7 @@ def mpc_plan(wind_dir, wind_speed, start_lat, start_lng, finish_lat, finish_lng,
         "end_lng": lng,
         "distance_to_mark": haversine_m(lat, lng, finish_lat, finish_lng),
         "total_sailed": total_sailed,
+        "trajectory": trajectory,
     }
 
 
@@ -163,6 +168,7 @@ def main():
     parser.add_argument("--tackangle", type=float, default=43)
     parser.add_argument("--goal", type=float, default=20)
     parser.add_argument("--alpha", type=float, default=1.0)
+    parser.add_argument("--verbose", type=int, default=1)
     args = parser.parse_args()
 
     wind_dir, wind_speed = load_wind_data(args.wind)
@@ -178,10 +184,15 @@ def main():
         goal_dist=args.goal,
         alpha=args.alpha,
     )
-    print("steps:", result["steps"])
-    print("distance_to_mark:", round(result["distance_to_mark"], 2), "m")
-    print("total_sailed:", round(result["total_sailed"], 2), "m")
-    print("tacks:", result["tacks"][:10], "... total", len(result["tacks"]), "tack decisions")
+    if args.verbose >= 1:
+        print("steps:", result["steps"])
+        print("distance_to_mark:", round(result["distance_to_mark"], 2), "m")
+        print("total_sailed:", round(result["total_sailed"], 2), "m")
+        print("tacks:", result["tacks"][:10], "... total", len(result["tacks"]), "tack decisions")
+    if args.verbose >= 2:
+        print("trajectory:")
+        for step, decision, lat, lng in result["trajectory"]:
+            print(f"{step:04d} {decision} {lat:.7f} {lng:.7f}")
 
 
 if __name__ == "__main__":
