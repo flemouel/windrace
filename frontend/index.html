@@ -115,7 +115,7 @@
 	{
 		mode = "IDLE";
 		loadDataIdle();
-		console.log("onGameFinish called - id:", id, "achievement:", achievement, "recordtime:", recordtime, "finalresult:", finalresult, "totalSailed:", totalSailed);
+		log("INFO", "onGameFinish called - id:", id, "achievement:", achievement, "recordtime:", recordtime, "finalresult:", finalresult, "totalSailed:", totalSailed);
 		var achievementText = "";
 		if (achievement)
 		{
@@ -230,6 +230,21 @@
 	var mpc_near_delay = 10;
 	var mpc_far_delay = 20;
 	var courseDistance = startdistance;
+	var LOG_ENABLED = true;
+	var LOG_LEVEL = "DEBUG";
+
+
+function log(level)
+{
+	// DEBUG = all logs, INFO = info+error, ERROR = error only.
+	if (!LOG_ENABLED || !console) return;
+		var current = (LOG_LEVEL || "").toUpperCase();
+		var lvl = (level || "").toUpperCase();
+		if (current === "ERROR" && lvl !== "ERROR") return;
+		if (current === "INFO" && lvl === "DEBUG") return;
+		if (lvl === "ERROR") console.error.apply(console, Array.prototype.slice.call(arguments, 1));
+		else console.log.apply(console, Array.prototype.slice.call(arguments, 1));
+	}
 	
 
 
@@ -246,15 +261,15 @@
 
 	$(document).ready(function()
 	{
-		console.log("Document ready! Button element:", $("#button").length);
+		log("INFO", "Document ready! Button element:", $("#button").length);
 		loadLeaderboard();
 
 		$("#button").on('click',function(e)
 		{
-			console.log("Button clicked! started:", started);
+			log("INFO", "Button clicked! started:", started);
 			if (started)
 			{
-				console.log("Tacking...");
+				log("INFO", "Tacking...");
 				if (myboat!=null)
 				{
 					myboat.tack();
@@ -265,13 +280,13 @@
 			}
 			else
 			{
-				console.log("Starting game...");
+				log("INFO", "Starting game...");
 				started = true;
 				finished = false;
 				$("#button").val("Loading...");
 				$("#button").attr("disabled","true");
 				window.clearTimeout(processIdleTimeout);
-				console.log("load", starttime, windindex);
+				log("DEBUG", "load", starttime, windindex);
 				loadData(starttime-Math.round(windindex/10));
 				map.panTo(myboat.point);
 			}
@@ -499,9 +514,9 @@
         {
 			initWindCache(response);
 			bearing = getWindAverage(windcache)["avg"];
-			console.log("Bearing calculated:", bearing);
+			log("INFO", "Bearing calculated:", bearing);
 			if (isNaN(bearing) || bearing === undefined) {
-				console.error("Invalid bearing value:", bearing);
+				log("ERROR", "Invalid bearing value:", bearing);
 				bearing = 45; // Default
 			}
 			init();
@@ -518,10 +533,10 @@
 	function loadData(timestamp)
 	{
 
-		console.log("loadData called with timestamp:", timestamp);
+		log("DEBUG", "loadData called with timestamp:", timestamp);
 		$.getJSON("scripts/wind-data.php?timestamp="+timestamp,null,function(response)
         {
-			console.log("Wind data loaded, response:", response);
+			log("DEBUG", "Wind data loaded, response:", response);
 			initWindCache(response);
 
 			updateWindArrow(winddirection[windindex]);
@@ -538,7 +553,7 @@
 				else tacks_log.push("S"+windindex);
 
 				countdown = 3;
-				console.log("Starting countdown from:", countdown);
+				log("INFO", "Starting countdown from:", countdown);
 				window.setTimeout(runCountdown,500);
 			});
 
@@ -977,16 +992,16 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 
 	function runCountdown()
 	{
-		console.log("runCountdown called, countdown value:", countdown);
-	if (countdown<=0)
-	{
-		$("#button").val("Tack");
-		$("#button").removeAttr("disabled");
-		mode = "RACE";
-		window.clearTimeout(processIdleTimeout);
-		console.log("Countdown finished! Calling process()...");
-		process();
-	}
+		log("DEBUG", "runCountdown called, countdown value:", countdown);
+		if (countdown<=0)
+		{
+			$("#button").val("Tack");
+			$("#button").removeAttr("disabled");
+			mode = "RACE";
+			window.clearTimeout(processIdleTimeout);
+			log("INFO", "Countdown finished! Calling process()...");
+			process();
+		}
 		else
 		{
 			$("#button").val(countdown);
@@ -1045,7 +1060,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 			geoboat.show();
 			kalboat.show();
 			mpcboat.show();
-			console.log("Boats ready!");
+			log("INFO", "Boats ready!");
 
 			$("#wind_arrow").show();
 			updateWindArrow(bearing);
@@ -1141,7 +1156,7 @@ function processIdle()
 
 	function process()
 	{
-		console.log("process() called - started:", started, "finished:", finished, "windindex:", windindex);
+		log("DEBUG", "process() called - started:", started, "finished:", finished, "windindex:", windindex);
 		if ((started)&&(!finished))
 		{
 			if (windindex<windspeed.length)
@@ -1150,7 +1165,7 @@ function processIdle()
 				var step = windspeed[windindex]/2.2;
 				var speed = windspeed[windindex];
 
-				console.log("Processing wind - index:", windindex, "wind:", wind, "step:", step, "speed:", speed);
+				log("DEBUG", "Processing wind - index:", windindex, "wind:", wind, "step:", step, "speed:", speed);
 
 				windcache.shift();
 				windcache.push(wind);
@@ -1177,7 +1192,7 @@ function processIdle()
 				{
 					mydistance = google.maps.geometry.spherical.computeDistanceBetween(myboat.point, mark_top);
 					var bearingToMark = Math.round(google.maps.geometry.spherical.computeHeading(myboat.point, mark_top));
-					console.log("Moving myboat - distance:", mydistance, "bearingToMark:", bearingToMark);
+					log("DEBUG", "Moving myboat - distance:", mydistance, "bearingToMark:", bearingToMark);
 					myboat.moveByWind(wind,step,bearingToMark);
 					if (map.getBounds().contains(myboat.point)==false) map.panTo(myboat.point);
 				}
@@ -1689,7 +1704,7 @@ function processIdle()
 				max = Math.abs(shift);
 			}
 		}
-		//console.log("avg",avg+" "+max)
+		log("DEBUG", "avg", avg+" "+max)
 		return 	{avg:avg,max:max};
 	}
 	
@@ -1837,7 +1852,7 @@ function processIdle()
 			if (boatdirection>360) boatdirection = boatdirection - 360;
 			if (boatdirection<0) boatdirection = boatdirection + 360;
 			
-			//console.log("moveByWind "+iDirection+" "+iDistance+" "+iHeading+" "+boatdirection+" "+tackindex);
+			log("DEBUG", "moveByWind "+iDirection+" "+iDistance+" "+iHeading+" "+boatdirection+" "+tackindex);
 
 			var previousPoint = self.point;
 			self.point = getCoords(self.point, boatdirection, iDistance);
@@ -1864,7 +1879,7 @@ function processIdle()
 			var boatdirection = iWindDirection + (self.getTack()*tackangle);
 			if (boatdirection>360) boatdirection = boatdirection - 360;
 			if (boatdirection<0) boatdirection = boatdirection + 360;
-			 //console.log("headingByWind "+iWindDirection+" "+iBearingToMark+" "+shift+" "+self.getTack()+" "+boatdirection);
+			 log("DEBUG", "headingByWind "+iWindDirection+" "+iBearingToMark+" "+shift+" "+self.getTack()+" "+boatdirection);
 			if (overlay!=null)
 			{
 				overlay.move( self.point , boatdirection, 0);
