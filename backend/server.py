@@ -12,6 +12,29 @@ import math
 import urllib.parse
 import os
 import sys
+import signal
+
+
+LOG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'logs', 'server.log'))
+LOG_LEVEL = "DEBUG"
+
+
+def log(level, message, status=200, size='-'):
+    """Append a line to logs/server.log in common log format."""
+    # DEBUG = all logs, INFO = info+error, ERROR = error only.
+    current = (LOG_LEVEL or "").upper()
+    lvl = (level or "").upper()
+    if current == "ERROR" and lvl != "ERROR":
+        return
+    if current == "INFO" and lvl == "DEBUG":
+        return
+    if lvl not in ("INFO", "DEBUG", "ERROR"):
+        lvl = "INFO"
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    timestamp = time.strftime('%d/%b/%Y %H:%M:%S', time.localtime())
+    line = f'127.0.0.1 - - [{timestamp}] "{lvl} {message}" {status} {size}\n'
+    with open(LOG_FILE, 'a') as f:
+        f.write(line)
 
 
 class WindGameHandler(SimpleHTTPRequestHandler):
@@ -29,7 +52,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
 
-        # Route for service.php (wind data).
+        # Route for wind-data.php (wind data).
         if path == '/scripts/wind-data.php':
             self.handle_wind_service(query)
         # Route for wind-status.php (wind status).
@@ -38,7 +61,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         # Route for record.php (record scores via GET).
         elif path == '/scripts/record.php':
             self.handle_record()
-        # Route for route.php (MPC/beam tacks).
+        # Route for sailing route.php (MPC/beam tacks).
         elif path == '/scripts/route.php':
             self.handle_route(query)
         # Route for record_table.html (leaderboard).
@@ -56,10 +79,10 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         path = parsed.path
         query_params = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
 
-        # Debug: print POST request details.
-        print(f"[DEBUG] POST request - Full path: {self.path}")
-        print(f"[DEBUG] POST request - Parsed path: '{path}'")
-        print(f"[DEBUG] POST request - Query params: {query_params}")
+        # Debug: log POST request details.
+        log("DEBUG", f"POST request - Full path: {self.path}")
+        log("DEBUG", f"POST request - Parsed path: '{path}'")
+        log("DEBUG", f"POST request - Query params: {query_params}")
 
         # Route for authentication (redirect to main page).
         if (path == '/' or path == '') and 'signin' in query_params:
@@ -87,9 +110,9 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             try:
                 with open(wind_data_path, 'r') as f:
                     cls._real_wind_data = json.load(f)
-                    print(f"✓ Real data loaded: {len(cls._real_wind_data['direction'])} points")
+                    log("INFO", f"Real data loaded: {len(cls._real_wind_data['direction'])} points")
             except FileNotFoundError:
-                print(f"⚠ Data file not found: {wind_data_path}")
+                log("ERROR", f"Data file not found: {wind_data_path}")
                 cls._real_wind_data = None
         return cls._real_wind_data
 
@@ -109,7 +132,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             }
         else:
             # Fallback if data is unavailable.
-            print("⚠ Using fallback data")
+            log("ERROR", "Using fallback data")
             response = {
                 'timestamp': timestamp,
                 'direction': [45.0] * 6001,
@@ -531,10 +554,24 @@ Totally played {total} times</p>
 def run(port=8000):
     server_address = ('', port)
     httpd = HTTPServer(server_address, WindGameHandler)
+    log("INFO", f"WindGame server started at http://localhost:{port}")
+    log("INFO", "Press Ctrl+C to stop")
     print(f"🌊 WindGame server started at http://localhost:{port}")
-    print(f"⛵ Press Ctrl+C to stop")
-    print()
-    httpd.serve_forever()
+    print("⛵ Press Ctrl+C to stop")
+
+    def handle_sigterm(signum, frame):
+        log("INFO", "Server interrupted (SIGTERM)")
+        print("⛔ Server interrupted (SIGTERM)")
+        httpd.shutdown()
+    signal.signal(signal.SIGTERM, handle_sigterm)
+    
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        log("INFO", "Server interrupted (KeyboardInterrupt)")
+        print("⛔ Server interrupted (KeyboardInterrupt)")
+    finally:
+        httpd.server_close()
 
 if __name__ == '__main__':
     run()
