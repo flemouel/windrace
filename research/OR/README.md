@@ -65,7 +65,7 @@ python3 mpc_simplemove.py \
   --finish-lat 18.4085703 --finish-lng -64.5333926 \
   --horizon 90 \
   --tackangle 43 \
-  --goal 15 \
+  --goal 20 \
   --alpha 1.2
 ```
 
@@ -76,7 +76,7 @@ python3 mpc_realmove.py \
   --finish-lat 18.4085703 --finish-lng -64.5333926 \
   --horizon 90 \
   --tackangle 43 \
-  --goal 15 \
+  --goal 20 \
   --alpha 1.2 \
   --near-threshold 200 \
   --near-delay 10 \
@@ -90,7 +90,7 @@ python3 beam_realmove.py \
   --finish-lat 18.4085703 --finish-lng -64.5333926 \
   --horizon 6001 \
   --tackangle 43 \
-  --goal 15 \
+  --goal 20 \
   --alpha 0 \
   --near-threshold 200 \
   --near-delay 10 \

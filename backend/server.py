@@ -11,11 +11,13 @@ import time
 import math
 import urllib.parse
 import os
+import sys
 
 
 class WindGameHandler(SimpleHTTPRequestHandler):
     LEADERBOARD_JSON = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'record_data.json')
     LEADERBOARD_HTML = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'record_table.html')
+    _route_cache = {}
 
     def do_GET(self):
         # Parse the URL.
@@ -32,6 +34,9 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         # Route for record.php (record scores via GET).
         elif path == '/scripts/record.php':
             self.handle_record()
+        # Route for route.php (MPC/beam tacks).
+        elif path == '/scripts/route.php':
+            self.handle_route(query)
         # Route for boat.svg.php (boat image).
         elif path == '/images/boat.svg.php':
             self.handle_boat_svg(query)
@@ -192,6 +197,152 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         }
 
         self.send_json_response(response)
+
+
+    def handle_route(self, query):
+        """Return tack sequence for MPC or beam search."""
+        method = query.get('method', [''])[0].strip().lower()
+        if method not in ('mpc', 'beam'):
+            self.send_json_response({'tacks': '', 'steps': 0, 'total_sailed': 0})
+            return
+
+        def read_float(key, default):
+            try:
+                return float(query.get(key, [default])[0])
+            except (TypeError, ValueError):
+                return default
+
+        def read_int(key, default):
+            try:
+                return int(query.get(key, [default])[0])
+            except (TypeError, ValueError):
+                return default
+
+        start_lat = read_float('start_lat', 0.0)
+        start_lng = read_float('start_lng', 0.0)
+        finish_lat = read_float('finish_lat', 0.0)
+        finish_lng = read_float('finish_lng', 0.0)
+        start_index = read_int('start_index', 0)
+        horizon = read_int('horizon', 60)
+        tackangle = read_float('tackangle', 43.0)
+        goal = read_float('goal', 20.0)
+        alpha = read_float('alpha', 1.0)
+        near_threshold = read_float('near_threshold', 200.0)
+        near_delay = read_int('near_delay', 10)
+        far_delay = read_int('far_delay', 20)
+        beam_width = read_int('beam_width', 200)
+
+        cache_key = (
+            method,
+            start_lat,
+            start_lng,
+            finish_lat,
+            finish_lng,
+            start_index,
+            horizon,
+            tackangle,
+            goal,
+            alpha,
+            near_threshold,
+            near_delay,
+            far_delay,
+            beam_width,
+        )
+        if cache_key in self._route_cache:
+            self.send_json_response(self._route_cache[cache_key])
+            return
+
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        or_dir = os.path.join(base_dir, 'research', 'OR')
+        if or_dir not in sys.path:
+            sys.path.append(or_dir)
+
+        wind_path = os.path.join(base_dir, 'winddata', 'wind_data.json')
+        if method == 'mpc':
+            try:
+                import mpc_realmove
+            except ImportError:
+                self.send_json_response({'tacks': '', 'steps': 0, 'total_sailed': 0})
+                return
+            wind_dir, wind_speed = mpc_realmove.load_wind_data(wind_path)
+            if start_index > 0:
+                wind_dir = wind_dir[start_index:]
+                wind_speed = wind_speed[start_index:]
+            result = mpc_realmove.mpc_plan_real(
+                wind_dir,
+                wind_speed,
+                start_lat,
+                start_lng,
+                finish_lat,
+                finish_lng,
+                tackangle=tackangle,
+                horizon=horizon,
+                goal_dist=goal,
+                alpha=alpha,
+                near_threshold=near_threshold,
+                near_delay=near_delay,
+                far_delay=far_delay,
+            )
+        else:
+            try:
+                import beam_realmove
+            except ImportError:
+                self.send_json_response({'tacks': '', 'steps': 0, 'total_sailed': 0})
+                return
+            wind_dir, wind_speed = beam_realmove.load_wind_data(wind_path)
+            if start_index > 0:
+                wind_dir = wind_dir[start_index:]
+                wind_speed = wind_speed[start_index:]
+            result = beam_realmove.beam_search(
+                wind_dir,
+                wind_speed,
+                start_lat,
+                start_lng,
+                finish_lat,
+                finish_lng,
+                tackangle=tackangle,
+                horizon=horizon,
+                goal_dist=goal,
+                alpha=alpha,
+                beam_width=beam_width,
+                near_threshold=near_threshold,
+                near_delay=near_delay,
+                far_delay=far_delay,
+            )
+            if result is None:
+                result = {'tacks': [], 'steps': 0, 'total_sailed': 0}
+            else:
+                result = {
+                    'tacks': result.tacks,
+                    'steps': result.step_count,
+                    'total_sailed': result.boat.total_distance,
+                }
+
+        def offset_tacks(tacks, offset):
+            if offset == 0:
+                return tacks
+            adjusted = []
+            for tack in tacks:
+                if len(tack) < 2:
+                    continue
+                label = tack[0]
+                try:
+                    idx = int(tack[1:])
+                except ValueError:
+                    continue
+                adjusted.append(f"{label}{idx + offset}")
+            return adjusted
+
+        tacks_list = result.get('tacks', [])
+        tacks_list = offset_tacks(tacks_list, start_index)
+        payload = {
+            'method': method,
+            'tacks': ",".join(tacks_list),
+            'steps': result.get('steps', 0),
+            'total_sailed': result.get('total_sailed', 0),
+        }
+        self._route_cache[cache_key] = payload
+        self.send_json_response(payload)
 
     def handle_leaderboard(self):
         """Return the leaderboard."""

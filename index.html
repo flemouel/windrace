@@ -180,12 +180,14 @@
 	var mydistance = startdistance;
 	var geodistance = startdistance;
 	var kaldistance = startdistance;
+	var mpcdistance = startdistance;
 	var myboat_tacks = new Array();
 	var srboat_tacks = new Array();
 	var geoboat_tacks = new Array();
 	var kalboat_tacks = new Array();
 	var mpcboat_tacks = new Array();
 	var tacks_log = new Array();
+	var mpcboat_tacks_ready = false;
 	var map = null;
 	var mark = null;
 	var started = false;
@@ -217,6 +219,12 @@
 	var geoboat_name = "[RBC] Geo boat";
 	var kalboat_name = "[RBC] Kal boat";
 	var mpcboat_name = "[MBC] MPC 90/1.2";
+	var mpc_horizon = 90;
+	var mpc_alpha = 1.2;
+	var mpc_goal = 20;
+	var mpc_near_threshold = 200;
+	var mpc_near_delay = 10;
+	var mpc_far_delay = 20;
 	var courseDistance = startdistance;
 	
 
@@ -372,6 +380,7 @@
 		srdistance = startdistance;
 		mydistance = startdistance;
 		geodistance = startdistance;
+		mpcdistance = startdistance;
 		
 		myboat_tacks = new Array();
 		srboat_tacks = new Array();
@@ -379,6 +388,7 @@
 		kalboat_tacks = new Array();
 		mpcboat_tacks = new Array();
 		tacks_log = new Array();
+		mpcboat_tacks_ready = false;
 		
 		started = false;
 		finished = false;
@@ -443,6 +453,9 @@
 			if (left_arc!=null) left_arc.setMap(null);
 			if (right_arc!=null) right_arc.setMap(null);
 			if (course_line!=null) course_line.setMap(null);
+
+			mpcboat_tacks_ready = false;
+			mpcboat_tacks.length = 0;
 
 			var startIndex = windcache_length;
 			var endIndex = finishIndexValue;
@@ -510,17 +523,74 @@
 			myboat.headingByWind(winddirection[windindex],bearing);
 			geoboat.headingByWind(winddirection[windindex],bearing);
 			kalboat.headingByWind(winddirection[windindex],bearing);
-			mpcboat.headingByWind(winddirection[windindex],bearing);
+			if (mpcboat!=null) mpcboat.headingByWind(winddirection[windindex],bearing);
 
-			if (myboat.getTack()==1) tacks_log.push("P"+windindex);
-			else tacks_log.push("S"+windindex);
+			loadMpcRouteTacks(function()
+			{
+				if (myboat.getTack()==1) tacks_log.push("P"+windindex);
+				else tacks_log.push("S"+windindex);
 
-			countdown = 3;
-			console.log("Starting countdown from:", countdown);
-			window.setTimeout(runCountdown,500);
+				countdown = 3;
+				console.log("Starting countdown from:", countdown);
+				window.setTimeout(runCountdown,500);
+			});
 
 		});
 
+	}
+
+
+	function fillTacksArray(iTarget, iTacksString)
+	{
+		iTarget.length = 0;
+		if (!iTacksString) return;
+		var tacks_raw = iTacksString.split(",");
+		for (var i=0; i<tacks_raw.length; i++)
+		{
+			var letter = tacks_raw[i].substring(0, 1);
+			var value = tacks_raw[i].substring(1, tacks_raw[i].length);
+			if (letter=="P") iTarget[parseInt(value)] = 1;
+			else if (letter=="S") iTarget[parseInt(value)] = -1;
+		}
+	}
+
+
+	function loadMpcRouteTacks(iCallback, iStartIndex)
+	{
+		if (mpcboat_tacks_ready)
+		{
+			if (typeof(iCallback)=="function") iCallback();
+			return;
+		}
+		if (initial_boat_location==null || mark_top==null)
+		{
+			if (typeof(iCallback)=="function") iCallback();
+			return;
+		}
+		var startIndex = (typeof(iStartIndex)=="number") ? iStartIndex : windindex;
+		$.getJSON("scripts/route.php", {
+			method: "mpc",
+			start_lat: initial_boat_location.lat(),
+			start_lng: initial_boat_location.lng(),
+			finish_lat: mark_top.lat(),
+			finish_lng: mark_top.lng(),
+			start_index: startIndex,
+			horizon: mpc_horizon,
+			tackangle: tackangle,
+			goal: mpc_goal,
+			alpha: mpc_alpha,
+			near_threshold: mpc_near_threshold,
+			near_delay: mpc_near_delay,
+			far_delay: mpc_far_delay
+		}).done(function(response)
+		{
+			fillTacksArray(mpcboat_tacks, response["tacks"] || "");
+			mpcboat_tacks_ready = true;
+			if (typeof(iCallback)=="function") iCallback();
+		}).fail(function()
+		{
+			if (typeof(iCallback)=="function") iCallback();
+		});
 	}
 	
 	var chart = null;
@@ -638,10 +708,10 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		bounds.extend(initial_boat_location);
 		map.fitBounds(bounds);
 			
-		srboat = new Boat({id:'srboat',boatName:srboat_name, color:'000000', point:initial_boat_location, direction:bearing+tackangle});
+		srboat = new Boat({id:'srboat',boatName:srboat_name, color:'2f77e5', point:initial_boat_location, direction:bearing+tackangle});
 		myboat = new Boat({id:'myboat',boatName:myboat_name, color:'ff0000', point:initial_boat_location, direction:bearing+tackangle});
-		geoboat = new Boat({id:'geoboat',boatName:geoboat_name, color:'00aa00', point:initial_boat_location, direction:bearing+tackangle});
-		kalboat = new Boat({id:'kalboat',boatName:kalboat_name, color:'9933ff', point:initial_boat_location, direction:bearing+tackangle});
+		geoboat = new Boat({id:'geoboat',boatName:geoboat_name, color:'4a9bff', point:initial_boat_location, direction:bearing+tackangle});
+		kalboat = new Boat({id:'kalboat',boatName:kalboat_name, color:'1f62c8', point:initial_boat_location, direction:bearing+tackangle});
 		mpcboat = new Boat({id:'mpcboat',boatName:mpcboat_name, color:'00cc66', point:initial_boat_location, direction:bearing+tackangle});
 		function setupPreviewBoat(boat)
 		{
@@ -660,6 +730,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		setupPreviewBoat(myboat);
 		setupPreviewBoat(geoboat);
 		setupPreviewBoat(kalboat);
+		setupPreviewBoat(mpcboat);
 		srboat.showName(true);
 		srboat.showSpeed(false);
 		srboat.showDirection(true);
@@ -672,6 +743,9 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		kalboat.showName(true);
 		kalboat.showSpeed(false);
 		kalboat.showDirection(true);
+		mpcboat.showName(true);
+		mpcboat.showSpeed(false);
+		mpcboat.showDirection(true);
 		
 		var tacks_raw = tacks_string.split(",");
 		for (var i=0; i<tacks_raw.length; i++)
@@ -686,114 +760,131 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		updateWindArrow(bearing);
 		
 		init();
-		
-	$.getJSON("scripts/wind-data.php?timestamp="+starttime,null,function(response)
+
+		mpcboat_tacks_ready = false;
+		mpcboat_tacks.length = 0;
+		loadMpcRouteTacks(function()
 		{
-			initWindCache(response);
-			
-			updateWindArrow(winddirection[windindex]);
-			updateLaylines(winddirection[windindex],getWindAverage(windcache))
-			srboat.headingByWind(winddirection[windindex],bearing);
-			myboat.headingByWind(winddirection[windindex],bearing);
-			geoboat.headingByWind(winddirection[windindex],bearing);
-			kalboat.headingByWind(winddirection[windindex],bearing);
-			mpcboat.headingByWind(winddirection[windindex],bearing);
-
-			var slider =  $("<div></div>").appendTo($( "#map_scroll" )).slider(
+			$.getJSON("scripts/wind-data.php?timestamp="+starttime,null,function(response)
 			{
+				initWindCache(response);
 				
-				range: "min",
-				value: windcache_length,
-				min: windcache_length,
-				step: 1,
-				max: finishindex-2,
-					slide: function( event, ui ) 
-					{
-						enqueueReplayIndex(ui.value);
-					}
-				});
-			
-			finished = false;
-			windindex = windcache_length;
-			chartdata = new Array();
+				updateWindArrow(winddirection[windindex]);
+				updateLaylines(winddirection[windindex],getWindAverage(windcache))
+				srboat.headingByWind(winddirection[windindex],bearing);
+				myboat.headingByWind(winddirection[windindex],bearing);
+				geoboat.headingByWind(winddirection[windindex],bearing);
+				kalboat.headingByWind(winddirection[windindex],bearing);
+				mpcboat.headingByWind(winddirection[windindex],bearing);
 
-			while(!finished)
-			{
-				if (windindex<windspeed.length)
+				var slider =  $("<div></div>").appendTo($( "#map_scroll" )).slider(
 				{
 					
-					var step = windspeed[windindex]/2.2;
-	
-					windcache.shift();
-					windcache.push(winddirection[windindex]);
-					var avg = getWindAverage(windcache);
-					average[windindex] = avg["avg"];
-					maximum[windindex] = avg["max"];
-					
-					var wd = winddirection[windindex];
-					if (wd>180) wd = wd - 360;
-					var ad = avg["avg"];
-					if (ad>180) ad = ad - 360;
-					
-					chartdata.push([windindex, wd, ad]);
-					
-					// move boats
-					if (typeof(tacks[windindex])!="undefined") myboat.setTack(tacks[windindex]);
-					var myPrev = myboat.point;
-					var bearingToMark = Math.round(google.maps.geometry.spherical.computeHeading(myboat.point, mark_top));
-					myboat.moveByWind(winddirection[windindex],step,bearingToMark);
-					var myDir = Math.round(google.maps.geometry.spherical.computeHeading(myPrev, myboat.point));
-					myboat._previewData[windindex] = {point: myboat.point, direction: myDir, speed: step};
-
-					var srPrev = srboat.point;
-					moveBoat_corridorMeanWind(srboat,winddirection[windindex], step, avg);
-					var srDir = Math.round(google.maps.geometry.spherical.computeHeading(srPrev, srboat.point));
-					srboat._previewData[windindex] = {point: srboat.point, direction: srDir, speed: step};
-
-					var geoPrev = geoboat.point;
-					moveBoat_geometric(geoboat,winddirection[windindex], step);
-					var geoDir = Math.round(google.maps.geometry.spherical.computeHeading(geoPrev, geoboat.point));
-					geoboat._previewData[windindex] = {point: geoboat.point, direction: geoDir, speed: step};
-
-					var kalPrev = kalboat.point;
-					moveBoat_kalman(kalboat,winddirection[windindex], step, avg);
-					var kalDir = Math.round(google.maps.geometry.spherical.computeHeading(kalPrev, kalboat.point));
-					kalboat._previewData[windindex] = {point: kalboat.point, direction: kalDir, speed: step};
-					
-					srdistance = google.maps.geometry.spherical.computeDistanceBetween(srboat.point, mark_top);
-					mydistance = google.maps.geometry.spherical.computeDistanceBetween(myboat.point, mark_top);
-					geodistance = google.maps.geometry.spherical.computeDistanceBetween(geoboat.point, mark_top);
-					kaldistance = google.maps.geometry.spherical.computeDistanceBetween(kalboat.point, mark_top);
-					var leaderDistance = Math.min(mydistance, srdistance, geodistance, kaldistance);
-					finalresult = Math.round(leaderDistance - mydistance);
-					distance[windindex] = mydistance;
-					result[windindex] = finalresult;
+					range: "min",
+					value: windcache_length,
+					min: windcache_length,
+					step: 1,
+					max: finishindex-2,
+						slide: function( event, ui ) 
+						{
+							enqueueReplayIndex(ui.value);
+						}
+					});
 				
-					if ((mydistance<20)||(srdistance<20)||(geodistance<20)||(kaldistance<20)) finished = true;
-					
-					if (wind_track)
-					{
-						var path = wind_track.getPath();
-						path.push(getCoords(mark_top,winddirection[windindex]+180,mydistance+400));
-					}
-					if (average_track)
-					{
-						var path = average_track.getPath();
-						path.push(getCoords(mark_top,avg["avg"]+180,mydistance+400));
-					}
-					windindex++;
-				}
-				else
-				{
-					finished=true;
-				}
-			}
+				finished = false;
+				windindex = windcache_length;
+				chartdata = new Array();
 
-			var replayStartPoint = initial_boat_location;
-			if (typeof(myboat)!="undefined" && myboat!=null) myboat.resetPath(replayStartPoint);
-			if (typeof(srboat)!="undefined" && srboat!=null) srboat.resetPath(replayStartPoint);
-			if (typeof(geoboat)!="undefined" && geoboat!=null) geoboat.resetPath(replayStartPoint);
-			if (typeof(kalboat)!="undefined" && kalboat!=null) kalboat.resetPath(replayStartPoint);
+				while(!finished)
+				{
+					if (windindex<windspeed.length)
+					{
+						
+						var step = windspeed[windindex]/2.2;
+		
+						windcache.shift();
+						windcache.push(winddirection[windindex]);
+						var avg = getWindAverage(windcache);
+						average[windindex] = avg["avg"];
+						maximum[windindex] = avg["max"];
+						
+						var wd = winddirection[windindex];
+						if (wd>180) wd = wd - 360;
+						var ad = avg["avg"];
+						if (ad>180) ad = ad - 360;
+						
+						chartdata.push([windindex, wd, ad]);
+						
+						// move boats
+						if (typeof(tacks[windindex])!="undefined") myboat.setTack(tacks[windindex]);
+						var myPrev = myboat.point;
+						var bearingToMark = Math.round(google.maps.geometry.spherical.computeHeading(myboat.point, mark_top));
+						myboat.moveByWind(winddirection[windindex],step,bearingToMark);
+						var myDir = Math.round(google.maps.geometry.spherical.computeHeading(myPrev, myboat.point));
+						myboat._previewData[windindex] = {point: myboat.point, direction: myDir, speed: step};
+
+						var srPrev = srboat.point;
+						moveBoat_corridorMeanWind(srboat,winddirection[windindex], step, avg);
+						var srDir = Math.round(google.maps.geometry.spherical.computeHeading(srPrev, srboat.point));
+						srboat._previewData[windindex] = {point: srboat.point, direction: srDir, speed: step};
+
+						var geoPrev = geoboat.point;
+						moveBoat_geometric(geoboat,winddirection[windindex], step);
+						var geoDir = Math.round(google.maps.geometry.spherical.computeHeading(geoPrev, geoboat.point));
+						geoboat._previewData[windindex] = {point: geoboat.point, direction: geoDir, speed: step};
+
+						var kalPrev = kalboat.point;
+						moveBoat_kalman(kalboat,winddirection[windindex], step, avg);
+						var kalDir = Math.round(google.maps.geometry.spherical.computeHeading(kalPrev, kalboat.point));
+						kalboat._previewData[windindex] = {point: kalboat.point, direction: kalDir, speed: step};
+						
+						if (mpcboat!=null)
+						{
+							if (mpcboat_tacks_ready && typeof(mpcboat_tacks[windindex])!="undefined") mpcboat.setTack(mpcboat_tacks[windindex]);
+							var mpcPrev = mpcboat.point;
+							var mpcBearing = Math.round(google.maps.geometry.spherical.computeHeading(mpcboat.point, mark_top));
+							mpcboat.moveByWind(winddirection[windindex],step,mpcBearing);
+							var mpcDir = Math.round(google.maps.geometry.spherical.computeHeading(mpcPrev, mpcboat.point));
+							mpcboat._previewData[windindex] = {point: mpcboat.point, direction: mpcDir, speed: step};
+						}
+						
+						srdistance = google.maps.geometry.spherical.computeDistanceBetween(srboat.point, mark_top);
+						mydistance = google.maps.geometry.spherical.computeDistanceBetween(myboat.point, mark_top);
+						geodistance = google.maps.geometry.spherical.computeDistanceBetween(geoboat.point, mark_top);
+						kaldistance = google.maps.geometry.spherical.computeDistanceBetween(kalboat.point, mark_top);
+						if (mpcboat!=null) mpcdistance = google.maps.geometry.spherical.computeDistanceBetween(mpcboat.point, mark_top);
+						var leaderDistance = Math.min(mydistance, srdistance, geodistance, kaldistance);
+						if (mpcboat!=null) leaderDistance = Math.min(leaderDistance, mpcdistance);
+						finalresult = Math.round(leaderDistance - mydistance);
+						distance[windindex] = mydistance;
+						result[windindex] = finalresult;
+					
+						if ((mydistance<20)||(srdistance<20)||(geodistance<20)||(kaldistance<20)||(mpcboat!=null && mpcdistance<20)) finished = true;
+						
+						if (wind_track)
+						{
+							var path = wind_track.getPath();
+							path.push(getCoords(mark_top,winddirection[windindex]+180,mydistance+400));
+						}
+						if (average_track)
+						{
+							var path = average_track.getPath();
+							path.push(getCoords(mark_top,avg["avg"]+180,mydistance+400));
+						}
+						windindex++;
+					}
+					else
+					{
+						finished=true;
+					}
+				}
+
+				var replayStartPoint = initial_boat_location;
+				if (typeof(myboat)!="undefined" && myboat!=null) myboat.resetPath(replayStartPoint);
+				if (typeof(srboat)!="undefined" && srboat!=null) srboat.resetPath(replayStartPoint);
+				if (typeof(geoboat)!="undefined" && geoboat!=null) geoboat.resetPath(replayStartPoint);
+				if (typeof(kalboat)!="undefined" && kalboat!=null) kalboat.resetPath(replayStartPoint);
+				if (typeof(mpcboat)!="undefined" && mpcboat!=null) mpcboat.resetPath(replayStartPoint);
 			
 			var options = 
 			{
@@ -810,25 +901,26 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 			  vAxis: { direction: 1, textPosition: 'in', minValue: 30 }
 			};
 
-			ensureChartsReady(function()
-			{
-				var container = document.getElementById('curve_chart');
-				if (container != null) {
-					var dataTable = new google.visualization.DataTable();
-					dataTable.addColumn('number', 'Index');
-					dataTable.addColumn('number', 'Wind');
-					dataTable.addColumn('number', 'Average');
+				ensureChartsReady(function()
+				{
+					var container = document.getElementById('curve_chart');
+					if (container != null) {
+						var dataTable = new google.visualization.DataTable();
+						dataTable.addColumn('number', 'Index');
+						dataTable.addColumn('number', 'Wind');
+						dataTable.addColumn('number', 'Average');
 
-					for (var i = 0; i < chartdata.length; i++) {
-						dataTable.addRow(chartdata[i]);
+						for (var i = 0; i < chartdata.length; i++) {
+							dataTable.addRow(chartdata[i]);
+						}
+
+	    				chart = new google.visualization.LineChart(container);
+	    				chart.draw(dataTable, options);
 					}
-
-    				chart = new google.visualization.LineChart(container);
-    				chart.draw(dataTable, options);
-				}
+				});
+				if (typeof(onReady)=="function") onReady();
 			});
-			if (typeof(onReady)=="function") onReady();
-		});
+		}, windcache_length);
 	}
 	
 	
@@ -869,6 +961,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 		if (srboat!=null) srboat.moveToIndex(index);
 		if (geoboat!=null) geoboat.moveToIndex(index);
 		if (kalboat!=null) kalboat.moveToIndex(index);
+		if (mpcboat!=null) mpcboat.moveToIndex(index);
 	}
 	
 	
@@ -917,11 +1010,12 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 			srboat_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
 			geoboat_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
 			kalboat_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
+			mpcboat_tacks.push([initial_boat_location.lat(),initial_boat_location.lng()]);
 
-			srboat = new Boat({id:"srboat",boatName:srboat_name, color:"000000", point:initial_boat_location, direction:bearing+tackangle});
+			srboat = new Boat({id:"srboat",boatName:srboat_name, color:"2f77e5", point:initial_boat_location, direction:bearing+tackangle});
 			myboat = new Boat({id:"myboat",boatName:myboat_name, color:"ff0000", point:initial_boat_location, direction:bearing+tackangle});
-			geoboat = new Boat({id:"geoboat",boatName:geoboat_name, color:"00aa00", point:initial_boat_location, direction:bearing+tackangle});
-			kalboat = new Boat({id:"kalboat",boatName:kalboat_name, color:"9933ff", point:initial_boat_location, direction:bearing+tackangle});
+			geoboat = new Boat({id:"geoboat",boatName:geoboat_name, color:"4a9bff", point:initial_boat_location, direction:bearing+tackangle});
+			kalboat = new Boat({id:"kalboat",boatName:kalboat_name, color:"1f62c8", point:initial_boat_location, direction:bearing+tackangle});
 			mpcboat = new Boat({id:"mpcboat",boatName:mpcboat_name, color:"00cc66", point:initial_boat_location, direction:bearing+tackangle});
 
 			srboat.showName(true);
@@ -948,6 +1042,8 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 			updateWindArrow(bearing);
 
 			updateRanking();
+
+			loadMpcRouteTacks();
 
 		}
 		
@@ -1093,10 +1189,19 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 					if (rec!=null) kalboat_tacks.push(rec);
 				}
 
+					if (mpcboat!=null)
+					{
+						mpcdistance = google.maps.geometry.spherical.computeDistanceBetween(mpcboat.point, mark_top);
+						if (mpcboat_tacks_ready && typeof(mpcboat_tacks[windindex])!="undefined") mpcboat.setTack(mpcboat_tacks[windindex]);
+						var mpcBearing = Math.round(google.maps.geometry.spherical.computeHeading(mpcboat.point, mark_top));
+						mpcboat.moveByWind(wind,step,mpcBearing);
+					}
+
 				var leaderDistance = mydistance;
 				if (srboat!=null) leaderDistance = Math.min(leaderDistance, srdistance);
 				if (geoboat!=null) leaderDistance = Math.min(leaderDistance, geodistance);
-				if (kalboat!=null) leaderDistance = Math.min(leaderDistance, kaldistance);
+					if (kalboat!=null) leaderDistance = Math.min(leaderDistance, kaldistance);
+					if (mpcboat!=null) leaderDistance = Math.min(leaderDistance, mpcdistance);
 				finalresult = Math.round(leaderDistance - mydistance);
 
 				var myTotalDist = Math.round(myboat.getTotalDistance());
@@ -1104,7 +1209,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 
 				updateRanking();
 
-				if ((mydistance<20)||(srdistance<20)||(geodistance<20)||(kaldistance<20)) finished = true;
+					if ((mydistance<20)||(srdistance<20)||(geodistance<20)||(kaldistance<20)||(mpcdistance<20)) finished = true;
 
 				windindex++;
 			}
@@ -1123,12 +1228,14 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 			if (srboat!=null) srboat_tacks.push([srboat.point.lat(),srboat.point.lng()]);
 			if (geoboat!=null) geoboat_tacks.push([geoboat.point.lat(),geoboat.point.lng()]);
 			if (kalboat!=null) kalboat_tacks.push([kalboat.point.lat(),kalboat.point.lng()]);
+			if (mpcboat!=null) mpcboat_tacks.push([mpcboat.point.lat(),mpcboat.point.lng()]);
 
 			var boatResults = [];
 			if (myboat!=null) boatResults.push({name: myboat_name, distance: mydistance, boat: myboat});
 			if (srboat!=null) boatResults.push({name: srboat_name, distance: srdistance, boat: srboat});
 			if (geoboat!=null) boatResults.push({name: geoboat_name, distance: geodistance, boat: geoboat});
 			if (kalboat!=null) boatResults.push({name: kalboat_name, distance: kaldistance, boat: kalboat});
+			if (mpcboat!=null) boatResults.push({name: mpcboat_name, distance: mpcdistance, boat: mpcboat});
 
 			var minDistance = null;
 			for (var i=0; i<boatResults.length; i++)
@@ -1147,7 +1254,9 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 			{
 				var progress = Math.round(courseDistance - winner.distance);
 				var totalSailed = Math.round(winner.boat.getTotalDistance());
-				$.getJSON("scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:progress, boat_name: winner.name, tacks:tacks_log.join(","), total_sailed:totalSailed, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}).done(function(response)
+				var tacks_value = tacks_log.join(",");
+				if (winner.boat === mpcboat) tacks_value = "";
+				$.getJSON("scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:progress, boat_name: winner.name, tacks:tacks_value, total_sailed:totalSailed, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}).done(function(response)
 				{
 					onGameFinish(response["id"], response["achievement"], response["recordtime"], response["total_sailed"]);
 				});
@@ -1186,7 +1295,7 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 				boats.push({
 					name: srboat_name,
 				distance: srdistance,
-				color: "#000000"
+				color: "#2f77e5"
 			});
 		}
 		
@@ -1195,16 +1304,25 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 				boats.push({
 					name: geoboat_name,
 				distance: geodistance,
-				color: "#00aa00"
+				color: "#4a9bff"
 			});
 		}
 
 		if (kalboat != null && kaldistance !== undefined)
 		{
-				boats.push({
-					name: kalboat_name,
+			boats.push({
+				name: kalboat_name,
 				distance: kaldistance,
-				color: "#9933ff"
+				color: "#1f62c8"
+			});
+		}
+		
+		if (mpcboat != null && mpcdistance !== undefined)
+		{
+			boats.push({
+				name: mpcboat_name,
+				distance: mpcdistance,
+				color: "#00cc66"
 			});
 		}
 
