@@ -88,14 +88,16 @@
 			return false;
 		});
 
-		$("#replay_back").on('click',function(e)
-		{
-			$("#replay_slider").hide();
-			$("#map_scroll .ui-slider").hide();
-				$("#replay_back").hide();
-				$(".info").slideDown(200);
-				return false;
-			});
+	$("#replay_back").on('click',function(e)
+	{
+		$("#replay_slider").hide();
+		$("#map_scroll .ui-slider").hide();
+			$("#replay_back").hide();
+			$(".info").slideDown(200);
+			mode = "IDLE";
+			loadDataIdle();
+			return false;
+		});
 
 		$("#replay_slider").on('input change',function(e)
 		{
@@ -111,6 +113,8 @@
 
 	function onGameFinish(id,achievement,recordtime,totalSailed)
 	{
+		mode = "IDLE";
+		loadDataIdle();
 		console.log("onGameFinish called - id:", id, "achievement:", achievement, "recordtime:", recordtime, "finalresult:", finalresult, "totalSailed:", totalSailed);
 		var achievementText = "";
 		if (achievement)
@@ -432,6 +436,8 @@
 			if ($(".info").is(":visible")) {
 				$(".info").slideUp(200);
 			}
+			mode = "REPLAY";
+			window.clearTimeout(processIdleTimeout);
 
 			replayQueue = new Array();
 			replayDrainActive = false;
@@ -499,6 +505,7 @@
 				bearing = 45; // Default
 			}
 			init();
+			mode = "IDLE";
 			processIdle();
 			$("#button").removeAttr("disabled");
 			$("#button").val("Start");
@@ -971,13 +978,15 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 	function runCountdown()
 	{
 		console.log("runCountdown called, countdown value:", countdown);
-		if (countdown<=0)
-		{
-			$("#button").val("Tack");
-			$("#button").removeAttr("disabled");
-			console.log("Countdown finished! Calling process()...");
-			process();
-		}
+	if (countdown<=0)
+	{
+		$("#button").val("Tack");
+		$("#button").removeAttr("disabled");
+		mode = "RACE";
+		window.clearTimeout(processIdleTimeout);
+		console.log("Countdown finished! Calling process()...");
+		process();
+	}
 		else
 		{
 			$("#button").val(countdown);
@@ -1084,13 +1093,19 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 
 	}
 	
-	var processIdleTimeout = 0;
+var processIdleTimeout = 0;
+var mode = "IDLE";
 	
 
 
-	function processIdle()
+function processIdle()
+{
+	if (mode !== "IDLE")
 	{
-		var reload = false;
+		window.clearTimeout(processIdleTimeout);
+		return;
+	}
+	var reload = false;
 		for (var i=0; i<10; i++)
 		{
 			if (windindex+1<winddirection.length)
