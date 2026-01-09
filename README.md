@@ -91,11 +91,13 @@ windgame/
 
 The Python server emulates PHP endpoints from the online version:
 
-- **GET /scripts/service.php**: Generates simulated wind data (direction and speed)
+- **GET /scripts/wind-data.php**: Returns wind data (direction and speed)
+- **GET /scripts/wind-status.php**: Returns current wind status (HTML)
 - **GET /scripts/record.php**: Records results and assigns achievements
-- **POST /scripts/wind.php**: Returns current wind status
-- **POST /scripts/save.php**: Empty endpoint for compatibility
-- **GET /images/avatar.php**: Returns a default SVG avatar
+- **POST /scripts/record.php**: Records results and assigns achievements
+- **GET /scripts/route.php**: Returns tack sequence for MPC/beam
+- **GET /images/boat.svg.php**: Returns a boat SVG with the requested color
+- **POST /resdata/record_table.html**: Returns leaderboard HTML
 
 ### Game Logic (frontend/index.html)
 
