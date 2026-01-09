@@ -5,21 +5,21 @@
 📦 INSTALLATION SUCCESSFUL!
 
 📁 Project structure:
-   ├── index.html              Main game page
+   ├── frontend/               Frontend assets
+   │   └── index.html          Main game page
    ├── start-server.sh         Automatic launch script
    ├── stop-server.sh          Server stop script
    ├── QUICKSTART.md           Quick start guide
    ├── README.md               Complete documentation
-   │
    ├── backend/                Backend server
    │   └── server.py           Python development server
-   ├── css/                    Stylesheets
+   ├── frontend/css/           Stylesheets
    │   ├── screen.css          Main and responsive styles
    │   └── waves.css           Wave animations (25 levels)
-   ├── js/                     JavaScript scripts
+   ├── frontend/js/            JavaScript scripts
    │   ├── boat.js             Navigation logic
    │   └── usgsoverlay.js      Boat display on Google Maps
-   ├── images/                 Images and textures
+   ├── frontend/images/        Images and textures
    │   ├── wave1.png           Light waves (5-50px)
    │   ├── wave2.png           Medium waves (100x20-65px)
    │   └── wave3.png           Strong waves (50-100px)
@@ -63,10 +63,9 @@
    • Full details: README.md
 
 🔧 ARCHITECTURE:
-   • Backend: Python server (emulates PHP endpoints)
+   • Backend: Python server (emulates original PHP endpoints)
    • Frontend: JavaScript + jQuery + Google Maps API
    • No database (all in memory)
    • No authentication required
 
 🎮 ENJOY THE GAME!
-

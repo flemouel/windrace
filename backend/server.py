@@ -17,7 +17,11 @@ import sys
 class WindGameHandler(SimpleHTTPRequestHandler):
     LEADERBOARD_JSON = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'record_data.json')
     LEADERBOARD_HTML = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'record_table.html')
+    STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend'))
     _route_cache = {}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=self.STATIC_DIR, **kwargs)
 
     def do_GET(self):
         # Parse the URL.
@@ -37,6 +41,9 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         # Route for route.php (MPC/beam tacks).
         elif path == '/scripts/route.php':
             self.handle_route(query)
+        # Route for record_table.html (leaderboard).
+        elif path == '/resdata/record_table.html':
+            self.handle_leaderboard()
         # Route for boat.svg.php (boat image).
         elif path == '/images/boat.svg.php':
             self.handle_boat_svg(query)

@@ -68,20 +68,18 @@ Wind data is simulated locally because the real Nanny Cay weather station is not
 
 ```
 windgame/
-├── index.html           # Main game page
-├── server.py            # Python development server (emulates PHP endpoints)
+├── frontend/
+│   ├── index.html       # Main game page
+│   ├── css/             # Stylesheets
+│   │   ├── screen.css   # Main and responsive styles
+│   │   └── waves.css    # Wave animations (25 levels)
+│   ├── js/              # JavaScript scripts
+│   │   ├── boat.js      # Boat class for navigation logic
+│   │   └── usgsoverlay.js # Google Maps overlay to display boats
+│   └── images/          # Images and SVG
+├── backend/server.py    # Python development server (emulates PHP endpoints)
 ├── start-server.sh      # Background server start script
 ├── stop-server.sh       # Server stop script
-├── css/                 # Stylesheets
-│   ├── screen.css       # Main and responsive styles
-│   └── waves.css        # Wave animations (25 levels)
-├── js/                  # JavaScript scripts
-│   ├── boat.js          # Boat class for navigation logic
-│   └── usgsoverlay.js   # Google Maps overlay to display boats
-├── images/              # Images and SVG
-│   ├── wave1.png        # Light waves texture (5-50px)
-│   ├── wave2.png        # Medium waves texture (100x20-65px)
-│   └── wave3.png        # Strong waves texture (50-100px)
 └── resdata/             # Results data
     └── table.html       # Simulated leaderboard
 
@@ -89,7 +87,7 @@ windgame/
 
 ## Technical Architecture
 
-### Python Server (server.py)
+### Python Server (backend/server.py)
 
 The Python server emulates PHP endpoints from the online version:
 
@@ -99,7 +97,7 @@ The Python server emulates PHP endpoints from the online version:
 - **POST /scripts/save.php**: Empty endpoint for compatibility
 - **GET /images/avatar.php**: Returns a default SVG avatar
 
-### Game Logic (index.html)
+### Game Logic (frontend/index.html)
 
 #### Game flow:
 1. **Initialization**: Load wind data via `loadDataIdle()`
@@ -211,7 +209,7 @@ Win with a comfortable margin to get an achievement:
 
 ### Important variables
 
-In [index.html](index.html):
+In [frontend/index.html](frontend/index.html):
 
 - `started` (line 246): Game state (true = racing)
 - `finished` (line 245): Race finished

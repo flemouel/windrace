@@ -57,7 +57,8 @@ Win with a good margin to get an achievement:
 
 ```
 windgame/
-├── index.html          ← Main game page
+├── frontend/
+│   └── index.html      ← Main game page
 ├── start-server.sh     ← Launch script
 ├── stop-server.sh      ← Stop script
 ├── backend/            ← Backend server
