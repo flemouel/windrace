@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # WindGame local server stop script
-PIDFILE=".server.pid"
-LOGFILE=".server.log"
+LOGDIR="logs"
+PIDFILE="${LOGDIR}/server.pid"
+LOGFILE="${LOGDIR}/server.log"
 
 # Check if PID file exists
 if [ ! -f "$PIDFILE" ]; then

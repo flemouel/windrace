@@ -1,8 +1,11 @@
 #!/bin/bash
 
 # WindGame local server startup script
-PIDFILE=".server.pid"
-LOGFILE=".server.log"
+LOGDIR="logs"
+PIDFILE="${LOGDIR}/server.pid"
+LOGFILE="${LOGDIR}/server.log"
+
+mkdir -p "$LOGDIR"
 
 # Check if server is already running
 if [ -f "$PIDFILE" ]; then
@@ -33,7 +36,7 @@ echo "📝 Logs: $LOGFILE"
 echo ""
 
 # Start server in background
-nohup python3 backend/server.py > "$LOGFILE" 2>&1 &
+nohup python3 backend/server.py >> "$LOGFILE" 2>&1 &
 SERVER_PID=$!
 
 # Save PID
