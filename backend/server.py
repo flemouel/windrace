@@ -313,6 +313,11 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 near_delay=near_delay,
                 far_delay=far_delay,
             )
+            result_steps = result.get('steps', 0)
+            result_tacks = result.get('tacks', [])
+            result_total = result.get('total_sailed', 0)
+            result_distance = result.get('distance_to_mark', 0)
+            result_traj = result.get('trajectory', [])
         else:
             try:
                 import beam_realmove
@@ -340,13 +345,13 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 far_delay=far_delay,
             )
             if result is None:
-                result = {'tacks': [], 'steps': 0, 'total_sailed': 0}
-            else:
-                result = {
-                    'tacks': result.tacks,
-                    'steps': result.step_count,
-                    'total_sailed': result.boat.total_distance,
-                }
+                self.send_json_response({'tacks': '', 'steps': 0, 'total_sailed': 0})
+                return
+            result_steps = result.step_count
+            result_tacks = result.tacks
+            result_total = result.boat.total_distance
+            result_distance = self.haversine_m(result.boat.lat, result.boat.lng, finish_lat, finish_lng)
+            result_traj = result.trajectory
 
         def offset_tacks(tacks, offset):
             if offset == 0:
@@ -363,13 +368,21 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 adjusted.append(f"{label}{idx + offset}")
             return adjusted
 
-        tacks_list = result.get('tacks', [])
+        tacks_list = result_tacks
         tacks_list = offset_tacks(tacks_list, start_index)
+        tacks_preview = tacks_list[:10]
+        log(
+            "INFO",
+            f"route {method} steps={result_steps} distance_to_mark={round(result_distance, 2)} "
+            f"total_sailed={round(result_total, 2)} tacks={tacks_preview} total={len(tacks_list)}"
+        )
+        for step, decision, lat, lng in result_traj:
+            log("DEBUG", f"route {method} trajectory {step:04d} {decision} {lat:.7f} {lng:.7f}")
         payload = {
             'method': method,
             'tacks': ",".join(tacks_list),
-            'steps': result.get('steps', 0),
-            'total_sailed': result.get('total_sailed', 0),
+            'steps': result_steps,
+            'total_sailed': result_total,
         }
         self._route_cache[cache_key] = payload
         self.send_json_response(payload)
