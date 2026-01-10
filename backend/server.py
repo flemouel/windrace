@@ -84,11 +84,8 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         log("DEBUG", f"POST request - Parsed path: '{path}'")
         log("DEBUG", f"POST request - Query params: {query_params}")
 
-        # Route for authentication (redirect to main page).
-        if (path == '/' or path == '') and 'signin' in query_params:
-            self.handle_signin()
         # Route for record.php (record scores).
-        elif path == '/scripts/record.php':
+        if path == '/scripts/record.php':
             self.handle_record()
         # Route for record_table.html (leaderboard).
         elif path == '/resdata/record_table.html':
@@ -418,18 +415,6 @@ Totally played {total} times</p>
         self.send_header('Content-type', 'text/html; charset=utf-8')
         self.end_headers()
         self.wfile.write(html.encode())
-
-    def handle_signin(self):
-        """Simulate auth and redirect to the main page."""
-        # Read and ignore POST data.
-        content_length = int(self.headers.get('Content-Length', 0))
-        if content_length:
-            self.rfile.read(content_length)
-
-        # Redirect to the main page (simulated auth success).
-        self.send_response(303)  # See Other
-        self.send_header('Location', '/')
-        self.end_headers()
 
     def handle_boat_svg(self, query):
         """Generate a boat SVG with the requested color (site original format)."""
