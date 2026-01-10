@@ -52,15 +52,17 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
 
+        # Debug: log GET request details.
+        log("DEBUG", f"GET request - Full path: {self.path}")
+        log("DEBUG", f"GET request - Parsed path: '{path}'")
+        log("DEBUG", f"GET request - Query params: {query}")
+
         # Route for wind-data.php (wind data).
         if path == '/scripts/wind-data.php':
             self.handle_wind_service(query)
         # Route for wind-status.php (wind status).
         elif path == '/scripts/wind-status.php':
             self.handle_wind_status()
-        # Route for record.php (record scores via GET).
-        elif path == '/scripts/record.php':
-            self.handle_record()
         # Route for sailing route.php (MPC/beam tacks).
         elif path == '/scripts/route.php':
             self.handle_route(query)
@@ -78,21 +80,23 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         query_params = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        content_length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(content_length).decode('utf-8') if content_length else ""
+        body_params = urllib.parse.parse_qs(body, keep_blank_values=True)
+        merged_params = {}
+        merged_params.update(query_params)
+        for key, value in body_params.items():
+            merged_params[key] = value
 
         # Debug: log POST request details.
         log("DEBUG", f"POST request - Full path: {self.path}")
         log("DEBUG", f"POST request - Parsed path: '{path}'")
         log("DEBUG", f"POST request - Query params: {query_params}")
+        log("DEBUG", f"POST request - Body params: {body_params}")
 
         # Route for record.php (record scores).
         if path == '/scripts/record.php':
-            self.handle_record()
-        # Route for record_table.html (leaderboard).
-        elif path == '/resdata/record_table.html':
-            self.handle_leaderboard()
-        # Route for wind-status.php.
-        elif path == '/scripts/wind-status.php':
-            self.handle_wind_status()
+            self.handle_record(merged_params)
         else:
             self.send_error(404)
 
@@ -138,18 +142,9 @@ class WindGameHandler(SimpleHTTPRequestHandler):
 
         self.send_json_response(response)
 
-    def handle_record(self):
+    def handle_record(self, query):
         """Record game results."""
-        # Parse the URL to get query parameters.
-        parsed = urllib.parse.urlparse(self.path)
-        query = urllib.parse.parse_qs(parsed.query)
-
-        # Read POST data if present.
-        content_length = int(self.headers.get('Content-Length', 0))
-        if content_length:
-            self.rfile.read(content_length)
-
-        # Read finalresult from GET params.
+        # Read finalresult from request params.
         finalresult = int(query.get('finalresult', [0])[0])
         boat_name = query.get('boat_name', ['Unknown boat'])[0]
         starttime = int(query.get('starttime', [int(time.time())])[0])
@@ -502,7 +497,7 @@ Totally played {total} times</p>
             finish_lng = entry.get('finish_lng', None)
             total_sailed = entry.get('total_sailed', 0)
 
-            if None in (start_lat, start_lng, finish_lat, finish_lng):
+            if None in (start_lat, start_lng, finish_lat, finish_lng) or not total_sailed:
                 straight = "-"
                 efficiency = "-"
             else:
