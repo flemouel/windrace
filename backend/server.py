@@ -377,7 +377,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             f"total_sailed={round(result_total, 2)} tacks={tacks_preview} total={len(tacks_list)}"
         )
         for step, decision, lat, lng in result_traj:
-            log("DEBUG", f"route {method} trajectory {step:04d} {decision} {lat:.7f} {lng:.7f}")
+            log("DEBUG", f"route {method} trajectory (planned) {step:04d} {decision} {lat:.7f} {lng:.7f}")
         payload = {
             'method': method,
             'tacks': ",".join(tacks_list),
@@ -577,7 +577,7 @@ def run(port=8000):
         print("⛔ Server interrupted (SIGTERM)")
         httpd.shutdown()
     signal.signal(signal.SIGTERM, handle_sigterm)
-    
+
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

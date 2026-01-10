@@ -116,6 +116,22 @@
 		mode = "IDLE";
 		loadDataIdle();
 		log("INFO", "onGameFinish called - id:", id, "achievement:", achievement, "recordtime:", recordtime, "finalresult:", finalresult, "totalSailed:", totalSailed);
+		if (LOG_LEVEL === "DEBUG")
+		{
+			log("DEBUG", "MPC trajectory:");
+			for (var i=0; i<mpcboat_trace.length; i++)
+			{
+				var rec = mpcboat_trace[i];
+				log(
+					"DEBUG",
+					"route mpc trajectory (sailed)",
+					("0000" + rec[0]).slice(-4),
+					rec[1],
+					rec[2].toFixed(7),
+					rec[3].toFixed(7)
+				);
+			}
+		}
 		var achievementText = "";
 		if (achievement)
 		{
@@ -190,6 +206,7 @@
 	var geoboat_tacks = new Array();
 	var kalboat_tacks = new Array();
 	var mpcboat_tacks = new Array();
+	var mpcboat_trace = new Array();
 	var tacks_log = new Array();
 	var mpcboat_tacks_ready = false;
 	var map = null;
@@ -406,6 +423,7 @@ function log(level)
 		geoboat_tacks = new Array();
 		kalboat_tacks = new Array();
 		mpcboat_tacks = new Array();
+		mpcboat_trace = new Array();
 		tacks_log = new Array();
 		mpcboat_tacks_ready = false;
 		
@@ -545,7 +563,7 @@ function log(level)
 			myboat.headingByWind(winddirection[windindex],bearing);
 			geoboat.headingByWind(winddirection[windindex],bearing);
 			kalboat.headingByWind(winddirection[windindex],bearing);
-			if (mpcboat!=null) mpcboat.headingByWind(winddirection[windindex],bearing);
+			mpcboat.headingByWind(winddirection[windindex],bearing);
 
 			loadMpcRouteTacks(function()
 			{
@@ -874,14 +892,14 @@ function loadDataPreview(mapcenterParam, bearingParam, startdistanceParam, windc
 						mydistance = google.maps.geometry.spherical.computeDistanceBetween(myboat.point, mark_top);
 						geodistance = google.maps.geometry.spherical.computeDistanceBetween(geoboat.point, mark_top);
 						kaldistance = google.maps.geometry.spherical.computeDistanceBetween(kalboat.point, mark_top);
-						if (mpcboat!=null) mpcdistance = google.maps.geometry.spherical.computeDistanceBetween(mpcboat.point, mark_top);
+						mpcdistance = google.maps.geometry.spherical.computeDistanceBetween(mpcboat.point, mark_top);
 						var leaderDistance = Math.min(mydistance, srdistance, geodistance, kaldistance);
-						if (mpcboat!=null) leaderDistance = Math.min(leaderDistance, mpcdistance);
+						leaderDistance = Math.min(leaderDistance, mpcdistance);
 						finalresult = Math.round(leaderDistance - mydistance);
 						distance[windindex] = mydistance;
 						result[windindex] = finalresult;
 					
-						if ((mydistance<20)||(srdistance<20)||(geodistance<20)||(kaldistance<20)||(mpcboat!=null && mpcdistance<20)) finished = true;
+						if ((mydistance<20)||(srdistance<20)||(geodistance<20)||(kaldistance<20)||(mpcdistance<20)) finished = true;
 						
 						if (wind_track)
 						{
@@ -1219,19 +1237,25 @@ function processIdle()
 					if (rec!=null) kalboat_tacks.push(rec);
 				}
 
-					if (mpcboat!=null)
+				if (mpcboat!=null)
+				{
+					mpcdistance = google.maps.geometry.spherical.computeDistanceBetween(mpcboat.point, mark_top);
+					var mpcDecision = "KEEP";
+					if (mpcboat_tacks_ready && typeof(mpcboat_tacks[windindex])!="undefined")
 					{
-						mpcdistance = google.maps.geometry.spherical.computeDistanceBetween(mpcboat.point, mark_top);
-						if (mpcboat_tacks_ready && typeof(mpcboat_tacks[windindex])!="undefined") mpcboat.setTack(mpcboat_tacks[windindex]);
-						var mpcBearing = Math.round(google.maps.geometry.spherical.computeHeading(mpcboat.point, mark_top));
-						mpcboat.moveByWind(wind,step,mpcBearing);
+						mpcboat.setTack(mpcboat_tacks[windindex]);
+						mpcDecision = (mpcboat_tacks[windindex] === 1) ? "P" : "S";
 					}
+					var mpcBearing = Math.round(google.maps.geometry.spherical.computeHeading(mpcboat.point, mark_top));
+					mpcboat.moveByWind(wind,step,mpcBearing);
+					mpcboat_trace.push([windindex, mpcDecision, mpcboat.point.lat(), mpcboat.point.lng()]);
+				}
 
 				var leaderDistance = mydistance;
-				if (srboat!=null) leaderDistance = Math.min(leaderDistance, srdistance);
-				if (geoboat!=null) leaderDistance = Math.min(leaderDistance, geodistance);
-					if (kalboat!=null) leaderDistance = Math.min(leaderDistance, kaldistance);
-					if (mpcboat!=null) leaderDistance = Math.min(leaderDistance, mpcdistance);
+				leaderDistance = Math.min(leaderDistance, srdistance);
+				leaderDistance = Math.min(leaderDistance, geodistance);
+				leaderDistance = Math.min(leaderDistance, kaldistance);
+				leaderDistance = Math.min(leaderDistance, mpcdistance);
 				finalresult = Math.round(leaderDistance - mydistance);
 
 				var myTotalDist = Math.round(myboat.getTotalDistance());
