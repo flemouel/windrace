@@ -231,6 +231,7 @@
 	var windindex = 0;
 	var winddirection = new Array();
 	var windspeed = new Array();
+	var windtrace_length = 0;
 	var windcache = new Array();
 	var windcache_length = 600;
 	var bearing = 0;
@@ -547,7 +548,7 @@
 	function loadDataIdle()
 	{
 
-		$.getJSON("scripts/wind-data.php?length="+windcache_length,null,function(response)
+		$.getJSON("scripts/wind-data.php",null,function(response)
         {
 			initWindCache(response);
 			bearing = getWindAverage(windcache)["avg"];
