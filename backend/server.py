@@ -143,7 +143,8 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             response = {
                 'timestamp': real_data['timestamp'],
                 'direction': real_data['direction'],
-                'speed': real_data['speed']
+                'speed': real_data['speed'],
+                'length': len(real_data['direction'])
             }
         else:
             # Fallback if data is unavailable.
@@ -151,7 +152,8 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             response = {
                 'timestamp': timestamp,
                 'direction': [45.0] * 6001,
-                'speed': [5.0] * 6001
+                'speed': [5.0] * 6001,
+                'length': 6001
             }
 
         self.send_json_response(response)
