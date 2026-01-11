@@ -247,19 +247,38 @@
 	var mpc_far_delay = 20;
 	var courseDistance = startdistance;
 	var LOG_ENABLED = true;
+	var LOG_SEND_TO_SERVER = true;
 	var LOG_LEVEL = "DEBUG";
 
 
-function log(level)
-{
+   function log(level)
+   {
 	// DEBUG = all logs, INFO = info+error, ERROR = error only.
 	if (!LOG_ENABLED || !console) return;
 		var current = (LOG_LEVEL || "").toUpperCase();
 		var lvl = (level || "").toUpperCase();
 		if (current === "ERROR" && lvl !== "ERROR") return;
 		if (current === "INFO" && lvl === "DEBUG") return;
-		if (lvl === "ERROR") console.error.apply(console, Array.prototype.slice.call(arguments, 1));
-		else console.log.apply(console, Array.prototype.slice.call(arguments, 1));
+
+		// Log to console
+		var args = Array.prototype.slice.call(arguments, 1);
+		if (lvl === "ERROR") console.error.apply(console, args);
+		else console.log.apply(console, args);
+
+		// Send to server if enabled
+		if (LOG_SEND_TO_SERVER) {
+			var message = args.map(function(arg) {
+				return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
+			}).join(' ');
+
+			fetch('/scripts/log.php', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+				body: 'level=' + encodeURIComponent(lvl) + '&message=' + encodeURIComponent(message)
+			}).catch(function() {
+				// Silently ignore errors to avoid infinite loops
+			});
+		}
 	}
 	
 

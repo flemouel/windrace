@@ -15,26 +15,37 @@ import sys
 import signal
 
 
-LOG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'logs', 'server.log'))
+BACKEND_LOG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'logs', 'server.log'))
+FRONTEND_LOG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'logs', 'frontend.log'))
 LOG_LEVEL = "DEBUG"
 
 
-def log(level, message, status=200, size='-'):
-    """Append a line to logs/server.log in common log format."""
+def write_log(level, message, log_file, status=200, size='-'):
+    """Write a log entry to the specified log file in common log format."""
     # DEBUG = all logs, INFO = info+error, ERROR = error only.
     current = (LOG_LEVEL or "").upper()
-    lvl = (level or "").upper()
+    lvl = (level or "INFO").upper()
     if current == "ERROR" and lvl != "ERROR":
         return
     if current == "INFO" and lvl == "DEBUG":
         return
-    if lvl not in ("INFO", "DEBUG", "ERROR"):
+    if lvl not in ("DEBUG", "INFO", "ERROR"):
         lvl = "INFO"
-    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
     timestamp = time.strftime('%d/%b/%Y %H:%M:%S', time.localtime())
     line = f'127.0.0.1 - - [{timestamp}] "{lvl} {message}" {status} {size}\n'
-    with open(LOG_FILE, 'a') as f:
+    with open(log_file, 'a') as f:
         f.write(line)
+
+
+def log(level, message, status=200, size='-'):
+    """Append a line to logs/server.log in common log format."""
+    write_log(level, message, BACKEND_LOG_FILE, status, size)
+
+
+def logf(level, message, status=200, size='-'):
+    """Append a frontend log to logs/frontend.log in common log format."""
+    write_log(level, message, FRONTEND_LOG_FILE, status, size)
 
 
 class WindGameHandler(SimpleHTTPRequestHandler):
@@ -97,6 +108,9 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         # Route for record.php (record scores).
         if path == '/scripts/record.php':
             self.handle_record(merged_params)
+        # Route for log.php (frontend logging).
+        elif path == '/scripts/log.php':
+            self.handle_frontend_log(merged_params)
         else:
             self.send_error(404)
 
@@ -220,6 +234,24 @@ class WindGameHandler(SimpleHTTPRequestHandler):
 
         self.send_json_response(response)
 
+    def handle_frontend_log(self, query):
+        """Log frontend events to logs/frontend.log."""
+        level = query.get('level', ['INFO'])[0].upper()
+        message = query.get('message', [''])[0]
+
+        # Validate log level
+        if level not in ('DEBUG', 'INFO', 'ERROR'):
+            level = 'INFO'
+
+        # Log to frontend log file
+        logf(level, message)
+
+        # Send success response
+        response = {
+            'status': 'ok',
+            'logged': True
+        }
+        self.send_json_response(response)
 
     def handle_route(self, query):
         """Return tack sequence for MPC or beam search."""
