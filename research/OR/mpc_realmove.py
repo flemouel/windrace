@@ -114,6 +114,7 @@ def mpc_plan_real(
     horizon=60,
     goal_dist=20,
     alpha=1.0,
+    start_index=0,
     near_threshold=200,
     near_delay=10,
     far_delay=20,
@@ -122,7 +123,7 @@ def mpc_plan_real(
     state = BoatState(start_lat, start_lng)
     state.target_lat = finish_lat
     state.target_lng = finish_lng
-    step_count = 0
+    step_count = start_index
     trajectory = []
 
     while step_count < len(wind_speed):
@@ -189,6 +190,7 @@ def main():
     parser.add_argument("--near-threshold", type=float, default=200)
     parser.add_argument("--near-delay", type=int, default=10)
     parser.add_argument("--far-delay", type=int, default=20)
+    parser.add_argument("--start-index", type=int, default=0, help="Starting index in the wind data trace (default: 0)")
     parser.add_argument("--verbose", type=int, default=1)
     args = parser.parse_args()
 
@@ -204,6 +206,7 @@ def main():
         horizon=args.horizon,
         goal_dist=args.goal,
         alpha=args.alpha,
+        start_index=args.start_index,
         near_threshold=args.near_threshold,
         near_delay=args.near_delay,
         far_delay=args.far_delay,

@@ -66,7 +66,8 @@ python3 mpc_simplemove.py \
   --horizon 90 \
   --tackangle 43 \
   --goal 20 \
-  --alpha 1.2
+  --alpha 1.2 \
+  --start-index 600
 ```
 
 ```bash
@@ -80,7 +81,8 @@ python3 mpc_realmove.py \
   --alpha 1.2 \
   --near-threshold 200 \
   --near-delay 10 \
-  --far-delay 20
+  --far-delay 20 \
+  --start-index 600
 ```
 
 ```bash
@@ -88,14 +90,15 @@ python3 beam_realmove.py \
   --wind ../../winddata/wind_data.json \
   --start-lat 18.3814282 --start-lng -64.5666047 \
   --finish-lat 18.4085703 --finish-lng -64.5333926 \
-  --horizon 6001 \
+  --horizon 5401 \
   --tackangle 43 \
   --goal 20 \
   --alpha 0 \
   --near-threshold 200 \
   --near-delay 10 \
   --far-delay 20 \
-  --beam-width 200
+  --beam-width 200 \
+  --start-index 600
 ```
 
 ### Verbose output
@@ -116,6 +119,7 @@ python3 mpc_realmove.py \
 - `--tackangle`: tack angle in degrees (default 43).
 - `--goal`: stop when distance to mark is below this threshold (meters).
 - `--alpha`: weight for remaining distance in the cost function.
+- `--start-index`: starting index in the wind data trace (default 0). Allows planning from a specific point in the wind history.
 - `--near-threshold`, `--near-delay`, `--far-delay` (real move only): tack delay tuning.
 - `--beam-width` (beam search only): number of states kept per step.
 - `--verbose`: `0` (quiet), `1` (summary), `2` (summary + trajectory).

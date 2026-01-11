@@ -59,6 +59,7 @@ def beam_search(
     goal_dist=20,
     alpha=0.0,
     beam_width=200,
+    start_index=0,
     near_threshold=200,
     near_delay=10,
     far_delay=20,
@@ -68,7 +69,7 @@ def beam_search(
     finished = []
     best_finished = None
 
-    for step in range(max_steps):
+    for step in range(start_index, max_steps):
         if not beam:
             break
 
@@ -142,6 +143,7 @@ def main():
     parser.add_argument("--goal", type=float, default=20)
     parser.add_argument("--alpha", type=float, default=0.0)
     parser.add_argument("--beam-width", type=int, default=200)
+    parser.add_argument("--start-index", type=int, default=0, help="Starting index in the wind data trace (default: 0)")
     parser.add_argument("--near-threshold", type=float, default=200)
     parser.add_argument("--near-delay", type=int, default=10)
     parser.add_argument("--far-delay", type=int, default=20)
@@ -161,6 +163,7 @@ def main():
         goal_dist=args.goal,
         alpha=args.alpha,
         beam_width=args.beam_width,
+        start_index=args.start_index,
         near_threshold=args.near_threshold,
         near_delay=args.near_delay,
         far_delay=args.far_delay,

@@ -93,7 +93,7 @@ def simulate_horizon(lat, lng, wind_dir, wind_speed, start_index, horizon, tack_
 
 
 def mpc_plan(wind_dir, wind_speed, start_lat, start_lng, finish_lat, finish_lng, tackangle=43,
-             horizon=60, goal_dist=20, max_steps=None, alpha=1.0):
+             horizon=60, goal_dist=20, max_steps=None, alpha=1.0, start_index=0):
     """
     Run a MPC loop.
 
@@ -103,7 +103,7 @@ def mpc_plan(wind_dir, wind_speed, start_lat, start_lng, finish_lat, finish_lng,
     tacks_log = []
     lat, lng = start_lat, start_lng
     tack_index = -1  # start on starboard by default
-    step_count = 0
+    step_count = start_index
     total_sailed = 0.0
     max_steps = max_steps or len(wind_speed)
     trajectory = []
@@ -168,6 +168,7 @@ def main():
     parser.add_argument("--tackangle", type=float, default=43)
     parser.add_argument("--goal", type=float, default=20)
     parser.add_argument("--alpha", type=float, default=1.0)
+    parser.add_argument("--start-index", type=int, default=0, help="Starting index in the wind data trace (default: 0)")
     parser.add_argument("--verbose", type=int, default=1)
     args = parser.parse_args()
 
@@ -183,6 +184,7 @@ def main():
         horizon=args.horizon,
         goal_dist=args.goal,
         alpha=args.alpha,
+        start_index=args.start_index,
     )
     if args.verbose >= 1:
         print("steps:", result["steps"])
