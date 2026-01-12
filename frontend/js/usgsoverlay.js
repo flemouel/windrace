@@ -200,7 +200,7 @@
 	{
 		//var time1 = (new Date()).getTime();
 		var overlayProjection = me.getProjection();
-		if (typeof(overlayProjection)=="undefined") return;
+		if (!overlayProjection) return;
 		var point = overlayProjection.fromLatLngToDivPixel(me.point_);
 		var lObjCor = getCorrection(me.angle_);
 		me.divDirection_.innerHTML = lObjCor.angle.toFixed(0)+"&ordm;";
@@ -306,10 +306,10 @@ USGSOverlay.prototype.hide = function(iBlOnlyBoat)
   }
 }
 
-USGSOverlay.prototype.show = function() 
+USGSOverlay.prototype.show = function()
 {
 	var overlayProjection = this.getProjection();
-	if (typeof(overlayProjection)=="undefined") return;
+	if (!overlayProjection) return;
 	this.hideFlag = false;
 	if (this.img_ && this.div_) 
 	{
