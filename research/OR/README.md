@@ -39,30 +39,38 @@ Run the commands from inside `research/OR`:
 ```bash
 python3 mpc_simplemove.py \
   --wind ../../winddata/wind_data.json \
-  --start-lat 18.3814282 --start-lng -64.5666047 \
-  --finish-lat 18.4085703 --finish-lng -64.5333926
+  --start-lat 18.38142820098676 \
+  --start-lng -64.56660471988445 \
+  --finish-lat 18.40857035782242 \
+  --finish-lng -64.53339266400592 \
 ```
 
 ```bash
 python3 mpc_realmove.py \
   --wind ../../winddata/wind_data.json \
-  --start-lat 18.3814282 --start-lng -64.5666047 \
-  --finish-lat 18.4085703 --finish-lng -64.5333926
+  --start-lat 18.38142820098676 \
+  --start-lng -64.56660471988445 \
+  --finish-lat 18.40857035782242 \
+  --finish-lng -64.53339266400592 \
 ```
 
 ```bash
 python3 beam_search.py \
   --wind ../../winddata/wind_data.json \
-  --start-lat 18.3814282 --start-lng -64.5666047 \
-  --finish-lat 18.4085703 --finish-lng -64.5333926
+  --start-lat 18.38142820098676 \
+  --start-lng -64.56660471988445 \
+  --finish-lat 18.40857035782242 \
+  --finish-lng -64.53339266400592 \
 ```
 
 ### Detailed examples
 ```bash
 python3 mpc_simplemove.py \
   --wind ../../winddata/wind_data.json \
-  --start-lat 18.3814282 --start-lng -64.5666047 \
-  --finish-lat 18.4085703 --finish-lng -64.5333926 \
+  --start-lat 18.38142820098676 \
+  --start-lng -64.56660471988445 \
+  --finish-lat 18.40857035782242 \
+  --finish-lng -64.53339266400592 \
   --horizon 90 \
   --tackangle 43 \
   --goal 20 \
@@ -73,8 +81,11 @@ python3 mpc_simplemove.py \
 ```bash
 python3 mpc_realmove.py \
   --wind ../../winddata/wind_data.json \
-  --start-lat 18.3814282 --start-lng -64.5666047 \
-  --finish-lat 18.4085703 --finish-lng -64.5333926 \
+  --start-lat 18.38142820098676 \
+  --start-lng -64.56660471988445 \
+  --finish-lat 18.40857035782242 \
+  --finish-lng -64.53339266400592 \
+  --start-index 600 \
   --horizon 90 \
   --tackangle 43 \
   --goal 20 \
@@ -82,14 +93,16 @@ python3 mpc_realmove.py \
   --near-threshold 200 \
   --near-delay 10 \
   --far-delay 20 \
-  --start-index 600
+  --verbose 2
 ```
 
 ```bash
 python3 beam_realmove.py \
   --wind ../../winddata/wind_data.json \
-  --start-lat 18.3814282 --start-lng -64.5666047 \
-  --finish-lat 18.4085703 --finish-lng -64.5333926 \
+  --start-lat 18.38142820098676 \
+  --start-lng -64.56660471988445 \
+  --finish-lat 18.40857035782242 \
+  --finish-lng -64.53339266400592 \
   --horizon 5401 \
   --tackangle 43 \
   --goal 20 \
@@ -105,8 +118,10 @@ python3 beam_realmove.py \
 ```bash
 python3 mpc_realmove.py \
   --wind ../../winddata/wind_data.json \
-  --start-lat 18.3814282 --start-lng -64.5666047 \
-  --finish-lat 18.4085703 --finish-lng -64.5333926 \
+  --start-lat 18.38142820098676 \
+  --start-lng -64.56660471988445 \
+  --finish-lat 18.40857035782242 \
+  --finish-lng -64.53339266400592 \
   --horizon 90 \
   --tackangle 43 \
   --goal 20 \

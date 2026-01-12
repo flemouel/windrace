@@ -321,9 +321,6 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 self.send_json_response({'tacks': '', 'steps': 0, 'total_sailed': 0})
                 return
             wind_dir, wind_speed = mpc_realmove.load_wind_data(wind_path)
-            if start_index > 0:
-                wind_dir = wind_dir[start_index:]
-                wind_speed = wind_speed[start_index:]
             result = mpc_realmove.mpc_plan_real(
                 wind_dir,
                 wind_speed,
@@ -335,6 +332,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 horizon=horizon,
                 goal_dist=goal,
                 alpha=alpha,
+                start_index=start_index,
                 near_threshold=near_threshold,
                 near_delay=near_delay,
                 far_delay=far_delay,
@@ -351,9 +349,6 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 self.send_json_response({'tacks': '', 'steps': 0, 'total_sailed': 0})
                 return
             wind_dir, wind_speed = beam_realmove.load_wind_data(wind_path)
-            if start_index > 0:
-                wind_dir = wind_dir[start_index:]
-                wind_speed = wind_speed[start_index:]
             result = beam_realmove.beam_search(
                 wind_dir,
                 wind_speed,
@@ -366,6 +361,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 goal_dist=goal,
                 alpha=alpha,
                 beam_width=beam_width,
+                start_index=start_index,
                 near_threshold=near_threshold,
                 near_delay=near_delay,
                 far_delay=far_delay,
@@ -379,23 +375,9 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             result_distance = self.haversine_m(result.boat.lat, result.boat.lng, finish_lat, finish_lng)
             result_traj = result.trajectory
 
-        def offset_tacks(tacks, offset):
-            if offset == 0:
-                return tacks
-            adjusted = []
-            for tack in tacks:
-                if len(tack) < 2:
-                    continue
-                label = tack[0]
-                try:
-                    idx = int(tack[1:])
-                except ValueError:
-                    continue
-                adjusted.append(f"{label}{idx + offset}")
-            return adjusted
-
+        # No need to offset tacks since start_index is now passed to mpc_plan_real
+        # and indices are already absolute
         tacks_list = result_tacks
-        tacks_list = offset_tacks(tacks_list, start_index)
         tacks_preview = tacks_list[:10]
         log(
             "INFO",
