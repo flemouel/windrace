@@ -384,6 +384,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             f"route {method} steps={result_steps} distance_to_mark={round(result_distance, 2)} "
             f"total_sailed={round(result_total, 2)} tacks={tacks_preview} total={len(tacks_list)}"
         )
+        log("DEBUG", f"DEBUG MPC trajectory")
         for step, decision, lat, lng in result_traj:
             log("DEBUG", f"route {method} trajectory (planned) {step:04d} {decision} {lat:.7f} {lng:.7f}")
         payload = {
