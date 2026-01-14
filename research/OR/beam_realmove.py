@@ -64,7 +64,7 @@ def beam_search(
     near_delay=10,
     far_delay=20,
 ):
-    max_steps = horizon if horizon is not None else len(wind_speed)
+    max_steps = (start_index + horizon) if horizon is not None else len(wind_speed)
     beam = [BeamState(start_lat, start_lng)]
     finished = []
     best_finished = None
