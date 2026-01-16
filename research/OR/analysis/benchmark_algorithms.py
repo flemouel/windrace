@@ -263,6 +263,9 @@ def load_existing_results(json_path):
         return [], set()
 
 
+DEFAULT_ALGO_ORDER = ["mpc_simplemove", "mpc_realmove", "beam_realmove"]
+
+
 def count_by_algorithm(results):
     """Count completed tests per algorithm."""
     counts = {"mpc_realmove": 0, "mpc_simplemove": 0, "beam_realmove": 0}
@@ -273,19 +276,19 @@ def count_by_algorithm(results):
     return counts
 
 
-def print_progress_summary(results, title="ÉTAT D'AVANCEMENT DES TESTS"):
+def print_progress_summary(results, algo_order, title="ÉTAT D'AVANCEMENT DES TESTS"):
     """Affiche un résumé de l'avancement par algorithme avec barre de progression."""
     counts = count_by_algorithm(results)
-    total_done = sum(counts.values())
-    total_all = sum(ALGO_TOTALS.values())
+    total_done = sum(counts.get(algo, 0) for algo in algo_order)
+    total_all = sum(ALGO_TOTALS.get(algo, counts.get(algo, 0)) for algo in algo_order)
 
     print("\n" + "=" * 65)
     print(f"{title}")
     print("=" * 65)
 
-    for algo in ["mpc_realmove", "mpc_simplemove", "beam_realmove"]:
+    for algo in algo_order:
         done = counts[algo]
-        total = ALGO_TOTALS[algo]
+        total = ALGO_TOTALS.get(algo, done)
         pct = 100.0 * done / total if total > 0 else 0
         bar_filled = int(pct / 5)
         bar = "█" * bar_filled + "░" * (20 - bar_filled)
@@ -300,11 +303,11 @@ def print_progress_summary(results, title="ÉTAT D'AVANCEMENT DES TESTS"):
     print("=" * 65 + "\n")
 
 
-def print_progress_line(results, elapsed_time, rate):
+def print_progress_line(results, elapsed_time, rate, algo_order):
     """Affiche une ligne compacte de progression mise à jour à chaque test."""
     counts = count_by_algorithm(results)
-    total_done = sum(counts.values())
-    total_all = sum(ALGO_TOTALS.values())
+    total_done = sum(counts.get(algo, 0) for algo in algo_order)
+    total_all = sum(ALGO_TOTALS.get(algo, counts.get(algo, 0)) for algo in algo_order)
     total_pct = 100.0 * total_done / total_all if total_all > 0 else 0
 
     # Calculer ETA
@@ -317,11 +320,17 @@ def print_progress_line(results, elapsed_time, rate):
     bar = "█" * bar_filled + "░" * (50 - bar_filled)
 
     # Affichage par algo compact
-    algo_status = " | ".join([
-        f"mpc_r:{counts['mpc_realmove']}/{ALGO_TOTALS['mpc_realmove']}",
-        f"mpc_s:{counts['mpc_simplemove']}/{ALGO_TOTALS['mpc_simplemove']}",
-        f"beam:{counts['beam_realmove']}/{ALGO_TOTALS['beam_realmove']}"
-    ])
+    label_map = {
+        "mpc_realmove": "mpc_r",
+        "mpc_simplemove": "mpc_s",
+        "beam_realmove": "beam",
+    }
+    parts = []
+    for algo in algo_order:
+        label = label_map.get(algo, algo)
+        total = ALGO_TOTALS.get(algo, counts.get(algo, 0))
+        parts.append(f"{label}:{counts.get(algo, 0)}/{total}")
+    algo_status = " | ".join(parts)
 
     # Utiliser \r pour réécrire la ligne (sans retour à la ligne)
     print(f"\r[{bar}] {total_pct:5.1f}% | {algo_status} | ETA: {eta_str}    ", end="", flush=True)
@@ -362,10 +371,12 @@ def main():
     parser.add_argument("--output", default="benchmark_results.csv", help="Output CSV file")
     parser.add_argument("--json-output", default="benchmark_results.json", help="Output JSON file")
     parser.add_argument("--workers", type=int, default=12, help="Number of parallel workers")
-    parser.add_argument("--algo", choices=["beam_realmove", "mpc_realmove", "mpc_simplemove", "all"],
-                        default="all", help="Which algorithm to benchmark")
+    parser.add_argument("--algo", default="all",
+                        help="Which algorithm(s) to benchmark (comma-separated or 'all')")
     parser.add_argument("--quick", action="store_true", help="Run quick test with reduced parameter ranges")
     parser.add_argument("--resume", action="store_true", help="Resume from previous run (skip completed tests)")
+    parser.add_argument("--order", default="shuffle",
+                        help="Execution order: 'shuffle' or comma-separated algo list")
     parser.add_argument("--save-interval", type=int, default=10, help="Save results every N completed tests")
     args = parser.parse_args()
 
@@ -390,14 +401,21 @@ def main():
         results, completed_keys = load_existing_results(json_path)
         if completed_keys:
             print(f"Resuming: found {len(completed_keys)} completed tests")
-            print_progress_summary(results, "TESTS DÉJÀ EFFECTUÉS")
+            print_progress_summary(results, DEFAULT_ALGO_ORDER, "TESTS DÉJÀ EFFECTUÉS")
 
     # Generate test cases
     all_test_cases = generate_test_cases()
 
     # Filter by algorithm if specified
     if args.algo != "all":
-        all_test_cases = [tc for tc in all_test_cases if tc[0] == args.algo]
+        algo_list = [item.strip() for item in args.algo.split(",") if item.strip()]
+        valid_algos = {"beam_realmove", "mpc_realmove", "mpc_simplemove"}
+        unknown_algos = [algo for algo in algo_list if algo not in valid_algos]
+        if unknown_algos:
+            print(f"Unknown algo(s) in --algo: {', '.join(unknown_algos)}")
+            return
+        algo_set = set(algo_list)
+        all_test_cases = [tc for tc in all_test_cases if tc[0] in algo_set]
 
     # Quick mode: reduce parameter ranges
     if args.quick:
@@ -430,9 +448,30 @@ def main():
         all_test_cases = remaining_tests
         print(f"Skipping {skipped} already completed tests")
 
-    # Shuffle test cases for random order execution
-    random.shuffle(all_test_cases)
-    print("Test cases shuffled for random execution order")
+    if args.order == "shuffle":
+        random.shuffle(all_test_cases)
+        print("Test cases shuffled for random execution order")
+    else:
+        order_list = [item.strip() for item in args.order.split(",") if item.strip()]
+        order_set = set(order_list)
+        unknown = order_set - {"mpc_simplemove", "mpc_realmove", "beam_realmove"}
+        if unknown:
+            print(f"Unknown algo(s) in --order: {', '.join(sorted(unknown))}")
+            return
+        ordered = []
+        for algo in order_list:
+            ordered.extend([tc for tc in all_test_cases if tc[0] == algo])
+        ordered.extend([tc for tc in all_test_cases if tc[0] not in order_set])
+        all_test_cases = ordered
+        print(f"Test cases ordered by: {', '.join(order_list)}")
+
+    present_algos = {tc[0] for tc in all_test_cases}
+    if args.order == "shuffle":
+        algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in present_algos]
+        algo_order.extend(sorted(present_algos - set(algo_order)))
+    else:
+        algo_order = [algo for algo in order_list if algo in present_algos]
+        algo_order.extend(sorted(present_algos - set(algo_order)))
 
     total_tests_original = len(generate_test_cases())
     total_remaining = len(all_test_cases)
@@ -443,7 +482,7 @@ def main():
 
     print(f"Running {total_remaining} test cases with {args.workers} workers...")
     print(f"Total tests in benchmark: {total_tests_original}, already completed: {len(completed_keys)}")
-    print(f"Algorithms: {set(tc[0] for tc in all_test_cases)}")
+    print(f"Algorithms: {', '.join(algo_order)}")
     print(f"Results will be saved every {args.save_interval} tests")
     print("Press Ctrl+C to interrupt and save progress\n")
 
@@ -512,7 +551,7 @@ def main():
                             save_results(results, csv_path, json_path, start_time, total_tests_original, interrupted=False)
 
                         # Update progress line after each test
-                        print_progress_line(results, elapsed, rate)
+                        print_progress_line(results, elapsed, rate, algo_order)
 
             # Cancel remaining futures if interrupted
             if interrupted:
@@ -530,7 +569,7 @@ def main():
     print()
 
     # Final progress summary
-    print_progress_summary(results, "RÉSUMÉ FINAL")
+    print_progress_summary(results, algo_order, "RÉSUMÉ FINAL")
 
     if interrupted:
         print(f"Benchmark interrupted!")
