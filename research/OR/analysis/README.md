@@ -87,6 +87,10 @@ Common outputs (all PNG):
 - `unfinished_rate_compare_<param>_median.png`
 - `summary_results_table.png`
 
+When a tackangle=43 slice is generated, the same outputs are created with a `ta43_` prefix:
+- `ta43_<same filename>.png`
+- `ta43_summary_results.csv`
+
 ## Notes
 - Visualizations only consider finished races (`distance_to_mark <= goal`).
 - If the benchmark run was interrupted, the visualizer still works as long as there are finished runs.

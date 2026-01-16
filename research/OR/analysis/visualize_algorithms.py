@@ -25,6 +25,10 @@ from matplotlib.colors import LinearSegmentedColormap
 plt.style.use('seaborn-v0_8-whitegrid')
 
 
+def apply_prefix(prefix, name):
+    return f"{prefix}{name}" if prefix else name
+
+
 def load_results(json_path):
     """Load benchmark results from JSON file.
 
@@ -61,7 +65,7 @@ def load_results(json_path):
     return df, metadata, df_all
 
 
-def create_heatmap(df, algo, x_param, y_param, metric, output_dir, fixed_params=None, agg="mean"):
+def create_heatmap(df, algo, x_param, y_param, metric, output_dir, fixed_params=None, agg="mean", prefix=""):
     """
     Create a heatmap for a specific algorithm and parameter combination.
     """
@@ -129,13 +133,13 @@ def create_heatmap(df, algo, x_param, y_param, metric, output_dir, fixed_params=
     if fixed_suffix:
         filename += f"_{fixed_suffix}"
     filename += ".png"
-    filepath = os.path.join(output_dir, filename)
+    filepath = os.path.join(output_dir, apply_prefix(prefix, filename))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
     return filepath
 
 
-def create_algorithm_comparison(df, output_dir):
+def create_algorithm_comparison(df, output_dir, prefix=""):
     """Create bar charts comparing algorithms (total_sailed only)."""
     metric = "total_sailed"
 
@@ -162,7 +166,7 @@ def create_algorithm_comparison(df, output_dir):
                 f"{mean_val:.1f}", ha="center", va="bottom", fontsize=10)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "compare_total_sailed_mean.png")
+    filepath = os.path.join(output_dir, apply_prefix(prefix, "compare_total_sailed_mean.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -190,7 +194,7 @@ def create_algorithm_comparison(df, output_dir):
                 f"{median_val:.1f}", ha="center", va="bottom", fontsize=10)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "compare_total_sailed_median.png")
+    filepath = os.path.join(output_dir, apply_prefix(prefix, "compare_total_sailed_median.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -218,12 +222,12 @@ def create_algorithm_comparison(df, output_dir):
                 f"{row[metric]:.1f}\n({params})", ha="center", va="bottom", fontsize=8)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "compare_total_sailed_min.png")
+    filepath = os.path.join(output_dir, apply_prefix(prefix, "compare_total_sailed_min.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
 
-def create_parameter_sensitivity(df, output_dir):
+def create_parameter_sensitivity(df, output_dir, prefix=""):
     """Create plots showing how each parameter affects total_sailed."""
     params = ["horizon", "tackangle", "alpha"]
     metric = "total_sailed"
@@ -256,7 +260,7 @@ def create_parameter_sensitivity(df, output_dir):
             ax.set_xscale("log")
 
         plt.tight_layout()
-        filepath = os.path.join(output_dir, f"sensitivity_{param}_mean_total_sailed.png")
+        filepath = os.path.join(output_dir, apply_prefix(prefix, f"sensitivity_{param}_mean_total_sailed.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -291,7 +295,7 @@ def create_parameter_sensitivity(df, output_dir):
             ax.set_xscale("log")
 
         plt.tight_layout()
-        filepath = os.path.join(output_dir, f"sensitivity_{param}_median_total_sailed.png")
+        filepath = os.path.join(output_dir, apply_prefix(prefix, f"sensitivity_{param}_median_total_sailed.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -319,7 +323,7 @@ def create_parameter_sensitivity(df, output_dir):
             ax.set_xscale("log")
 
         plt.tight_layout()
-        filepath = os.path.join(output_dir, f"sensitivity_{param}_min_total_sailed.png")
+        filepath = os.path.join(output_dir, apply_prefix(prefix, f"sensitivity_{param}_min_total_sailed.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -344,7 +348,7 @@ def create_parameter_sensitivity(df, output_dir):
         ax.set_title("Effect of Beam Width on Total Sailed\n(mean +/- std, beam_realmove only, finished races)")
 
         plt.tight_layout()
-        filepath = os.path.join(output_dir, "sensitivity_beam_width_mean_total_sailed.png")
+        filepath = os.path.join(output_dir, apply_prefix(prefix, "sensitivity_beam_width_mean_total_sailed.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -371,7 +375,7 @@ def create_parameter_sensitivity(df, output_dir):
         ax.set_title("Effect of Beam Width on Total Sailed\n(median +/- IQR, beam_realmove only)")
 
         plt.tight_layout()
-        filepath = os.path.join(output_dir, "sensitivity_beam_width_median_total_sailed.png")
+        filepath = os.path.join(output_dir, apply_prefix(prefix, "sensitivity_beam_width_median_total_sailed.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -391,12 +395,12 @@ def create_parameter_sensitivity(df, output_dir):
         ax.set_title("Best Total Sailed vs Beam Width\n(beam_realmove only, finished races)")
 
         plt.tight_layout()
-        filepath = os.path.join(output_dir, "sensitivity_beam_width_min_total_sailed.png")
+        filepath = os.path.join(output_dir, apply_prefix(prefix, "sensitivity_beam_width_min_total_sailed.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
 
-def create_execution_time_analysis(df, output_dir):
+def create_execution_time_analysis(df, output_dir, prefix=""):
     """Analyze execution times."""
     colors = {"beam_realmove": "#3498db", "mpc_realmove": "#e74c3c", "mpc_simplemove": "#2ecc71"}
 
@@ -413,7 +417,7 @@ def create_execution_time_analysis(df, output_dir):
     ax.set_ylabel("Execution Time (s)")
     ax.set_title("Execution Time Distribution")
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "exec_time_distribution.png")
+    filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_distribution.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -431,7 +435,7 @@ def create_execution_time_analysis(df, output_dir):
         ax.text(0.5, 0.5, "No beam_realmove data", ha="center", va="center", transform=ax.transAxes)
         ax.set_title("Execution Time vs Beam Width\n(mean +/- std, beam_realmove)")
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "exec_time_vs_beam_width_mean.png")
+    filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_vs_beam_width_mean.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -452,7 +456,7 @@ def create_execution_time_analysis(df, output_dir):
         ax.text(0.5, 0.5, "No beam_realmove data", ha="center", va="center", transform=ax.transAxes)
         ax.set_title("Execution Time vs Beam Width\n(median +/- IQR, beam_realmove)")
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "exec_time_vs_beam_width_median.png")
+    filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_vs_beam_width_median.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -494,7 +498,10 @@ def create_execution_time_analysis(df, output_dir):
                     ax.text(0.5, 0.5, f"No {algo} data", ha="center", va="center", transform=ax.transAxes)
                     ax.set_title(f"Execution Time Heatmap\n({algo}, mean over other params)")
                 plt.tight_layout()
-                filepath = os.path.join(output_dir, f"exec_time_{algo}_{x_param}_vs_{y_param}_heatmap_mean.png")
+                filepath = os.path.join(
+                    output_dir,
+                    apply_prefix(prefix, f"exec_time_{algo}_{x_param}_vs_{y_param}_heatmap_mean.png")
+                )
                 plt.savefig(filepath, dpi=150, bbox_inches="tight")
                 plt.close()
 
@@ -524,7 +531,10 @@ def create_execution_time_analysis(df, output_dir):
                                 text_color = "white" if val > pivot.values.max() * 0.5 else "black"
                                 ax.text(col, row, f"{val:.1f}", ha="center", va="center", fontsize=7, color=text_color)
                     plt.tight_layout()
-                    filepath = os.path.join(output_dir, f"exec_time_{algo}_{x_param}_vs_{y_param}_heatmap_median.png")
+                    filepath = os.path.join(
+                        output_dir,
+                        apply_prefix(prefix, f"exec_time_{algo}_{x_param}_vs_{y_param}_heatmap_median.png")
+                    )
                     plt.savefig(filepath, dpi=150, bbox_inches="tight")
                     plt.close()
 
@@ -546,7 +556,7 @@ def create_execution_time_analysis(df, output_dir):
         ax.legend(fontsize=8)
 
         plt.tight_layout()
-        filepath = os.path.join(output_dir, f"exec_time_vs_{param}_mean.png")
+        filepath = os.path.join(output_dir, apply_prefix(prefix, f"exec_time_vs_{param}_mean.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -570,7 +580,7 @@ def create_execution_time_analysis(df, output_dir):
         ax.legend(fontsize=8)
 
         plt.tight_layout()
-        filepath = os.path.join(output_dir, f"exec_time_vs_{param}_median.png")
+        filepath = os.path.join(output_dir, apply_prefix(prefix, f"exec_time_vs_{param}_median.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -590,7 +600,7 @@ def create_execution_time_analysis(df, output_dir):
     ax.set_xscale("log")
     ax.legend()
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "exec_time_per_step_mean.png")
+    filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_per_step_mean.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -611,7 +621,7 @@ def create_execution_time_analysis(df, output_dir):
     ax.set_xscale("log")
     ax.legend()
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "exec_time_per_step_median.png")
+    filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_per_step_median.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -641,7 +651,7 @@ def create_execution_time_analysis(df, output_dir):
     ax.set_yscale("log")
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "exec_time_by_horizon_comparison_mean.png")
+    filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_by_horizon_comparison_mean.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -665,7 +675,7 @@ def create_execution_time_analysis(df, output_dir):
     ax.set_yscale("log")
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "exec_time_by_horizon_comparison_median.png")
+    filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_by_horizon_comparison_median.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -698,7 +708,7 @@ def create_execution_time_analysis(df, output_dir):
                     ax.text(j, i, f"{val:.0f}", ha="center", va="center", fontsize=7, color=text_color)
 
         plt.tight_layout()
-        filepath = os.path.join(output_dir, "beam_total_sailed_heatmap_mean.png")
+        filepath = os.path.join(output_dir, apply_prefix(prefix, "beam_total_sailed_heatmap_mean.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -729,7 +739,7 @@ def create_execution_time_analysis(df, output_dir):
                     ax.text(j, i, f"{val:.0f}", ha="center", va="center", fontsize=7, color=text_color)
 
         plt.tight_layout()
-        filepath = os.path.join(output_dir, "beam_total_sailed_heatmap_median.png")
+        filepath = os.path.join(output_dir, apply_prefix(prefix, "beam_total_sailed_heatmap_median.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -760,12 +770,12 @@ def create_execution_time_analysis(df, output_dir):
                     ax.text(j, i, f"{val:.0f}", ha="center", va="center", fontsize=7, color=text_color)
 
         plt.tight_layout()
-        filepath = os.path.join(output_dir, "beam_total_sailed_heatmap_min.png")
+        filepath = os.path.join(output_dir, apply_prefix(prefix, "beam_total_sailed_heatmap_min.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
 
-def create_summary_table(df, df_all, output_dir):
+def create_summary_table(df, df_all, output_dir, prefix=""):
     """Create a summary table of results per algorithm."""
     def format_mean_std(series, decimals=1):
         mean = series.mean()
@@ -824,7 +834,7 @@ def create_summary_table(df, df_all, output_dir):
     summary_df = pd.DataFrame(summary_data)
 
     # Save as CSV
-    summary_df.to_csv(os.path.join(output_dir, "summary_results.csv"), index=False)
+    summary_df.to_csv(os.path.join(output_dir, apply_prefix(prefix, "summary_results.csv")), index=False)
 
     # Create figure with table
     fig_width = max(14, 1.6 * len(summary_df.columns))
@@ -848,14 +858,14 @@ def create_summary_table(df, df_all, output_dir):
 
     plt.title("Summary: Results per Algorithm", fontsize=14, pad=20)
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "summary_results_table.png")
+    filepath = os.path.join(output_dir, apply_prefix(prefix, "summary_results_table.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
     return summary_df
 
 
-def create_scatter_plots(df, output_dir):
+def create_scatter_plots(df, output_dir, prefix=""):
     """Scatter plots: all parameter pairs, colored by each remaining parameter."""
     params = ["horizon", "tackangle", "alpha", "beam_width"]
     targets = ["total_sailed", "elapsed_time"]
@@ -893,7 +903,7 @@ def create_scatter_plots(df, output_dir):
                 )
                 plt.tight_layout()
                 filename = f"scatter_{y_param}_vs_{x_param}_by_{color_param}.png"
-                plt.savefig(os.path.join(output_dir, filename), dpi=150, bbox_inches="tight")
+                plt.savefig(os.path.join(output_dir, apply_prefix(prefix, filename)), dpi=150, bbox_inches="tight")
                 plt.close()
 
 
@@ -911,7 +921,7 @@ def compute_finished_mask(df_all, metadata):
     return None
 
 
-def create_unfinished_rate_heatmaps(df_all, metadata, output_dir):
+def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix=""):
     """Create heatmaps of unfinished rate for each parameter pair, per algorithm."""
     if df_all.empty:
         return
@@ -958,7 +968,7 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir):
                             ax.text(col, row, f"{val:.2f}", ha="center", va="center", fontsize=7, color=text_color)
                 plt.tight_layout()
                 filename = f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_mean.png"
-                plt.savefig(os.path.join(output_dir, filename), dpi=150, bbox_inches="tight")
+                plt.savefig(os.path.join(output_dir, apply_prefix(prefix, filename)), dpi=150, bbox_inches="tight")
                 plt.close()
 
                 pivot_median = subset.pivot_table(
@@ -987,11 +997,11 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir):
                             ax.text(col, row, f"{val:.2f}", ha="center", va="center", fontsize=7, color=text_color)
                 plt.tight_layout()
                 filename = f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_median.png"
-                plt.savefig(os.path.join(output_dir, filename), dpi=150, bbox_inches="tight")
+                plt.savefig(os.path.join(output_dir, apply_prefix(prefix, filename)), dpi=150, bbox_inches="tight")
                 plt.close()
 
 
-def create_failure_probability_plots(df_all, metadata, output_dir):
+def create_failure_probability_plots(df_all, metadata, output_dir, prefix=""):
     """Create failure probability vs parameter comparison plots."""
     if df_all.empty:
         return
@@ -1027,7 +1037,7 @@ def create_failure_probability_plots(df_all, metadata, output_dir):
         ax.legend(fontsize=8)
         plt.tight_layout()
         filename = f"unfinished_rate_compare_{param}_mean.png"
-        plt.savefig(os.path.join(output_dir, filename), dpi=150, bbox_inches="tight")
+        plt.savefig(os.path.join(output_dir, apply_prefix(prefix, filename)), dpi=150, bbox_inches="tight")
         plt.close()
 
         fig, ax = plt.subplots(figsize=(9, 6))
@@ -1057,7 +1067,7 @@ def create_failure_probability_plots(df_all, metadata, output_dir):
         ax.legend(fontsize=8)
         plt.tight_layout()
         filename = f"unfinished_rate_compare_{param}_median.png"
-        plt.savefig(os.path.join(output_dir, filename), dpi=150, bbox_inches="tight")
+        plt.savefig(os.path.join(output_dir, apply_prefix(prefix, filename)), dpi=150, bbox_inches="tight")
         plt.close()
 
 
@@ -1123,6 +1133,41 @@ def main():
     create_unfinished_rate_heatmaps(df_all, metadata, output_dir)
     print("  Creating unfinished rate vs param plots...")
     create_failure_probability_plots(df_all, metadata, output_dir)
+
+    # tackangle = 43 filtered outputs
+    if "tackangle" in df.columns:
+        df_ta43 = df[df["tackangle"] == 43]
+    else:
+        df_ta43 = df.iloc[0:0]
+    if "tackangle" in df_all.columns:
+        df_all_ta43 = df_all[df_all["tackangle"] == 43]
+    else:
+        df_all_ta43 = df_all.iloc[0:0]
+    if not df_ta43.empty:
+        print("  Creating ta43_ plots...")
+        prefix = "ta43_"
+        for algo in df_ta43["algorithm"].unique():
+            if algo == "beam_realmove":
+                params = ["horizon", "tackangle", "alpha", "beam_width"]
+            else:
+                params = ["horizon", "tackangle", "alpha"]
+            metrics = ["total_sailed", "elapsed_time"]
+            for i in range(len(params)):
+                for j in range(i + 1, len(params)):
+                    x_param = params[i]
+                    y_param = params[j]
+                    for metric in metrics:
+                        create_heatmap(df_ta43, algo, x_param, y_param, metric, output_dir, agg="mean", prefix=prefix)
+                        create_heatmap(df_ta43, algo, x_param, y_param, metric, output_dir, agg="median", prefix=prefix)
+                    if "total_sailed" in metrics:
+                        create_heatmap(df_ta43, algo, x_param, y_param, "total_sailed", output_dir, agg="min", prefix=prefix)
+        create_algorithm_comparison(df_ta43, output_dir, prefix=prefix)
+        create_parameter_sensitivity(df_ta43, output_dir, prefix=prefix)
+        create_execution_time_analysis(df_ta43, output_dir, prefix=prefix)
+        create_summary_table(df_ta43, df_all_ta43, output_dir, prefix=prefix)
+        create_scatter_plots(df_ta43, output_dir, prefix=prefix)
+        create_unfinished_rate_heatmaps(df_all_ta43, metadata, output_dir, prefix=prefix)
+        create_failure_probability_plots(df_all_ta43, metadata, output_dir, prefix=prefix)
 
     print("\n" + "=" * 60)
     print("VISUALIZATION COMPLETE")
