@@ -54,24 +54,37 @@ Generating visualizations...
 ## Output files
 Common outputs (all PNG):
 - `heatmap_<algo>_<param>_vs_<param>_mean_total_sailed.png`
+- `heatmap_<algo>_<param>_vs_<param>_median_total_sailed.png`
 - `heatmap_<algo>_<param>_vs_<param>_min_total_sailed.png`
 - `heatmap_<algo>_<param>_vs_<param>_mean_elapsed_time.png`
+- `heatmap_<algo>_<param>_vs_<param>_median_elapsed_time.png`
 - `compare_total_sailed_mean.png`
+- `compare_total_sailed_median.png`
 - `compare_total_sailed_min.png`
 - `sensitivity_<param>_mean_total_sailed.png`
+- `sensitivity_<param>_median_total_sailed.png`
 - `sensitivity_<param>_min_total_sailed.png`
+- `sensitivity_beam_width_mean_total_sailed.png`
+- `sensitivity_beam_width_median_total_sailed.png`
+- `sensitivity_beam_width_min_total_sailed.png`
 - `exec_time_distribution.png`
 - `exec_time_vs_<param>_mean.png`
+- `exec_time_vs_<param>_median.png`
 - `exec_time_<algo>_<param>_vs_<param>_heatmap_mean.png`
-- `exec_time_vs_<param>.png`
-- `exec_time_per_step.png`
-- `exec_time_by_horizon_comparison.png`
+- `exec_time_<algo>_<param>_vs_<param>_heatmap_median.png`
+- `exec_time_per_step_mean.png`
+- `exec_time_per_step_median.png`
+- `exec_time_by_horizon_comparison_mean.png`
+- `exec_time_by_horizon_comparison_median.png`
 - `beam_total_sailed_heatmap_mean.png`
+- `beam_total_sailed_heatmap_median.png`
 - `beam_total_sailed_heatmap_min.png`
 - `scatter_total_sailed_vs_<param>_by_<param>.png`
 - `scatter_elapsed_time_vs_<param>_by_<param>.png`
-- `unfinished_rate_heatmap_<algo>_<param>_vs_<param>.png`
-- `unfinished_rate_compare_<param>.png`
+- `unfinished_rate_heatmap_<algo>_<param>_vs_<param>_mean.png`
+- `unfinished_rate_heatmap_<algo>_<param>_vs_<param>_median.png`
+- `unfinished_rate_compare_<param>_mean.png`
+- `unfinished_rate_compare_<param>_median.png`
 - `summary_results_table.png`
 
 ## Notes

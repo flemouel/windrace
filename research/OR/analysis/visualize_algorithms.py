@@ -166,6 +166,34 @@ def create_algorithm_comparison(df, output_dir):
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
+    # Median +/- IQR
+    fig, ax = plt.subplots(figsize=(10, 6))
+    median_stats = df.groupby("algorithm")[metric].agg(
+        median="median",
+        q1=lambda s: s.quantile(0.25),
+        q3=lambda s: s.quantile(0.75)
+    )
+    median_stats["iqr"] = median_stats["q3"] - median_stats["q1"]
+    median_stats = median_stats.sort_values("median")
+
+    bar_colors = [colors.get(algo, "#95a5a6") for algo in median_stats.index]
+    x = range(len(median_stats))
+    bars = ax.bar(x, median_stats["median"], yerr=median_stats["iqr"], capsize=5, color=bar_colors, alpha=0.8)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(median_stats.index, rotation=15)
+    ax.set_ylabel("Total Sailed (m)")
+    ax.set_title("Algorithm Comparison: Total Sailed Distance\n(median +/- IQR across all parameter combinations, finished races only)")
+
+    for i, (bar, median_val) in enumerate(zip(bars, median_stats["median"])):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + median_stats["iqr"].iloc[i] + 0.02 * median_stats["median"].max(),
+                f"{median_val:.1f}", ha="center", va="bottom", fontsize=10)
+
+    plt.tight_layout()
+    filepath = os.path.join(output_dir, "compare_total_sailed_median.png")
+    plt.savefig(filepath, dpi=150, bbox_inches="tight")
+    plt.close()
+
     # Best results per algorithm
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -221,7 +249,7 @@ def create_parameter_sensitivity(df, output_dir):
 
         ax.set_xlabel(param.replace("_", " ").title())
         ax.set_ylabel("Total Sailed (m)")
-        ax.set_title(f"Effect of {param.replace('_', ' ').title()} on Total Sailed\n(finished races only)")
+        ax.set_title(f"Effect of {param.replace('_', ' ').title()} on Total Sailed\n(mean +/- std, finished races only)")
         ax.legend()
 
         if param == "horizon":
@@ -229,6 +257,41 @@ def create_parameter_sensitivity(df, output_dir):
 
         plt.tight_layout()
         filepath = os.path.join(output_dir, f"sensitivity_{param}_mean_total_sailed.png")
+        plt.savefig(filepath, dpi=150, bbox_inches="tight")
+        plt.close()
+
+        # Median (IQR) total_sailed
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        for algo in algos:
+            algo_df = df[df["algorithm"] == algo]
+            grouped = algo_df.groupby(param)[metric].agg(
+                median="median",
+                q1=lambda s: s.quantile(0.25),
+                q3=lambda s: s.quantile(0.75)
+            )
+            grouped["iqr"] = grouped["q3"] - grouped["q1"]
+
+            ax.errorbar(
+                grouped.index,
+                grouped["median"],
+                yerr=grouped["iqr"],
+                label=algo,
+                marker="o",
+                color=colors.get(algo, "#95a5a6"),
+                capsize=3
+            )
+
+        ax.set_xlabel(param.replace("_", " ").title())
+        ax.set_ylabel("Total Sailed (m)")
+        ax.set_title(f"Effect of {param.replace('_', ' ').title()} on Total Sailed\n(median +/- IQR, finished races only)")
+        ax.legend()
+
+        if param == "horizon":
+            ax.set_xscale("log")
+
+        plt.tight_layout()
+        filepath = os.path.join(output_dir, f"sensitivity_{param}_median_total_sailed.png")
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -278,10 +341,37 @@ def create_parameter_sensitivity(df, output_dir):
 
         ax.set_xlabel("Beam Width")
         ax.set_ylabel("Total Sailed (m)")
-        ax.set_title("Effect of Beam Width on Total Sailed\n(beam_realmove only, finished races)")
+        ax.set_title("Effect of Beam Width on Total Sailed\n(mean +/- std, beam_realmove only, finished races)")
 
         plt.tight_layout()
         filepath = os.path.join(output_dir, "sensitivity_beam_width_mean_total_sailed.png")
+        plt.savefig(filepath, dpi=150, bbox_inches="tight")
+        plt.close()
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        grouped = beam_df.groupby("beam_width")[metric].agg(
+            median="median",
+            q1=lambda s: s.quantile(0.25),
+            q3=lambda s: s.quantile(0.75)
+        )
+        grouped["iqr"] = grouped["q3"] - grouped["q1"]
+
+        ax.errorbar(
+            grouped.index,
+            grouped["median"],
+            yerr=grouped["iqr"],
+            marker="o",
+            color="#3498db",
+            capsize=3
+        )
+
+        ax.set_xlabel("Beam Width")
+        ax.set_ylabel("Total Sailed (m)")
+        ax.set_title("Effect of Beam Width on Total Sailed\n(median +/- IQR, beam_realmove only)")
+
+        plt.tight_layout()
+        filepath = os.path.join(output_dir, "sensitivity_beam_width_median_total_sailed.png")
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -336,12 +426,33 @@ def create_execution_time_analysis(df, output_dir):
                     marker="o", color="#3498db", capsize=3)
         ax.set_xlabel("Beam Width")
         ax.set_ylabel("Execution Time (s)")
-        ax.set_title("Execution Time vs Beam Width\n(beam_realmove)")
+        ax.set_title("Execution Time vs Beam Width\n(mean +/- std, beam_realmove)")
     else:
         ax.text(0.5, 0.5, "No beam_realmove data", ha="center", va="center", transform=ax.transAxes)
-        ax.set_title("Execution Time vs Beam Width\n(beam_realmove)")
+        ax.set_title("Execution Time vs Beam Width\n(mean +/- std, beam_realmove)")
     plt.tight_layout()
     filepath = os.path.join(output_dir, "exec_time_vs_beam_width_mean.png")
+    plt.savefig(filepath, dpi=150, bbox_inches="tight")
+    plt.close()
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    if not beam_df.empty:
+        grouped = beam_df.groupby("beam_width")["elapsed_time"].agg(
+            median="median",
+            q1=lambda s: s.quantile(0.25),
+            q3=lambda s: s.quantile(0.75)
+        )
+        grouped["iqr"] = grouped["q3"] - grouped["q1"]
+        ax.errorbar(grouped.index, grouped["median"], yerr=grouped["iqr"],
+                    marker="o", color="#3498db", capsize=3)
+        ax.set_xlabel("Beam Width")
+        ax.set_ylabel("Execution Time (s)")
+        ax.set_title("Execution Time vs Beam Width\n(median +/- IQR, beam_realmove)")
+    else:
+        ax.text(0.5, 0.5, "No beam_realmove data", ha="center", va="center", transform=ax.transAxes)
+        ax.set_title("Execution Time vs Beam Width\n(median +/- IQR, beam_realmove)")
+    plt.tight_layout()
+    filepath = os.path.join(output_dir, "exec_time_vs_beam_width_median.png")
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -387,6 +498,36 @@ def create_execution_time_analysis(df, output_dir):
                 plt.savefig(filepath, dpi=150, bbox_inches="tight")
                 plt.close()
 
+                if not algo_df.empty:
+                    pivot = algo_df.pivot_table(
+                        values="elapsed_time",
+                        index=y_param,
+                        columns=x_param,
+                        aggfunc="median"
+                    )
+                    if pivot.empty:
+                        continue
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    im = ax.imshow(pivot.values, cmap="YlOrRd", aspect="auto")
+                    ax.set_xticks(range(len(pivot.columns)))
+                    ax.set_yticks(range(len(pivot.index)))
+                    ax.set_xticklabels([f"{v:.2f}" if isinstance(v, float) else str(v) for v in pivot.columns], rotation=45)
+                    ax.set_yticklabels([f"{v:.2f}" if isinstance(v, float) else str(v) for v in pivot.index])
+                    ax.set_xlabel(x_param.replace("_", " ").title())
+                    ax.set_ylabel(y_param.replace("_", " ").title())
+                    ax.set_title(f"Execution Time Heatmap\n({algo}, median over other params)")
+                    plt.colorbar(im, ax=ax, label="Time (s)")
+                    for row in range(len(pivot.index)):
+                        for col in range(len(pivot.columns)):
+                            val = pivot.values[row, col]
+                            if not np.isnan(val):
+                                text_color = "white" if val > pivot.values.max() * 0.5 else "black"
+                                ax.text(col, row, f"{val:.1f}", ha="center", va="center", fontsize=7, color=text_color)
+                    plt.tight_layout()
+                    filepath = os.path.join(output_dir, f"exec_time_{algo}_{x_param}_vs_{y_param}_heatmap_median.png")
+                    plt.savefig(filepath, dpi=150, bbox_inches="tight")
+                    plt.close()
+
     # === Figure 2: Per-parameter sensitivity (separate files) ===
     params = ["horizon", "tackangle", "alpha"]
     for param in params:
@@ -398,14 +539,38 @@ def create_execution_time_analysis(df, output_dir):
                         marker="o", label=algo, color=colors.get(algo, "#95a5a6"), capsize=3)
         ax.set_xlabel(param.replace("_", " ").title())
         ax.set_ylabel("Execution Time (s)")
-        ax.set_title(f"Time vs {param.replace('_', ' ').title()}")
+        ax.set_title(f"Time vs {param.replace('_', ' ').title()} (mean +/- std)")
         if param == "horizon":
             ax.set_xscale("log")
             ax.set_yscale("log")
         ax.legend(fontsize=8)
 
         plt.tight_layout()
-        filepath = os.path.join(output_dir, f"exec_time_vs_{param}.png")
+        filepath = os.path.join(output_dir, f"exec_time_vs_{param}_mean.png")
+        plt.savefig(filepath, dpi=150, bbox_inches="tight")
+        plt.close()
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        for algo in df["algorithm"].unique():
+            algo_df = df[df["algorithm"] == algo]
+            grouped = algo_df.groupby(param)["elapsed_time"].agg(
+                median="median",
+                q1=lambda s: s.quantile(0.25),
+                q3=lambda s: s.quantile(0.75)
+            )
+            grouped["iqr"] = grouped["q3"] - grouped["q1"]
+            ax.errorbar(grouped.index, grouped["median"], yerr=grouped["iqr"],
+                        marker="o", label=algo, color=colors.get(algo, "#95a5a6"), capsize=3)
+        ax.set_xlabel(param.replace("_", " ").title())
+        ax.set_ylabel("Execution Time (s)")
+        ax.set_title(f"Time vs {param.replace('_', ' ').title()} (median +/- IQR)")
+        if param == "horizon":
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+        ax.legend(fontsize=8)
+
+        plt.tight_layout()
+        filepath = os.path.join(output_dir, f"exec_time_vs_{param}_median.png")
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -421,11 +586,32 @@ def create_execution_time_analysis(df, output_dir):
                     marker="o", label=algo, color=colors.get(algo, "#95a5a6"), capsize=3)
     ax.set_xlabel("Horizon")
     ax.set_ylabel("Time per Step (ms)")
-    ax.set_title("Computation Efficiency: Time per Step")
+    ax.set_title("Computation Efficiency: Time per Step (mean +/- std)")
     ax.set_xscale("log")
     ax.legend()
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "exec_time_per_step.png")
+    filepath = os.path.join(output_dir, "exec_time_per_step_mean.png")
+    plt.savefig(filepath, dpi=150, bbox_inches="tight")
+    plt.close()
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for algo in df["algorithm"].unique():
+        algo_df = df_with_efficiency[df_with_efficiency["algorithm"] == algo]
+        grouped = algo_df.groupby("horizon")["time_per_step"].agg(
+            median="median",
+            q1=lambda s: s.quantile(0.25),
+            q3=lambda s: s.quantile(0.75)
+        )
+        grouped["iqr"] = grouped["q3"] - grouped["q1"]
+        ax.errorbar(grouped.index, grouped["median"] * 1000, yerr=grouped["iqr"] * 1000,
+                    marker="o", label=algo, color=colors.get(algo, "#95a5a6"), capsize=3)
+    ax.set_xlabel("Horizon")
+    ax.set_ylabel("Time per Step (ms)")
+    ax.set_title("Computation Efficiency: Time per Step (median +/- IQR)")
+    ax.set_xscale("log")
+    ax.legend()
+    plt.tight_layout()
+    filepath = os.path.join(output_dir, "exec_time_per_step_median.png")
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -439,20 +625,47 @@ def create_execution_time_analysis(df, output_dir):
     for i, algo in enumerate(algos_list):
         algo_df = df[df["algorithm"] == algo]
         means = [algo_df[algo_df["horizon"] == h]["elapsed_time"].mean() for h in horizons]
+        stds = [algo_df[algo_df["horizon"] == h]["elapsed_time"].std() for h in horizons]
         # Handle NaN values
         means = [m if not np.isnan(m) else 0 for m in means]
-        ax.bar(x + i * width, means, width, label=algo, color=colors.get(algo, "#95a5a6"), alpha=0.8)
+        stds = [s if not np.isnan(s) else 0 for s in stds]
+        ax.bar(x + i * width, means, width, label=algo, color=colors.get(algo, "#95a5a6"),
+               alpha=0.8, yerr=stds, capsize=3)
 
     ax.set_xlabel("Horizon")
     ax.set_ylabel("Execution Time (s)")
-    ax.set_title("Execution Time by Horizon (comparison)")
+    ax.set_title("Execution Time by Horizon (comparison, mean +/- std)")
     ax.set_xticks(x + width)
     ax.set_xticklabels([str(h) for h in horizons], rotation=45)
     ax.legend()
     ax.set_yscale("log")
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "exec_time_by_horizon_comparison.png")
+    filepath = os.path.join(output_dir, "exec_time_by_horizon_comparison_mean.png")
+    plt.savefig(filepath, dpi=150, bbox_inches="tight")
+    plt.close()
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for i, algo in enumerate(algos_list):
+        algo_df = df[df["algorithm"] == algo]
+        medians = [algo_df[algo_df["horizon"] == h]["elapsed_time"].median() for h in horizons]
+        q1s = [algo_df[algo_df["horizon"] == h]["elapsed_time"].quantile(0.25) for h in horizons]
+        q3s = [algo_df[algo_df["horizon"] == h]["elapsed_time"].quantile(0.75) for h in horizons]
+        iqrs = [(q3 - q1) if not np.isnan(q3) and not np.isnan(q1) else 0 for q1, q3 in zip(q1s, q3s)]
+        medians = [m if not np.isnan(m) else 0 for m in medians]
+        ax.bar(x + i * width, medians, width, label=algo, color=colors.get(algo, "#95a5a6"),
+               alpha=0.8, yerr=iqrs, capsize=3)
+
+    ax.set_xlabel("Horizon")
+    ax.set_ylabel("Execution Time (s)")
+    ax.set_title("Execution Time by Horizon (comparison, median +/- IQR)")
+    ax.set_xticks(x + width)
+    ax.set_xticklabels([str(h) for h in horizons], rotation=45)
+    ax.legend()
+    ax.set_yscale("log")
+
+    plt.tight_layout()
+    filepath = os.path.join(output_dir, "exec_time_by_horizon_comparison_median.png")
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -486,6 +699,37 @@ def create_execution_time_analysis(df, output_dir):
 
         plt.tight_layout()
         filepath = os.path.join(output_dir, "beam_total_sailed_heatmap_mean.png")
+        plt.savefig(filepath, dpi=150, bbox_inches="tight")
+        plt.close()
+
+        # Heatmap: total_sailed (median)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        pivot_sailed_median = beam_df.pivot_table(
+            values="total_sailed",
+            index="beam_width",
+            columns="horizon",
+            aggfunc="median"
+        )
+        im = ax.imshow(pivot_sailed_median.values, cmap="YlGn_r", aspect="auto")
+        ax.set_xticks(range(len(pivot_sailed_median.columns)))
+        ax.set_yticks(range(len(pivot_sailed_median.index)))
+        ax.set_xticklabels([f"{v:.2f}" if isinstance(v, float) else str(v) for v in pivot_sailed_median.columns], rotation=45)
+        ax.set_yticklabels([f"{v:.2f}" if isinstance(v, float) else str(v) for v in pivot_sailed_median.index])
+        ax.set_xlabel("Horizon")
+        ax.set_ylabel("Beam Width")
+        ax.set_title("Total Sailed (m) - Quality\n(beam_realmove, median over other params)")
+        plt.colorbar(im, ax=ax, label="Distance (m)")
+
+        # Add text annotations for sailed (median)
+        for i in range(len(pivot_sailed_median.index)):
+            for j in range(len(pivot_sailed_median.columns)):
+                val = pivot_sailed_median.values[i, j]
+                if not np.isnan(val):
+                    text_color = "white" if val < pivot_sailed_median.values.min() + (pivot_sailed_median.values.max() - pivot_sailed_median.values.min()) * 0.5 else "black"
+                    ax.text(j, i, f"{val:.0f}", ha="center", va="center", fontsize=7, color=text_color)
+
+        plt.tight_layout()
+        filepath = os.path.join(output_dir, "beam_total_sailed_heatmap_median.png")
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -529,6 +773,14 @@ def create_summary_table(df, df_all, output_dir):
         if np.isnan(mean) or np.isnan(std):
             return "n/a"
         return f"{mean:.{decimals}f} ± {std:.{decimals}f}"
+    def format_median_iqr(series, decimals=1):
+        median = series.median()
+        q1 = series.quantile(0.25)
+        q3 = series.quantile(0.75)
+        if np.isnan(median) or np.isnan(q1) or np.isnan(q3):
+            return "n/a"
+        iqr = q3 - q1
+        return f"{median:.{decimals}f} ± {iqr:.{decimals}f}"
     summary_data = []
 
     preferred_order = ["mpc_simplemove", "mpc_realmove", "beam_realmove"]
@@ -558,13 +810,15 @@ def create_summary_table(df, df_all, output_dir):
         success_rate = finished_count / total_count if total_count > 0 else 0
         summary_data.append({
             "Algorithm": algo,
-            "Mean Distance (m)": format_mean_std(algo_df["total_sailed"]),
-            "Mean Elapsed Time (s)": format_mean_std(algo_df["elapsed_time"]),
-            "Best Distance (m)": f"{best_distance:.1f}" if not np.isnan(best_distance) else "n/a",
-            "Elapsed Time for Best Distance (s)": f"{best_elapsed:.2f}" if not np.isnan(best_elapsed) else "n/a",
+            "Mean Dist\n(m ± std)": format_mean_std(algo_df["total_sailed"]),
+            "Median Dist\n(m ± IQR)": format_median_iqr(algo_df["total_sailed"]),
+            "Mean Time\n(s ± std)": format_mean_std(algo_df["elapsed_time"]),
+            "Median Time\n(s ± IQR)": format_median_iqr(algo_df["elapsed_time"]),
+            "Best Dist\n(m)": f"{best_distance:.1f}" if not np.isnan(best_distance) else "n/a",
+            "Best Dist Time\n(s)": f"{best_elapsed:.2f}" if not np.isnan(best_elapsed) else "n/a",
             "Params": best_params,
-            "Finished Races": f"{finished_count}/{total_count}",
-            "Success Rate": f"{(success_rate * 100):.1f}%",
+            "Finished": f"{finished_count}/{total_count}",
+            "Success": f"{(success_rate * 100):.1f}%",
         })
 
     summary_df = pd.DataFrame(summary_data)
@@ -573,7 +827,8 @@ def create_summary_table(df, df_all, output_dir):
     summary_df.to_csv(os.path.join(output_dir, "summary_results.csv"), index=False)
 
     # Create figure with table
-    fig, ax = plt.subplots(figsize=(16, 4))
+    fig_width = max(14, 1.6 * len(summary_df.columns))
+    fig, ax = plt.subplots(figsize=(fig_width, 4))
     ax.axis("off")
 
     table = ax.table(
@@ -584,8 +839,8 @@ def create_summary_table(df, df_all, output_dir):
         colColours=["#3498db"] * len(summary_df.columns)
     )
     table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1.2, 1.5)
+    table.set_fontsize(8)
+    table.scale(1.1, 1.5)
 
     # Style header
     for i in range(len(summary_df.columns)):
@@ -693,7 +948,7 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir):
                 ax.set_yticklabels([f"{v:.2f}" if isinstance(v, float) else str(v) for v in pivot.index])
                 ax.set_xlabel(x_param.replace("_", " ").title())
                 ax.set_ylabel(y_param.replace("_", " ").title())
-                ax.set_title(f"Unfinished Rate\n{algo}: {x_param} vs {y_param}")
+                ax.set_title(f"Unfinished Rate\n{algo}: {x_param} vs {y_param} (mean)")
                 plt.colorbar(im, ax=ax, label="Unfinished Rate")
                 for row in range(len(pivot.index)):
                     for col in range(len(pivot.columns)):
@@ -702,7 +957,36 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir):
                             text_color = "white" if val > 0.5 else "black"
                             ax.text(col, row, f"{val:.2f}", ha="center", va="center", fontsize=7, color=text_color)
                 plt.tight_layout()
-                filename = f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}.png"
+                filename = f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_mean.png"
+                plt.savefig(os.path.join(output_dir, filename), dpi=150, bbox_inches="tight")
+                plt.close()
+
+                pivot_median = subset.pivot_table(
+                    values="unfinished",
+                    index=y_param,
+                    columns=x_param,
+                    aggfunc="median"
+                )
+                if pivot_median.empty:
+                    continue
+                fig, ax = plt.subplots(figsize=(10, 7))
+                im = ax.imshow(pivot_median.values, cmap="YlOrRd", aspect="auto", vmin=0, vmax=1)
+                ax.set_xticks(range(len(pivot_median.columns)))
+                ax.set_yticks(range(len(pivot_median.index)))
+                ax.set_xticklabels([f"{v:.2f}" if isinstance(v, float) else str(v) for v in pivot_median.columns], rotation=45)
+                ax.set_yticklabels([f"{v:.2f}" if isinstance(v, float) else str(v) for v in pivot_median.index])
+                ax.set_xlabel(x_param.replace("_", " ").title())
+                ax.set_ylabel(y_param.replace("_", " ").title())
+                ax.set_title(f"Unfinished Rate\n{algo}: {x_param} vs {y_param} (median)")
+                plt.colorbar(im, ax=ax, label="Unfinished Rate")
+                for row in range(len(pivot_median.index)):
+                    for col in range(len(pivot_median.columns)):
+                        val = pivot_median.values[row, col]
+                        if not np.isnan(val):
+                            text_color = "white" if val > 0.5 else "black"
+                            ax.text(col, row, f"{val:.2f}", ha="center", va="center", fontsize=7, color=text_color)
+                plt.tight_layout()
+                filename = f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_median.png"
                 plt.savefig(os.path.join(output_dir, filename), dpi=150, bbox_inches="tight")
                 plt.close()
 
@@ -736,13 +1020,43 @@ def create_failure_probability_plots(df_all, metadata, output_dir):
             continue
         ax.set_xlabel(param.replace("_", " ").title())
         ax.set_ylabel("Unfinished Rate")
-        ax.set_title(f"Unfinished Rate vs {param.replace('_', ' ').title()}")
+        ax.set_title(f"Unfinished Rate vs {param.replace('_', ' ').title()} (mean)")
         ax.set_ylim(0, 1)
         if param == "horizon":
             ax.set_xscale("log")
         ax.legend(fontsize=8)
         plt.tight_layout()
-        filename = f"unfinished_rate_compare_{param}.png"
+        filename = f"unfinished_rate_compare_{param}_mean.png"
+        plt.savefig(os.path.join(output_dir, filename), dpi=150, bbox_inches="tight")
+        plt.close()
+
+        fig, ax = plt.subplots(figsize=(9, 6))
+        plotted = False
+        for algo in df_all["algorithm"].unique():
+            algo_df = df_all[df_all["algorithm"] == algo]
+            finished_mask = compute_finished_mask(algo_df, metadata)
+            if finished_mask is None:
+                continue
+            subset = algo_df[[param]].copy()
+            subset["unfinished"] = (~finished_mask).astype(int)
+            subset = subset.dropna()
+            if subset.empty:
+                continue
+            grouped = subset.groupby(param)["unfinished"].median().reset_index()
+            ax.plot(grouped[param], grouped["unfinished"], marker="o", linestyle="-", label=algo)
+            plotted = True
+        if not plotted:
+            plt.close()
+            continue
+        ax.set_xlabel(param.replace("_", " ").title())
+        ax.set_ylabel("Unfinished Rate")
+        ax.set_title(f"Unfinished Rate vs {param.replace('_', ' ').title()} (median)")
+        ax.set_ylim(0, 1)
+        if param == "horizon":
+            ax.set_xscale("log")
+        ax.legend(fontsize=8)
+        plt.tight_layout()
+        filename = f"unfinished_rate_compare_{param}_median.png"
         plt.savefig(os.path.join(output_dir, filename), dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -780,6 +1094,7 @@ def main():
                 y_param = params[j]
                 for metric in metrics:
                     create_heatmap(df, algo, x_param, y_param, metric, output_dir, agg="mean")
+                    create_heatmap(df, algo, x_param, y_param, metric, output_dir, agg="median")
                 if "total_sailed" in metrics:
                     create_heatmap(df, algo, x_param, y_param, "total_sailed", output_dir, agg="min")
 
