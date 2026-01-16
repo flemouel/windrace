@@ -1,0 +1,78 @@
+# Analysis
+
+This folder contains scripts that analyze and visualize benchmark results produced by `benchmark_algorithms.py`.
+
+## Files
+- `benchmark_algorithms.py`: Runs grid searches across algorithms and parameters, saving results to CSV/JSON.
+- `benchmark_results.json`: JSON output with metadata and per-run results.
+- `benchmark_results.csv`: Flat CSV output for quick inspection.
+- `visualize_algorithms.py`: Generates heatmaps, comparisons, and sensitivity plots from JSON results.
+- `visualize_trajectories.py`: Optional trajectory visualization (if present in results).
+
+## Typical workflow
+1) Run benchmarks (partial runs are supported):
+```bash
+python3 benchmark_algorithms.py --quick
+```
+
+2) Generate visualizations:
+```bash
+python3 visualize_algorithms.py --input benchmark_results.json --output-dir .
+```
+
+## Parameters
+`benchmark_algorithms.py` supports common options:
+- `--output` (`benchmark_results.csv`)
+- `--json-output` (`benchmark_results.json`)
+- `--workers` (`12`)
+- `--algo` (`all`, choices: `beam_realmove`, `mpc_realmove`, `mpc_simplemove`, `all`)
+- `--quick` (reduced parameter ranges for fast runs)
+- `--resume` (continue from previous JSON results)
+- `--save-interval` (`10`)
+- fixed params: `goal=20`, `start_index=600`, `near_threshold=200`, `near_delay=10`, `far_delay=20`
+
+`visualize_algorithms.py` uses:
+- `--input` (`benchmark_results.json`)
+- `--output-dir` (`.`)
+
+## Example output
+From `benchmark_algorithms.py`:
+```
+[12/640] mpc_realmove h=300 ta=43 a=1.0 bw=- -> OK (ETA: 420s)
+```
+
+From `visualize_algorithms.py`:
+```
+Loaded 128 finished races (distance_to_mark <= goal)
+Generating visualizations...
+  Creating heatmaps...
+  Creating algorithm comparisons...
+  Creating parameter sensitivity plots...
+```
+
+## Output files
+Common outputs (all PNG):
+- `heatmap_<algo>_<param>_vs_<param>_mean_total_sailed.png`
+- `heatmap_<algo>_<param>_vs_<param>_min_total_sailed.png`
+- `heatmap_<algo>_<param>_vs_<param>_mean_elapsed_time.png`
+- `compare_total_sailed_mean.png`
+- `compare_total_sailed_min.png`
+- `sensitivity_<param>_mean_total_sailed.png`
+- `sensitivity_<param>_min_total_sailed.png`
+- `exec_time_distribution.png`
+- `exec_time_vs_<param>_mean.png`
+- `exec_time_<algo>_<param>_vs_<param>_heatmap_mean.png`
+- `exec_time_vs_<param>.png`
+- `exec_time_per_step.png`
+- `exec_time_by_horizon_comparison.png`
+- `beam_total_sailed_heatmap_mean.png`
+- `beam_total_sailed_heatmap_min.png`
+- `scatter_total_sailed_vs_<param>_by_<param>.png`
+- `scatter_elapsed_time_vs_<param>_by_<param>.png`
+- `unfinished_rate_heatmap_<param>_vs_<param>.png`
+- `unfinished_rate_vs_<param>.png`
+- `summary_results_table.png`
+
+## Notes
+- Visualizations only consider finished races (`distance_to_mark <= goal`).
+- If the benchmark run was interrupted, the visualizer still works as long as there are finished runs.
