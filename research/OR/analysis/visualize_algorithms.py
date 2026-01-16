@@ -657,84 +657,92 @@ def compute_finished_mask(df_all, metadata):
 
 
 def create_unfinished_rate_heatmaps(df_all, metadata, output_dir):
-    """Create heatmaps of unfinished rate for each parameter pair."""
+    """Create heatmaps of unfinished rate for each parameter pair, per algorithm."""
     if df_all.empty:
-        return
-
-    finished_mask = compute_finished_mask(df_all, metadata)
-    if finished_mask is None:
         return
 
     params = ["horizon", "tackangle", "alpha", "beam_width"]
-    for i in range(len(params)):
-        for j in range(i + 1, len(params)):
-            x_param = params[i]
-            y_param = params[j]
-            if x_param not in df_all.columns or y_param not in df_all.columns:
-                continue
-            subset = df_all[[x_param, y_param]].copy()
-            subset["unfinished"] = (~finished_mask).astype(int)
-            if subset.empty:
-                continue
-            pivot = subset.pivot_table(
-                values="unfinished",
-                index=y_param,
-                columns=x_param,
-                aggfunc="mean"
-            )
-            if pivot.empty:
-                continue
-            fig, ax = plt.subplots(figsize=(10, 7))
-            im = ax.imshow(pivot.values, cmap="YlOrRd", aspect="auto", vmin=0, vmax=1)
-            ax.set_xticks(range(len(pivot.columns)))
-            ax.set_yticks(range(len(pivot.index)))
-            ax.set_xticklabels([f"{v:.2f}" if isinstance(v, float) else str(v) for v in pivot.columns], rotation=45)
-            ax.set_yticklabels([f"{v:.2f}" if isinstance(v, float) else str(v) for v in pivot.index])
-            ax.set_xlabel(x_param.replace("_", " ").title())
-            ax.set_ylabel(y_param.replace("_", " ").title())
-            ax.set_title(f"Unfinished Rate\n{x_param} vs {y_param}")
-            plt.colorbar(im, ax=ax, label="Unfinished Rate")
-            for row in range(len(pivot.index)):
-                for col in range(len(pivot.columns)):
-                    val = pivot.values[row, col]
-                    if not np.isnan(val):
-                        text_color = "white" if val > 0.5 else "black"
-                        ax.text(col, row, f"{val:.2f}", ha="center", va="center", fontsize=7, color=text_color)
-            plt.tight_layout()
-            filename = f"unfinished_rate_heatmap_{x_param}_vs_{y_param}.png"
-            plt.savefig(os.path.join(output_dir, filename), dpi=150, bbox_inches="tight")
-            plt.close()
+    for algo in df_all["algorithm"].unique():
+        algo_df = df_all[df_all["algorithm"] == algo]
+        finished_mask = compute_finished_mask(algo_df, metadata)
+        if finished_mask is None:
+            continue
+        for i in range(len(params)):
+            for j in range(i + 1, len(params)):
+                x_param = params[i]
+                y_param = params[j]
+                if x_param not in algo_df.columns or y_param not in algo_df.columns:
+                    continue
+                subset = algo_df[[x_param, y_param]].copy()
+                subset["unfinished"] = (~finished_mask).astype(int)
+                if subset.empty:
+                    continue
+                pivot = subset.pivot_table(
+                    values="unfinished",
+                    index=y_param,
+                    columns=x_param,
+                    aggfunc="mean"
+                )
+                if pivot.empty:
+                    continue
+                fig, ax = plt.subplots(figsize=(10, 7))
+                im = ax.imshow(pivot.values, cmap="YlOrRd", aspect="auto", vmin=0, vmax=1)
+                ax.set_xticks(range(len(pivot.columns)))
+                ax.set_yticks(range(len(pivot.index)))
+                ax.set_xticklabels([f"{v:.2f}" if isinstance(v, float) else str(v) for v in pivot.columns], rotation=45)
+                ax.set_yticklabels([f"{v:.2f}" if isinstance(v, float) else str(v) for v in pivot.index])
+                ax.set_xlabel(x_param.replace("_", " ").title())
+                ax.set_ylabel(y_param.replace("_", " ").title())
+                ax.set_title(f"Unfinished Rate\n{algo}: {x_param} vs {y_param}")
+                plt.colorbar(im, ax=ax, label="Unfinished Rate")
+                for row in range(len(pivot.index)):
+                    for col in range(len(pivot.columns)):
+                        val = pivot.values[row, col]
+                        if not np.isnan(val):
+                            text_color = "white" if val > 0.5 else "black"
+                            ax.text(col, row, f"{val:.2f}", ha="center", va="center", fontsize=7, color=text_color)
+                plt.tight_layout()
+                filename = f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}.png"
+                plt.savefig(os.path.join(output_dir, filename), dpi=150, bbox_inches="tight")
+                plt.close()
 
 
 def create_failure_probability_plots(df_all, metadata, output_dir):
-    """Create failure probability vs parameter plots."""
+    """Create failure probability vs parameter comparison plots."""
     if df_all.empty:
-        return
-
-    finished_mask = compute_finished_mask(df_all, metadata)
-    if finished_mask is None:
         return
 
     params = ["horizon", "tackangle", "alpha", "beam_width"]
     for param in params:
         if param not in df_all.columns:
             continue
-        subset = df_all[[param]].copy()
-        subset["unfinished"] = (~finished_mask).astype(int)
-        subset = subset.dropna()
-        if subset.empty:
-            continue
-        grouped = subset.groupby(param)["unfinished"].mean().reset_index()
         fig, ax = plt.subplots(figsize=(9, 6))
-        ax.plot(grouped[param], grouped["unfinished"], marker="o", linestyle="-", color="#e74c3c")
+        plotted = False
+        for algo in df_all["algorithm"].unique():
+            algo_df = df_all[df_all["algorithm"] == algo]
+            finished_mask = compute_finished_mask(algo_df, metadata)
+            if finished_mask is None:
+                continue
+            subset = algo_df[[param]].copy()
+            subset["unfinished"] = (~finished_mask).astype(int)
+            subset = subset.dropna()
+            if subset.empty:
+                continue
+            grouped = subset.groupby(param)["unfinished"].mean().reset_index()
+            ax.plot(grouped[param], grouped["unfinished"], marker="o", linestyle="-", label=algo)
+            plotted = True
+        if not plotted:
+            plt.close()
+            continue
         ax.set_xlabel(param.replace("_", " ").title())
         ax.set_ylabel("Unfinished Rate")
         ax.set_title(f"Unfinished Rate vs {param.replace('_', ' ').title()}")
         ax.set_ylim(0, 1)
         if param == "horizon":
             ax.set_xscale("log")
+        ax.legend(fontsize=8)
         plt.tight_layout()
-        filename = f"unfinished_rate_vs_{param}.png"
+        filename = f"unfinished_rate_compare_{param}.png"
         plt.savefig(os.path.join(output_dir, filename), dpi=150, bbox_inches="tight")
         plt.close()
 

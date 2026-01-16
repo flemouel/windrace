@@ -69,8 +69,8 @@ Common outputs (all PNG):
 - `beam_total_sailed_heatmap_min.png`
 - `scatter_total_sailed_vs_<param>_by_<param>.png`
 - `scatter_elapsed_time_vs_<param>_by_<param>.png`
-- `unfinished_rate_heatmap_<param>_vs_<param>.png`
-- `unfinished_rate_vs_<param>.png`
+- `unfinished_rate_heatmap_<algo>_<param>_vs_<param>.png`
+- `unfinished_rate_compare_<param>.png`
 - `summary_results_table.png`
 
 ## Notes

@@ -1,4 +1,4 @@
 Algorithm,Mean Distance (m),Mean Elapsed Time (s),Best Distance (m),Elapsed Time for Best Distance (s),Params,Finished Races,Success Rate
-mpc_realmove,6092.3 ± 558.7,1.0 ± 2.8,5124.0,0.08,"h=10, ta=30, a=1.5",1532/1532,100.0%
-beam_realmove,5812.9 ± 497.9,59.5 ± 76.5,5069.6,89.24,"h=600, ta=30, a=0.9, bw=20.0",2387/3958,60.3%
-mpc_simplemove,6135.9 ± 600.7,1.9 ± 2.1,5137.6,0.09,"h=10, ta=30, a=0.6",237/258,91.9%
+mpc_simplemove,6137.0 ± 604.7,1.9 ± 2.1,5137.6,0.09,"h=10, ta=30, a=0.6",239/260,91.9%
+mpc_realmove,6092.9 ± 559.1,1.0 ± 2.8,5124.0,0.08,"h=10, ta=30, a=1.5",1533/1533,100.0%
+beam_realmove,5808.4 ± 496.2,59.2 ± 76.5,5069.6,89.24,"h=600, ta=30, a=0.9, bw=20.0",2464/4071,60.5%
