@@ -90,6 +90,41 @@ def create_heatmap(df, algo, x_param, y_param, metric, output_dir, fixed_params=
     if pivot.empty:
         return None
 
+    if prefix.startswith("ta43_") and (pivot.shape[0] == 1 or pivot.shape[1] == 1):
+        if pivot.shape[0] == 1:
+            x_values = pivot.columns
+            y_values = pivot.iloc[0].values
+            x_label = x_param
+            fixed_param = y_param
+            fixed_value = pivot.index[0]
+        else:
+            x_values = pivot.index
+            y_values = pivot.iloc[:, 0].values
+            x_label = y_param
+            fixed_param = x_param
+            fixed_value = pivot.columns[0]
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(x_values, y_values, marker="o", color="#3498db")
+        metric_label = metric.replace("_", " ").title()
+        ax.set_xlabel(x_label.replace("_", " ").title())
+        ax.set_ylabel(metric_label)
+        ax.set_title(
+            f"{algo}: {metric_label}\n{x_label} ({agg}, {fixed_param}={fixed_value})"
+        )
+        if x_label == "horizon":
+            ax.set_xscale("log")
+        plt.tight_layout()
+        fixed_suffix = "_".join(f"{k}{v}" for k, v in (fixed_params or {}).items())
+        filename = f"heatmap_{algo}_{x_param}_vs_{y_param}_{agg}_{metric}"
+        if fixed_suffix:
+            filename += f"_{fixed_suffix}"
+        filename += ".png"
+        filepath = os.path.join(output_dir, apply_prefix(prefix, filename))
+        plt.savefig(filepath, dpi=150, bbox_inches="tight")
+        plt.close()
+        return filepath
+
     fig, ax = plt.subplots(figsize=(12, 8))
 
     # Custom colormap (green = good/low, red = bad/high for distance)
@@ -227,14 +262,17 @@ def create_algorithm_comparison(df, output_dir, prefix=""):
     plt.close()
 
 
-def create_parameter_sensitivity(df, output_dir, prefix=""):
+def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
     """Create plots showing how each parameter affects total_sailed."""
     params = ["horizon", "tackangle", "alpha"]
+    skip_params = skip_params or set()
     metric = "total_sailed"
     algos = df["algorithm"].unique()
     colors = {"beam_realmove": "#3498db", "mpc_realmove": "#e74c3c", "mpc_simplemove": "#2ecc71"}
 
     for param in params:
+        if param in skip_params:
+            continue
         fig, ax = plt.subplots(figsize=(10, 6))
 
         for algo in algos:
@@ -400,7 +438,7 @@ def create_parameter_sensitivity(df, output_dir, prefix=""):
         plt.close()
 
 
-def create_execution_time_analysis(df, output_dir, prefix=""):
+def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None, skip_params=None):
     """Analyze execution times."""
     colors = {"beam_realmove": "#3498db", "mpc_realmove": "#e74c3c", "mpc_simplemove": "#2ecc71"}
 
@@ -461,6 +499,8 @@ def create_execution_time_analysis(df, output_dir, prefix=""):
     plt.close()
 
     # 4. Time heatmaps: all parameter pairs per algorithm
+    skip_heatmaps = skip_heatmaps or set()
+    skip_params = skip_params or set()
     for algo in df["algorithm"].unique():
         algo_df = df[df["algorithm"] == algo]
         if algo == "beam_realmove":
@@ -471,6 +511,8 @@ def create_execution_time_analysis(df, output_dir, prefix=""):
             for j in range(i + 1, len(params)):
                 x_param = params[i]
                 y_param = params[j]
+                if (algo, x_param, y_param) in skip_heatmaps or (algo, y_param, x_param) in skip_heatmaps:
+                    continue
                 fig, ax = plt.subplots(figsize=(10, 6))
                 if not algo_df.empty:
                     pivot = algo_df.pivot_table(
@@ -479,6 +521,36 @@ def create_execution_time_analysis(df, output_dir, prefix=""):
                         columns=x_param,
                         aggfunc="mean"
                     )
+                    if prefix.startswith("ta43_") and (pivot.shape[0] == 1 or pivot.shape[1] == 1):
+                        if pivot.shape[0] == 1:
+                            x_values = pivot.columns
+                            y_values = pivot.iloc[0].values
+                            x_label = x_param
+                            fixed_param = y_param
+                            fixed_value = pivot.index[0]
+                        else:
+                            x_values = pivot.index
+                            y_values = pivot.iloc[:, 0].values
+                            x_label = y_param
+                            fixed_param = x_param
+                            fixed_value = pivot.columns[0]
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        ax.plot(x_values, y_values, marker="o", color="#3498db")
+                        ax.set_xlabel(x_label.replace("_", " ").title())
+                        ax.set_ylabel("Time (s)")
+                        ax.set_title(
+                            f"Execution Time\n({algo}, mean, {fixed_param}={fixed_value})"
+                        )
+                        if x_label == "horizon":
+                            ax.set_xscale("log")
+                        plt.tight_layout()
+                        filepath = os.path.join(
+                            output_dir,
+                            apply_prefix(prefix, f"exec_time_{algo}_{x_param}_vs_{y_param}_heatmap_mean.png")
+                        )
+                        plt.savefig(filepath, dpi=150, bbox_inches="tight")
+                        plt.close()
+                        continue
                     im = ax.imshow(pivot.values, cmap="YlOrRd", aspect="auto")
                     ax.set_xticks(range(len(pivot.columns)))
                     ax.set_yticks(range(len(pivot.index)))
@@ -514,6 +586,36 @@ def create_execution_time_analysis(df, output_dir, prefix=""):
                     )
                     if pivot.empty:
                         continue
+                    if prefix.startswith("ta43_") and (pivot.shape[0] == 1 or pivot.shape[1] == 1):
+                        if pivot.shape[0] == 1:
+                            x_values = pivot.columns
+                            y_values = pivot.iloc[0].values
+                            x_label = x_param
+                            fixed_param = y_param
+                            fixed_value = pivot.index[0]
+                        else:
+                            x_values = pivot.index
+                            y_values = pivot.iloc[:, 0].values
+                            x_label = y_param
+                            fixed_param = x_param
+                            fixed_value = pivot.columns[0]
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        ax.plot(x_values, y_values, marker="o", color="#3498db")
+                        ax.set_xlabel(x_label.replace("_", " ").title())
+                        ax.set_ylabel("Time (s)")
+                        ax.set_title(
+                            f"Execution Time\n({algo}, median, {fixed_param}={fixed_value})"
+                        )
+                        if x_label == "horizon":
+                            ax.set_xscale("log")
+                        plt.tight_layout()
+                        filepath = os.path.join(
+                            output_dir,
+                            apply_prefix(prefix, f"exec_time_{algo}_{x_param}_vs_{y_param}_heatmap_median.png")
+                        )
+                        plt.savefig(filepath, dpi=150, bbox_inches="tight")
+                        plt.close()
+                        continue
                     fig, ax = plt.subplots(figsize=(10, 6))
                     im = ax.imshow(pivot.values, cmap="YlOrRd", aspect="auto")
                     ax.set_xticks(range(len(pivot.columns)))
@@ -541,6 +643,8 @@ def create_execution_time_analysis(df, output_dir, prefix=""):
     # === Figure 2: Per-parameter sensitivity (separate files) ===
     params = ["horizon", "tackangle", "alpha"]
     for param in params:
+        if param in skip_params:
+            continue
         fig, ax = plt.subplots(figsize=(10, 6))
         for algo in df["algorithm"].unique():
             algo_df = df[df["algorithm"] == algo]
@@ -865,14 +969,17 @@ def create_summary_table(df, df_all, output_dir, prefix=""):
     return summary_df
 
 
-def create_scatter_plots(df, output_dir, prefix=""):
+def create_scatter_plots(df, output_dir, prefix="", skip_params=None):
     """Scatter plots: all parameter pairs, colored by each remaining parameter."""
     params = ["horizon", "tackangle", "alpha", "beam_width"]
+    skip_params = skip_params or set()
     targets = ["total_sailed", "elapsed_time"]
     for y_param in targets:
         for x_param in params:
+            if x_param in skip_params:
+                continue
             for color_param in params:
-                if color_param == x_param:
+                if color_param == x_param or color_param in skip_params:
                     continue
                 subset = df[[x_param, y_param, color_param]].dropna()
                 if subset.empty:
@@ -950,6 +1057,33 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix=""):
                 )
                 if pivot.empty:
                     continue
+                if prefix.startswith("ta43_") and (pivot.shape[0] == 1 or pivot.shape[1] == 1):
+                    if pivot.shape[0] == 1:
+                        x_values = pivot.columns
+                        y_values = pivot.iloc[0].values
+                        x_label = x_param
+                        fixed_param = y_param
+                        fixed_value = pivot.index[0]
+                    else:
+                        x_values = pivot.index
+                        y_values = pivot.iloc[:, 0].values
+                        x_label = y_param
+                        fixed_param = x_param
+                        fixed_value = pivot.columns[0]
+                    fig, ax = plt.subplots(figsize=(10, 7))
+                    ax.plot(x_values, y_values, marker="o", color="#e67e22")
+                    ax.set_xlabel(x_label.replace("_", " ").title())
+                    ax.set_ylabel("Unfinished Rate")
+                    ax.set_title(
+                        f"Unfinished Rate\n{algo}: {x_label} (mean, {fixed_param}={fixed_value})"
+                    )
+                    if x_label == "horizon":
+                        ax.set_xscale("log")
+                    plt.tight_layout()
+                    filename = f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_mean.png"
+                    plt.savefig(os.path.join(output_dir, apply_prefix(prefix, filename)), dpi=150, bbox_inches="tight")
+                    plt.close()
+                    continue
                 fig, ax = plt.subplots(figsize=(10, 7))
                 im = ax.imshow(pivot.values, cmap="YlOrRd", aspect="auto", vmin=0, vmax=1)
                 ax.set_xticks(range(len(pivot.columns)))
@@ -979,6 +1113,33 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix=""):
                 )
                 if pivot_median.empty:
                     continue
+                if prefix.startswith("ta43_") and (pivot_median.shape[0] == 1 or pivot_median.shape[1] == 1):
+                    if pivot_median.shape[0] == 1:
+                        x_values = pivot_median.columns
+                        y_values = pivot_median.iloc[0].values
+                        x_label = x_param
+                        fixed_param = y_param
+                        fixed_value = pivot_median.index[0]
+                    else:
+                        x_values = pivot_median.index
+                        y_values = pivot_median.iloc[:, 0].values
+                        x_label = y_param
+                        fixed_param = x_param
+                        fixed_value = pivot_median.columns[0]
+                    fig, ax = plt.subplots(figsize=(10, 7))
+                    ax.plot(x_values, y_values, marker="o", color="#e67e22")
+                    ax.set_xlabel(x_label.replace("_", " ").title())
+                    ax.set_ylabel("Unfinished Rate")
+                    ax.set_title(
+                        f"Unfinished Rate\n{algo}: {x_label} (median, {fixed_param}={fixed_value})"
+                    )
+                    if x_label == "horizon":
+                        ax.set_xscale("log")
+                    plt.tight_layout()
+                    filename = f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_median.png"
+                    plt.savefig(os.path.join(output_dir, apply_prefix(prefix, filename)), dpi=150, bbox_inches="tight")
+                    plt.close()
+                    continue
                 fig, ax = plt.subplots(figsize=(10, 7))
                 im = ax.imshow(pivot_median.values, cmap="YlOrRd", aspect="auto", vmin=0, vmax=1)
                 ax.set_xticks(range(len(pivot_median.columns)))
@@ -1001,13 +1162,16 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix=""):
                 plt.close()
 
 
-def create_failure_probability_plots(df_all, metadata, output_dir, prefix=""):
+def create_failure_probability_plots(df_all, metadata, output_dir, prefix="", skip_params=None):
     """Create failure probability vs parameter comparison plots."""
     if df_all.empty:
         return
 
+    skip_params = skip_params or set()
     params = ["horizon", "tackangle", "alpha", "beam_width"]
     for param in params:
+        if param in skip_params:
+            continue
         if param not in df_all.columns:
             continue
         fig, ax = plt.subplots(figsize=(9, 6))
@@ -1147,6 +1311,7 @@ def main():
         print("  Creating ta43_ plots...")
         prefix = "ta43_"
         for algo in df_ta43["algorithm"].unique():
+            algo_df = df_ta43[df_ta43["algorithm"] == algo]
             if algo == "beam_realmove":
                 params = ["horizon", "tackangle", "alpha", "beam_width"]
             else:
@@ -1162,12 +1327,18 @@ def main():
                     if "total_sailed" in metrics:
                         create_heatmap(df_ta43, algo, x_param, y_param, "total_sailed", output_dir, agg="min", prefix=prefix)
         create_algorithm_comparison(df_ta43, output_dir, prefix=prefix)
-        create_parameter_sensitivity(df_ta43, output_dir, prefix=prefix)
-        create_execution_time_analysis(df_ta43, output_dir, prefix=prefix)
+        create_parameter_sensitivity(df_ta43, output_dir, prefix=prefix, skip_params={"tackangle"})
+        create_execution_time_analysis(
+            df_ta43,
+            output_dir,
+            prefix=prefix,
+            skip_heatmaps={("beam_realmove", "horizon", "tackangle")},
+            skip_params={"tackangle"}
+        )
         create_summary_table(df_ta43, df_all_ta43, output_dir, prefix=prefix)
-        create_scatter_plots(df_ta43, output_dir, prefix=prefix)
+        create_scatter_plots(df_ta43, output_dir, prefix=prefix, skip_params={"tackangle"})
         create_unfinished_rate_heatmaps(df_all_ta43, metadata, output_dir, prefix=prefix)
-        create_failure_probability_plots(df_all_ta43, metadata, output_dir, prefix=prefix)
+        create_failure_probability_plots(df_all_ta43, metadata, output_dir, prefix=prefix, skip_params={"tackangle"})
 
     print("\n" + "=" * 60)
     print("VISUALIZATION COMPLETE")

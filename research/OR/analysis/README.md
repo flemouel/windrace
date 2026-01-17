@@ -90,6 +90,9 @@ Common outputs (all PNG):
 When a tackangle=43 slice is generated, the same outputs are created with a `ta43_` prefix:
 - `ta43_<same filename>.png`
 - `ta43_summary_results.csv`
+- If a ta43 heatmap collapses to a single row/column, it is rendered as a 1D line plot with the same filename.
+- Tackangle-specific plots are omitted for ta43 slices (e.g. `ta43_exec_time_vs_tackangle_*`, `ta43_sensitivity_tackangle_*`,
+  `ta43_scatter_*_vs_tackangle_*`, `ta43_unfinished_rate_compare_tackangle_*`).
 
 ## Notes
 - Visualizations only consider finished races (`distance_to_mark <= goal`).
