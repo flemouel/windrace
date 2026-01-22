@@ -167,7 +167,7 @@
 		if (totalSailed && totalSailed > 0)
 		{
 			var efficiency = ((courseDistance / totalSailed) * 100).toFixed(1);
-			distanceText = "<br/>Distance sailed: " + totalSailed + "m (efficiency: " + efficiency + "%)";
+			distanceText = "<br/>Distance sailed: " + totalSailed + "m (Efficiency: " + efficiency + "%)";
 		}
 
 		if (resultText)
@@ -182,7 +182,7 @@
 						sailed: rec.boat ? Math.round(rec.boat.getTotalDistance()) : null
 					};
 				});
-				log("DEBUG", "Lost by 0m - arrivals", arrivalsDebug);
+				log("DEBUG", "Lost by Xm - arrivals", arrivalsDebug);
 			}
 			$("#result").html("<h3>"+resultText+achievementText+distanceText+"</h3>");
 			if (raceOutcome && (raceOutcome.status === "lost" || raceOutcome.status === "dnf"))
