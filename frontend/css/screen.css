@@ -145,6 +145,13 @@
 	width:50%;
 }
 
+.results .leaderboard td:first-child,
+.results .leaderboard th:first-child
+{
+	min-width: 90px;
+	white-space: nowrap;
+}
+
 .results p
 {
 	text-align:left;

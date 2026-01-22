@@ -94,7 +94,7 @@
 			$("#replay_back").hide();
 			$(".info").slideDown(200);
 			mode = "IDLE";
-			loadDataIdle();
+			reset();
 			return false;
 		});
 
@@ -132,24 +132,73 @@
 			}
 		}
 		var achievementText = "";
-		if (achievement)
+		var resultText = "";
+		if (raceOutcome)
+		{
+			if (raceOutcome.status === "won")
+			{
+				resultText = "Won by " + raceOutcome.margin + "m";
+				if (raceOutcome.achievement) achievementText = "<br/>" + raceOutcome.achievement;
+			}
+			else if (raceOutcome.status === "lost")
+			{
+				resultText = "Lost by " + raceOutcome.margin + "m";
+			}
+			else if (raceOutcome.status === "dnf")
+			{
+				resultText = "My boat did not finish";
+			}
+			else if (raceOutcome.status === "tied")
+			{
+				resultText = "Tied";
+			}
+		}
+		else if (achievement)
 		{
 			achievementText = "<br/>" + achievement;
-			if (recordtime)
-			{
-				var when = new Date(recordtime * 1000);
-				achievementText += "<br/>Recorded at " + when.toISOString().replace("T", " ").slice(0, 16) + " UTC";
-			}
+		}
+		if (recordtime)
+		{
+			var when = new Date(recordtime * 1000);
+			achievementText += "<br/>Recorded at " + when.toISOString().replace("T", " ").slice(0, 16) + " UTC";
 		}
 
 		var distanceText = "";
 		if (totalSailed && totalSailed > 0)
 		{
-			var efficiency = Math.round((courseDistance / totalSailed) * 100);
+			var efficiency = ((courseDistance / totalSailed) * 100).toFixed(1);
 			distanceText = "<br/>Distance sailed: " + totalSailed + "m (efficiency: " + efficiency + "%)";
 		}
 
-		if (finalresult<0)
+		if (resultText)
+		{
+			if (raceOutcome && raceOutcome.status === "lost" && raceOutcome.margin === 0)
+			{
+				var arrivalsDebug = arrival_records.map(function(rec)
+				{
+					return {
+						name: rec.name,
+						distance: Math.round(rec.distance),
+						sailed: rec.boat ? Math.round(rec.boat.getTotalDistance()) : null
+					};
+				});
+				log("DEBUG", "Lost by 0m - arrivals", arrivalsDebug);
+			}
+			$("#result").html("<h3>"+resultText+achievementText+distanceText+"</h3>");
+			if (raceOutcome && (raceOutcome.status === "lost" || raceOutcome.status === "dnf"))
+			{
+				$("#play").val("Try again").show();
+			}
+			else
+			{
+				$("#play").val("Play again").show();
+			}
+			$("#replay").show();
+			$("#replay_slider").hide();
+			$("#replay_back").hide();
+			if ($("#chat").length) $("#chat").show();
+		}
+		else if (finalresult<0)
 		{
 			$("#result").html("<h3>Lost by "+(0-finalresult)+"m"+achievementText+distanceText+"</h3>");
 			$("#play").val("Try again").show();
@@ -210,6 +259,8 @@
 	var mpcboat_trace = new Array();
 	var tacks_log = new Array();
 	var mpcboat_tacks_ready = false;
+	var arrival_records = new Array();
+	var arrival_flags = {};
 	var map = null;
 	var mark = null;
 	var started = false;
@@ -252,6 +303,7 @@
 	var LOG_ENABLED = true;
 	var LOG_SEND_TO_SERVER = true;
 	var LOG_LEVEL = "DEBUG";
+	var raceOutcome = null;
 
 
    function log(level)
@@ -322,6 +374,8 @@
 				log("INFO", "Starting game...");
 				started = true;
 				finished = false;
+				arrival_records = [];
+				arrival_flags = {};
 				$("#button").val("Loading...");
 				$("#button").attr("disabled","true");
 				window.clearTimeout(processIdleTimeout);
@@ -448,6 +502,9 @@
 		mpcboat_trace = new Array();
 		tacks_log = new Array();
 		mpcboat_tacks_ready = false;
+		arrival_records = new Array();
+		arrival_flags = {};
+		raceOutcome = null;
 		
 		started = false;
 		finished = false;
@@ -1324,6 +1381,32 @@ function processIdle()
 					}
 				}
 
+				if (myboat!=null && mydistance<=finishDistance && !arrival_flags[myboat_name])
+				{
+					arrival_flags[myboat_name] = true;
+					arrival_records.push({name: myboat_name, boat: myboat, distance: mydistance, tick: windindex});
+				}
+				if (srboat!=null && srdistance<=finishDistance && !arrival_flags[srboat_name])
+				{
+					arrival_flags[srboat_name] = true;
+					arrival_records.push({name: srboat_name, boat: srboat, distance: srdistance, tick: windindex});
+				}
+				if (geoboat!=null && geodistance<=finishDistance && !arrival_flags[geoboat_name])
+				{
+					arrival_flags[geoboat_name] = true;
+					arrival_records.push({name: geoboat_name, boat: geoboat, distance: geodistance, tick: windindex});
+				}
+				if (kalboat!=null && kaldistance<=finishDistance && !arrival_flags[kalboat_name])
+				{
+					arrival_flags[kalboat_name] = true;
+					arrival_records.push({name: kalboat_name, boat: kalboat, distance: kaldistance, tick: windindex});
+				}
+				if (mpcboat!=null && mpcdistance<=finishDistance && !arrival_flags[mpcboat_name])
+				{
+					arrival_flags[mpcboat_name] = true;
+					arrival_records.push({name: mpcboat_name, boat: mpcboat, distance: mpcdistance, tick: windindex});
+				}
+
 				var leaderDistance = mydistance;
 				leaderDistance = Math.min(leaderDistance, srdistance);
 				leaderDistance = Math.min(leaderDistance, geodistance);
@@ -1372,53 +1455,114 @@ function processIdle()
 			if (kalboat!=null) kalboat_tacks.push([kalboat.point.lat(),kalboat.point.lng()]);
 			if (mpcboat!=null) mpcboat_tacks.push([mpcboat.point.lat(),mpcboat.point.lng()]);
 
-			var boatResults = [];
-			if (myboat!=null) boatResults.push({name: myboat_name, distance: mydistance, boat: myboat});
-			if (srboat!=null) boatResults.push({name: srboat_name, distance: srdistance, boat: srboat});
-			if (geoboat!=null) boatResults.push({name: geoboat_name, distance: geodistance, boat: geoboat});
-			if (kalboat!=null) boatResults.push({name: kalboat_name, distance: kaldistance, boat: kalboat});
-			if (mpcboat!=null) boatResults.push({name: mpcboat_name, distance: mpcdistance, boat: mpcboat});
-
-			var minDistance = null;
-			for (var i=0; i<boatResults.length; i++)
+			if (myboat!=null && mydistance<=finishDistance && !arrival_flags[myboat_name])
 			{
-				if (minDistance === null || boatResults[i].distance < minDistance) minDistance = boatResults[i].distance;
+				arrival_flags[myboat_name] = true;
+				arrival_records.push({name: myboat_name, boat: myboat, distance: mydistance, tick: windindex});
+			}
+			if (srboat!=null && srdistance<=finishDistance && !arrival_flags[srboat_name])
+			{
+				arrival_flags[srboat_name] = true;
+				arrival_records.push({name: srboat_name, boat: srboat, distance: srdistance, tick: windindex});
+			}
+			if (geoboat!=null && geodistance<=finishDistance && !arrival_flags[geoboat_name])
+			{
+				arrival_flags[geoboat_name] = true;
+				arrival_records.push({name: geoboat_name, boat: geoboat, distance: geodistance, tick: windindex});
+			}
+			if (kalboat!=null && kaldistance<=finishDistance && !arrival_flags[kalboat_name])
+			{
+				arrival_flags[kalboat_name] = true;
+				arrival_records.push({name: kalboat_name, boat: kalboat, distance: kaldistance, tick: windindex});
+			}
+			if (mpcboat!=null && mpcdistance<=finishDistance && !arrival_flags[mpcboat_name])
+			{
+				arrival_flags[mpcboat_name] = true;
+				arrival_records.push({name: mpcboat_name, boat: mpcboat, distance: mpcdistance, tick: windindex});
 			}
 
-			var winEpsilon = 0.5; // meters, avoid floating tie issues
-			var winners = [];
-			for (var i=0; i<boatResults.length; i++)
+			arrival_records.sort(function(a, b)
 			{
-				if (Math.abs(boatResults[i].distance - minDistance) <= winEpsilon) winners.push(boatResults[i]);
-			}
+				if (a.tick !== b.tick) return a.tick - b.tick;
+				return a.distance - b.distance;
+			});
 
-				function recordWinner(winner)
+			raceOutcome = null;
+			var leader = arrival_records.length ? arrival_records[0] : null;
+			var myRecord = null;
+			for (var i=0; i<arrival_records.length; i++)
+			{
+				if (arrival_records[i].name === myboat_name)
 				{
-					var progress = Math.round(courseDistance - winner.distance);
-					var totalSailed = Math.round(winner.boat.getTotalDistance());
-					var tacks_value = tacks_log.join(",");
-					if (winner.boat === mpcboat) tacks_value = "";
-					log("DEBUG", "record.php payload", {
-						starttime: starttime,
-						finishindex: windindex,
-						finalresult: progress,
-						boat_name: winner.name,
-						tacks: tacks_value,
-						total_sailed: totalSailed,
-						start_lat: initial_boat_location.lat(),
-						start_lng: initial_boat_location.lng(),
-						finish_lat: mark_top.lat(),
-						finish_lng: mark_top.lng()
-					});
-					$.post("scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:progress, boat_name: winner.name, tacks:tacks_value, total_sailed:totalSailed, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}, function(response)
+					myRecord = arrival_records[i];
+					break;
+				}
+			}
+			if (leader && myRecord)
+			{
+				if (leader.name === myboat_name)
+				{
+					var margin = 0;
+					if (arrival_records.length > 1)
+					{
+						var runnerUp = arrival_records[1];
+						var mySailed = myRecord.boat ? myRecord.boat.getTotalDistance() : 0;
+						var runnerUpSailed = runnerUp.boat ? runnerUp.boat.getTotalDistance() : 0;
+						margin = Math.max(0, runnerUpSailed - mySailed);
+					}
+					var winAchievement = "";
+					if (margin >= 100) winAchievement = "Outstanding!";
+					else if (margin >= 50) winAchievement = "Great job!";
+					else if (margin >= 20) winAchievement = "Well done!";
+					raceOutcome = {status: "won", margin: Math.round(margin), achievement: winAchievement};
+				}
+				else
+				{
+					var mySailedLoss = myRecord.boat ? myRecord.boat.getTotalDistance() : 0;
+					var leaderSailed = leader.boat ? leader.boat.getTotalDistance() : 0;
+					var lossMargin = Math.max(0, mySailedLoss - leaderSailed);
+					raceOutcome = {status: "lost", margin: Math.round(lossMargin)};
+				}
+			}
+			else
+			{
+				raceOutcome = {status: "dnf"};
+			}
+
+			function recordWinner(winner)
+			{
+				var progress = Math.round(courseDistance - winner.distance);
+				var totalSailed = Math.round(winner.boat.getTotalDistance());
+				var tacks_value = tacks_log.join(",");
+				if (winner.boat === mpcboat) tacks_value = "";
+				log("DEBUG", "record.php payload", {
+					starttime: starttime,
+					finishindex: windindex,
+					finalresult: progress,
+					boat_name: winner.name,
+					tacks: tacks_value,
+					total_sailed: totalSailed,
+					start_lat: initial_boat_location.lat(),
+					start_lng: initial_boat_location.lng(),
+					finish_lat: mark_top.lat(),
+					finish_lng: mark_top.lng()
+				});
+				$.post("scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:progress, boat_name: winner.name, tacks:tacks_value, total_sailed:totalSailed, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}, function(response)
+				{
+					if (winner.name === myboat_name)
 					{
 						onGameFinish(response["id"], response["achievement"], response["recordtime"], response["total_sailed"]);
-					});
+					}
+				});
 			}
 
-			for (var i=0; i<winners.length; i++)
+			for (var i=0; i<arrival_records.length; i++)
 			{
-				recordWinner(winners[i]);
+				recordWinner(arrival_records[i]);
+			}
+			if (!myRecord)
+			{
+				onGameFinish(null, "", 0, 0);
 			}
 				
 			
@@ -1482,7 +1626,7 @@ function processIdle()
 
 		boats.sort(function(a, b) { return a.distance - b.distance; });
 
-		var html = "<h3>Ranking</h3>";
+		var html = "<h3>Distance to mark</h3>";
 		for (var i = 0; i < boats.length; i++)
 		{
 			var boat = boats[i];

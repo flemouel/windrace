@@ -172,15 +172,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         finish_lat = float(query.get('finish_lat', [0])[0])
         finish_lng = float(query.get('finish_lng', [0])[0])
 
-        # Determine achievement badge based on performance
         achievement = ""
-        if finalresult > 0:
-            if finalresult >= 100:
-                achievement = "Outstanding!"
-            elif finalresult >= 50:
-                achievement = "Great job!"
-            elif finalresult >= 20:
-                achievement = "Well done!"
 
         leaderboard = self.load_leaderboard()
         recordtime = int(time.time())
@@ -201,7 +193,6 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 break
 
         if duplicate:
-            achievement = "Record already saved"
             record_id = duplicate.get('id')
             recordtime = duplicate.get('recordtime', recordtime)
             total_sailed = duplicate.get('total_sailed', total_sailed)
@@ -221,7 +212,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 'finishindex': finishindex
             }
             leaderboard.append(entry)
-            leaderboard.sort(key=lambda e: e.get('score', 0), reverse=True)
+            leaderboard.sort(key=lambda e: e.get('total_sailed') if e.get('total_sailed') is not None else float("inf"))
             leaderboard = leaderboard[:10]
             self.save_leaderboard(leaderboard)
             self.save_leaderboard_html(leaderboard)
@@ -229,7 +220,6 @@ class WindGameHandler(SimpleHTTPRequestHandler):
 
         response = {
             'id': record_id,
-            'achievement': achievement,
             'recordtime': recordtime,
             'total_sailed': total_sailed
         }
@@ -480,16 +470,21 @@ Totally played {total} times</p>
 
     def render_leaderboard_html(self, entries):
         """Render leaderboard HTML from entries."""
+        entries = sorted(
+            entries,
+            key=lambda e: e.get('total_sailed') if e.get('total_sailed') is not None else float("inf")
+        )
+        entries = entries[:25]
         lines = [
             "<div class='results'>",
             "<a id='results' name='results' class='placeholder'></a>",
-            "<h2 class='screen-only'>Top 10</h2>",
+            "<h2 class='screen-only'>Top 25</h2>",
             "<table class='leaderboard'>",
             "<thead><tr>"
-            "<th>Distance to mark (&lt;20m)</th>"
+            "<th>Sailed</th>"
             "<th>Boat</th>"
             "<th>Straight-line distance</th>"
-            "<th>Sailed</th>"
+            "<th>Distance to mark (&lt;20m)</th>"
             "<th>Efficiency</th>"
             "<th>Start (Lat/long)</th>"
             "<th>Mark (Lat/Long)</th>"
@@ -520,17 +515,17 @@ Totally played {total} times</p>
             else:
                 straight_dist = self.haversine_m(start_lat, start_lng, finish_lat, finish_lng)
                 straight = f"{straight_dist:.1f} m"
-                efficiency = f"{int((straight_dist / total_sailed) * 100)}%"
+                efficiency = f"{(straight_dist / total_sailed) * 100:.1f}%"
 
             sailed_cell = f"{total_sailed} m"
             lat_cell = "-" if None in (start_lat, start_lng) else f"{start_lat:.5f} / {start_lng:.5f}"
             long_cell = "-" if None in (finish_lat, finish_lng) else f"{finish_lat:.5f} / {finish_lng:.5f}"
             lines.append(
                 "<tr>"
-                f"<td>{score} m</td>"
+                f"<td>{sailed_cell}</td>"
                 f"<td>{name}</td>"
                 f"<td>{straight}</td>"
-                f"<td>{sailed_cell}</td>"
+                f"<td>{score} m</td>"
                 f"<td>{efficiency}</td>"
                 f"<td>{lat_cell}</td>"
                 f"<td>{long_cell}</td>"
