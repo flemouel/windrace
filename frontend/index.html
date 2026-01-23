@@ -292,9 +292,9 @@
 	var srboat_name = "[RBC] SailRacer boat";
 	var geoboat_name = "[RBC] Geo boat";
 	var kalboat_name = "[RBC] Kal boat";
-	var mpcboat_name = "[MBC] MPC 90/1.2";
-	var mpc_horizon = 90;
-	var mpc_alpha = 1.2;
+	var mpcboat_name = "[MBC] MPC 10/1.4";
+	var mpc_horizon = 10;
+	var mpc_alpha = 1.4;
 	var mpc_goal = 20;
 	var mpc_near_threshold = 200;
 	var mpc_near_delay = 10;
@@ -1534,7 +1534,6 @@ function processIdle()
 				var progress = Math.round(courseDistance - winner.distance);
 				var totalSailed = Math.round(winner.boat.getTotalDistance());
 				var tacks_value = tacks_log.join(",");
-				if (winner.boat === mpcboat) tacks_value = "";
 				log("DEBUG", "record.php payload", {
 					starttime: starttime,
 					finishindex: windindex,

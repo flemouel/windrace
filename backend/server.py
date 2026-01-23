@@ -213,7 +213,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             }
             leaderboard.append(entry)
             leaderboard.sort(key=lambda e: e.get('total_sailed') if e.get('total_sailed') is not None else float("inf"))
-            leaderboard = leaderboard[:10]
+            leaderboard = leaderboard[:25]
             self.save_leaderboard(leaderboard)
             self.save_leaderboard_html(leaderboard)
             record_id = entry['id']
