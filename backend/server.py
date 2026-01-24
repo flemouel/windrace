@@ -483,7 +483,7 @@ Totally played {total} times</p>
             "<thead><tr>"
             "<th>Sailed</th>"
             "<th>Boat</th>"
-            "<th>Straight-line distance</th>"
+            "<th>Straight-line dist.</th>"
             "<th>Distance to mark (&lt;20m)</th>"
             "<th>Efficiency</th>"
             "<th>Start (Lat/long)</th>"

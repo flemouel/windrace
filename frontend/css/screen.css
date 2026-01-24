@@ -148,8 +148,14 @@
 .results .leaderboard td:first-child,
 .results .leaderboard th:first-child
 {
-	min-width: 90px;
+	min-width: 70px;
 	white-space: nowrap;
+}
+
+.results .leaderboard td:nth-child(2),
+.results .leaderboard th:nth-child(2)
+{
+	min-width: 140px;
 }
 
 .results p
