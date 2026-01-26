@@ -17,6 +17,8 @@ import signal
 
 BACKEND_LOG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'logs', 'server.log'))
 FRONTEND_LOG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'logs', 'frontend.log'))
+CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'cache'))
+ROUTE_CACHE_PATH = os.path.join(CACHE_DIR, 'route_cache.json')
 LOG_LEVEL = "DEBUG"
 
 
@@ -47,12 +49,31 @@ def logf(level, message, status=200, size='-'):
     """Append a frontend log to logs/frontend.log in common log format."""
     write_log(level, message, FRONTEND_LOG_FILE, status, size)
 
+def load_route_cache():
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    if not os.path.exists(ROUTE_CACHE_PATH):
+        return {}
+    try:
+        with open(ROUTE_CACHE_PATH, 'r', encoding='utf-8') as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def save_route_cache(cache):
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    tmp_path = ROUTE_CACHE_PATH + '.tmp'
+    with open(tmp_path, 'w', encoding='utf-8') as handle:
+        json.dump(cache, handle, sort_keys=True)
+    os.replace(tmp_path, ROUTE_CACHE_PATH)
+
 
 class WindGameHandler(SimpleHTTPRequestHandler):
     LEADERBOARD_JSON = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'record_data.json')
     LEADERBOARD_HTML = os.path.join(os.path.dirname(__file__), '..', 'resdata', 'record_table.html')
     STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend'))
-    _route_cache = {}
+    _route_cache = load_route_cache()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=self.STATIC_DIR, **kwargs)
@@ -279,24 +300,27 @@ class WindGameHandler(SimpleHTTPRequestHandler):
         beam_width = read_int('beam_width', 200)
 
         cache_key = (
-            method,
-            start_lat,
-            start_lng,
-            finish_lat,
-            finish_lng,
-            start_index,
-            horizon,
-            tackangle,
-            goal,
-            alpha,
-            near_threshold,
-            near_delay,
-            far_delay,
-            beam_width,
+            f"{method}|start={start_lat:.7f},{start_lng:.7f}|finish={finish_lat:.7f},{finish_lng:.7f}"
+            f"|start_index={start_index}|horizon={horizon}|tackangle={tackangle:.2f}"
+            f"|goal={goal:.2f}|alpha={alpha:.2f}|beam_width={beam_width}"
+            f"|near_threshold={near_threshold:.1f}|near_delay={near_delay}|far_delay={far_delay}"
         )
         if cache_key in self._route_cache:
+            log(
+                "INFO",
+                f"route {method} cache hit start_index={start_index} horizon={horizon} "
+                f"tackangle={tackangle} goal={goal} alpha={alpha} beam_width={beam_width} "
+                f"near_threshold={near_threshold} near_delay={near_delay} far_delay={far_delay}"
+            )
             self.send_json_response(self._route_cache[cache_key])
             return
+
+        log(
+            "INFO",
+            f"route {method} computing start_index={start_index} horizon={horizon} "
+            f"tackangle={tackangle} goal={goal} alpha={alpha} beam_width={beam_width} "
+            f"near_threshold={near_threshold} near_delay={near_delay} far_delay={far_delay}"
+        )
 
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         or_dir = os.path.join(base_dir, 'research', 'OR')
@@ -365,8 +389,6 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             result_distance = self.haversine_m(result.boat.lat, result.boat.lng, finish_lat, finish_lng)
             result_traj = result.trajectory
 
-        # No need to offset tacks since start_index is now passed to mpc_plan_real
-        # and indices are already absolute
         tacks_list = result_tacks
         tacks_preview = tacks_list[:10]
         log(
@@ -374,7 +396,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             f"route {method} steps={result_steps} distance_to_mark={round(result_distance, 2)} "
             f"total_sailed={round(result_total, 2)} tacks={tacks_preview} total={len(tacks_list)}"
         )
-        log("DEBUG", f"DEBUG MPC trajectory")
+        log("DEBUG", f"DEBUG {method} trajectory")
         for step, decision, lat, lng in result_traj:
             log("DEBUG", f"route {method} trajectory (planned) {step:04d} {decision} {lat:.7f} {lng:.7f}")
         payload = {
@@ -384,6 +406,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             'total_sailed': result_total,
         }
         self._route_cache[cache_key] = payload
+        save_route_cache(self._route_cache)
         self.send_json_response(payload)
 
     def handle_leaderboard(self):
