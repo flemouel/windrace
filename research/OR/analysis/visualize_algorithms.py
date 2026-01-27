@@ -174,6 +174,117 @@ def create_heatmap(df, algo, x_param, y_param, metric, output_dir, fixed_params=
     return filepath
 
 
+def _coverage_expected_values(metadata, algo, param):
+    ranges = (metadata or {}).get("param_ranges", {})
+    if param not in ranges:
+        return []
+    if param == "beam_width" and algo != "beam_realmove":
+        return [None]
+    return ranges[param]
+
+
+def create_coverage_heatmap(df_all, metadata, algo, x_param, y_param, output_dir, prefix=""):
+    """
+    Create coverage heatmap for a specific algorithm and parameter pair.
+    Coverage = tested combinations / total possible combinations of remaining params.
+    """
+    algo_df = df_all[df_all["algorithm"] == algo].copy()
+    if algo_df.empty:
+        return None
+
+    params = ["horizon", "tackangle", "alpha", "beam_width"]
+    remaining = [p for p in params if p not in (x_param, y_param)]
+    remaining_ranges = []
+    for p in remaining:
+        values = _coverage_expected_values(metadata, algo, p)
+        if not values:
+            values = sorted(algo_df[p].dropna().unique().tolist())
+        remaining_ranges.append(values)
+
+    total_possible = 1
+    for values in remaining_ranges:
+        total_possible *= max(1, len(values))
+
+    x_values = sorted(algo_df[x_param].dropna().unique().tolist())
+    y_values = sorted(algo_df[y_param].dropna().unique().tolist())
+    if not x_values or not y_values:
+        return None
+
+    grid = np.full((len(y_values), len(x_values)), np.nan)
+    for yi, y_val in enumerate(y_values):
+        for xi, x_val in enumerate(x_values):
+            subset = algo_df[(algo_df[x_param] == x_val) & (algo_df[y_param] == y_val)]
+            if subset.empty:
+                continue
+            tuples = set()
+            for _, row in subset.iterrows():
+                tuples.add(tuple(row[p] for p in remaining))
+            coverage = len(tuples) / total_possible if total_possible else 0
+            grid[yi, xi] = coverage
+
+    pivot = pd.DataFrame(grid, index=y_values, columns=x_values)
+    if pivot.empty:
+        return None
+
+    if prefix.startswith("ta43_") and (pivot.shape[0] == 1 or pivot.shape[1] == 1):
+        if pivot.shape[0] == 1:
+            x_plot = pivot.columns
+            y_plot = pivot.iloc[0].values
+            x_label = x_param
+            fixed_param = y_param
+            fixed_value = pivot.index[0]
+        else:
+            x_plot = pivot.index
+            y_plot = pivot.iloc[:, 0].values
+            x_label = y_param
+            fixed_param = x_param
+            fixed_value = pivot.columns[0]
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(x_plot, y_plot * 100, marker="o", color="#8e44ad")
+        ax.set_xlabel(x_label.replace("_", " ").title())
+        ax.set_ylabel("Coverage Rate (%)")
+        ax.set_title(f"{algo}: Coverage Rate\n{x_label} (fixed {fixed_param}={fixed_value})")
+        if x_label == "horizon":
+            ax.set_xscale("log")
+        plt.tight_layout()
+        filename = f"coverage_heatmap_{algo}_{x_param}_vs_{y_param}.png"
+        filepath = os.path.join(output_dir, apply_prefix(prefix, filename))
+        plt.savefig(filepath, dpi=150, bbox_inches="tight")
+        plt.close()
+        return filepath
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    cmap = LinearSegmentedColormap.from_list("coverage", ["#e74c3c", "#f1c40f", "#2ecc71"])
+    im = ax.imshow(pivot.values, cmap=cmap, aspect="auto", vmin=0, vmax=1)
+
+    ax.set_xticks(range(len(pivot.columns)))
+    ax.set_yticks(range(len(pivot.index)))
+    ax.set_xticklabels([f"{v:.2f}" if isinstance(v, float) else str(v) for v in pivot.columns])
+    ax.set_yticklabels([f"{v:.2f}" if isinstance(v, float) else str(v) for v in pivot.index])
+    ax.set_xlabel(x_param.replace("_", " ").title())
+    ax.set_ylabel(y_param.replace("_", " ").title())
+    ax.set_title(f"{algo}: Coverage Rate\n{x_param} vs {y_param} (% coverage of remaining params)")
+
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label("Coverage Rate (%)")
+    cbar.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
+    cbar.set_ticklabels(["0%", "25%", "50%", "75%", "100%"])
+
+    for i in range(len(pivot.index)):
+        for j in range(len(pivot.columns)):
+            val = pivot.values[i, j]
+            if not np.isnan(val):
+                ax.text(j, i, f"{val*100:.0f}%", ha="center", va="center", color="black", fontsize=8)
+
+    plt.tight_layout()
+    filename = f"coverage_heatmap_{algo}_{x_param}_vs_{y_param}.png"
+    filepath = os.path.join(output_dir, apply_prefix(prefix, filename))
+    plt.savefig(filepath, dpi=150, bbox_inches="tight")
+    plt.close()
+    return filepath
+
+
 def create_algorithm_comparison(df, output_dir, prefix=""):
     """Create bar charts comparing algorithms (total_sailed only)."""
     metric = "total_sailed"
@@ -1272,6 +1383,18 @@ def main():
                 if "total_sailed" in metrics:
                     create_heatmap(df, algo, x_param, y_param, "total_sailed", output_dir, agg="min")
 
+    print("  Creating coverage heatmaps...")
+    for algo in df_all["algorithm"].unique():
+        if algo == "beam_realmove":
+            params = ["horizon", "tackangle", "alpha", "beam_width"]
+        else:
+            params = ["horizon", "tackangle", "alpha"]
+        for i in range(len(params)):
+            for j in range(i + 1, len(params)):
+                x_param = params[i]
+                y_param = params[j]
+                create_coverage_heatmap(df_all, metadata, algo, x_param, y_param, output_dir)
+
     # 2. Algorithm comparison
     print("  Creating algorithm comparisons...")
     create_algorithm_comparison(df, output_dir)
@@ -1326,6 +1449,17 @@ def main():
                         create_heatmap(df_ta43, algo, x_param, y_param, metric, output_dir, agg="median", prefix=prefix)
                     if "total_sailed" in metrics:
                         create_heatmap(df_ta43, algo, x_param, y_param, "total_sailed", output_dir, agg="min", prefix=prefix)
+        print("  Creating ta43_ coverage heatmaps...")
+        for algo in df_all_ta43["algorithm"].unique():
+            if algo == "beam_realmove":
+                params = ["horizon", "tackangle", "alpha", "beam_width"]
+            else:
+                params = ["horizon", "tackangle", "alpha"]
+            for i in range(len(params)):
+                for j in range(i + 1, len(params)):
+                    x_param = params[i]
+                    y_param = params[j]
+                    create_coverage_heatmap(df_all_ta43, metadata, algo, x_param, y_param, output_dir, prefix=prefix)
         create_algorithm_comparison(df_ta43, output_dir, prefix=prefix)
         create_parameter_sensitivity(df_ta43, output_dir, prefix=prefix, skip_params={"tackangle"})
         create_execution_time_analysis(

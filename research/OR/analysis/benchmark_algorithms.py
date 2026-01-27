@@ -51,7 +51,6 @@ FIXED_PARAMS = {
 }
 
 # Parameter ranges for grid search
-# All algorithms now use relative horizon (lookahead from start_index)
 PARAM_RANGES = {
     "horizon": [10, 20, 30, 50, 75, 100, 150, 200, 300, 400, 600, 800, 1000, 1200, 1500, 2000],
     "tackangle": [30, 32, 34, 36, 38, 40, 42, 43, 44, 46, 48, 50],
