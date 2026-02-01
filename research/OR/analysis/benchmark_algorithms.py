@@ -29,12 +29,6 @@ from concurrent.futures import ProcessPoolExecutor, as_completed, wait, FIRST_CO
 from datetime import datetime
 from threading import Lock
 
-# Total tests per algorithm (calculated from PARAM_RANGES)
-ALGO_TOTALS = {
-    "mpc_realmove": 16 * 12 * 16,      # horizon * tackangle * alpha = 3072
-    "mpc_simplemove": 16 * 12 * 16,    # horizon * tackangle * alpha = 3072
-    "beam_realmove": 16 * 12 * 16 * 16  # horizon * tackangle * alpha * beam_width = 49152
-}
 
 # Fixed parameters
 FIXED_PARAMS = {
@@ -45,6 +39,7 @@ FIXED_PARAMS = {
     "goal": 20,
     "verbose": 1,
     "start_index": 600,
+    "tackangle": 43,
     "near_threshold": 200,
     "near_delay": 10,
     "far_delay": 20,
@@ -52,11 +47,20 @@ FIXED_PARAMS = {
 
 # Parameter ranges for grid search
 PARAM_RANGES = {
-    "horizon": [10, 20, 30, 50, 75, 100, 150, 200, 300, 400, 600, 800, 1000, 1200, 1500, 2000],
-    "tackangle": [30, 32, 34, 36, 38, 40, 42, 43, 44, 46, 48, 50],
-#    "tackangle": [43],
-    "alpha": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5],
-    "beam_width": [5, 10, 20, 30, 50, 75, 100, 150, 200, 250, 300, 400, 500, 600, 800, 1000],
+    "horizon": [10, 20, 30, 50, 75, 100, 125, 150, 175, 200, 250, 300, 350, 400, 600, 800, 1000, 1200, 1500, 2000],
+    "alpha": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5],
+    "beam_width": [5, 10, 20, 30, 50, 75, 100, 150, 175, 200, 225, 250, 275, 300, 325, 350, 375, 400, 500, 600, 800, 1000],
+}
+
+# Total tests per algorithm (derived from PARAM_RANGES)
+def _range_len(name):
+    return len(PARAM_RANGES.get(name, []))
+
+
+ALGO_TOTALS = {
+    "mpc_realmove": _range_len("horizon") * _range_len("alpha"),
+    "mpc_simplemove": _range_len("horizon") * _range_len("alpha"),
+    "beam_realmove": _range_len("horizon") * _range_len("alpha") * _range_len("beam_width"),
 }
 
 # Base directory (where the algorithm scripts are located)
@@ -90,7 +94,7 @@ def run_algorithm(algo_name, params, timeout=300):
         "--verbose", str(FIXED_PARAMS["verbose"]),
         "--start-index", str(FIXED_PARAMS["start_index"]),
         "--horizon", str(params["horizon"]),
-        "--tackangle", str(params["tackangle"]),
+        "--tackangle", str(FIXED_PARAMS["tackangle"]),
         "--alpha", str(params["alpha"]),
     ]
 
@@ -180,14 +184,13 @@ def generate_test_cases():
     test_id = 0
 
     # mpc_realmove: 3 parameters (no beam_width) - FIRST
-    for horizon, tackangle, alpha in itertools.product(
+    for horizon, alpha in itertools.product(
         PARAM_RANGES["horizon"],
-        PARAM_RANGES["tackangle"],
         PARAM_RANGES["alpha"]
     ):
         params = {
             "horizon": horizon,
-            "tackangle": tackangle,
+            "tackangle": FIXED_PARAMS["tackangle"],
             "alpha": alpha,
             "beam_width": None
         }
@@ -195,14 +198,13 @@ def generate_test_cases():
         test_id += 1
 
     # mpc_simplemove: 3 parameters (no beam_width) - SECOND
-    for horizon, tackangle, alpha in itertools.product(
+    for horizon, alpha in itertools.product(
         PARAM_RANGES["horizon"],
-        PARAM_RANGES["tackangle"],
         PARAM_RANGES["alpha"]
     ):
         params = {
             "horizon": horizon,
-            "tackangle": tackangle,
+            "tackangle": FIXED_PARAMS["tackangle"],
             "alpha": alpha,
             "beam_width": None
         }
@@ -210,15 +212,14 @@ def generate_test_cases():
         test_id += 1
 
     # beam_realmove: all 4 parameters - LAST
-    for horizon, tackangle, alpha, beam_width in itertools.product(
+    for horizon, alpha, beam_width in itertools.product(
         PARAM_RANGES["horizon"],
-        PARAM_RANGES["tackangle"],
         PARAM_RANGES["alpha"],
         PARAM_RANGES["beam_width"]
     ):
         params = {
             "horizon": horizon,
-            "tackangle": tackangle,
+            "tackangle": FIXED_PARAMS["tackangle"],
             "alpha": alpha,
             "beam_width": beam_width
         }
@@ -348,14 +349,16 @@ def save_results(results, csv_path, json_path, start_time, total_tests, interrup
         writer.writerows(results)
 
     # JSON output (with metadata)
+    effective_ranges = {key: list(values) for key, values in PARAM_RANGES.items()}
+
     output_data = {
         "metadata": {
             "timestamp": datetime.now().isoformat(),
             "total_tests": total_tests,
             "completed_tests": len(results),
             "total_time_seconds": time.time() - start_time,
-            "fixed_params": FIXED_PARAMS,
-            "param_ranges": PARAM_RANGES,
+            "fixed_params": dict(FIXED_PARAMS),
+            "param_ranges": effective_ranges,
             "interrupted": interrupted,
         },
         "results": results
@@ -420,7 +423,7 @@ def main():
     # Quick mode: reduce parameter ranges
     if args.quick:
         quick_horizons = [60, 300, 1200, 2400]
-        quick_tackangles = [40, 43, 45]
+        quick_tackangles = [FIXED_PARAMS["tackangle"]]
         quick_alphas = [0.0, 0.5, 1.0]
         quick_beam_widths = [50, 200, 400]
 
