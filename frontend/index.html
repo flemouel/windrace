@@ -1683,22 +1683,22 @@ function processIdle()
 				var progress = Math.round(courseDistance - winner.distance);
 				var totalSailed = Math.round(winner.boat.getTotalDistance());
 				var tacks_value = tacks_log.join(",");
-				log("DEBUG", "record.php payload", {
-					starttime: starttime,
-					finishindex: windindex,
-					finalresult: progress,
-					boat_name: winner.name,
-					tacks: tacks_value,
-					total_sailed: totalSailed,
-					start_lat: initial_boat_location.lat(),
+					log("DEBUG", "record.php payload", {
+						starttime: starttime,
+						finishindex: winner.tick,
+						finalresult: progress,
+						boat_name: winner.name,
+						tacks: tacks_value,
+						total_sailed: totalSailed,
+						start_lat: initial_boat_location.lat(),
 					start_lng: initial_boat_location.lng(),
 					finish_lat: mark_top.lat(),
 					finish_lng: mark_top.lng()
-				});
-				$.post("scripts/record.php", {starttime:starttime, finishindex: windindex, finalresult:progress, boat_name: winner.name, tacks:tacks_value, total_sailed:totalSailed, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}, function(response)
-				{
-					if (winner.name === myboat_name)
+					});
+					$.post("scripts/record.php", {starttime:starttime, finishindex: winner.tick, finalresult:progress, boat_name: winner.name, tacks:tacks_value, total_sailed:totalSailed, start_lat:initial_boat_location.lat(),start_lng:initial_boat_location.lng(),finish_lat:mark_top.lat(), finish_lng:mark_top.lng()}, function(response)
 					{
+						if (winner.name === myboat_name)
+						{
 						onGameFinish(response["id"], response["achievement"], response["recordtime"], response["total_sailed"]);
 					}
 				});
