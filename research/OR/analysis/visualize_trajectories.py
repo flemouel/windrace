@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """
-Visualize MPC planned vs sailed trajectories with temporal alignment.
+Visualize planned vs sailed trajectories with temporal alignment.
 Uses matplotlib for static visualization.
 """
 
+import argparse
 import re
 import math
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.patches import Circle
 
-def parse_trajectory(filename):
+def parse_trajectory(filename, method):
     """Parse trajectory file and return dict keyed by step."""
-    pattern = r'DEBUG route mpc trajectory \((?:planned|sailed)\) (\d+) (\w+) ([\d.]+) ([\d.-]+)'
+    pattern = rf'DEBUG route {re.escape(method)} trajectory \((?:planned|sailed)\) (\d+) (\w+) ([\d.]+) ([\d.-]+)'
     entries = {}
 
     with open(filename, 'r') as f:
@@ -37,7 +38,7 @@ def haversine(lat1, lon1, lat2, lon2):
     a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
     return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
-def create_visualization(planned, sailed):
+def create_visualization(planned, sailed, method_label):
     """Create time-aligned visualization with both trajectories."""
 
     # Time alignment
@@ -119,7 +120,7 @@ def create_visualization(planned, sailed):
 
     ax1.set_xlabel('Longitude', fontsize=12, fontweight='bold')
     ax1.set_ylabel('Latitude', fontsize=12, fontweight='bold')
-    ax1.set_title('MPC Trajectory Comparison: Time-Aligned Planned vs Sailed', fontsize=14, fontweight='bold')
+    ax1.set_title(f'{method_label} Trajectory Comparison: Time-Aligned Planned vs Sailed', fontsize=14, fontweight='bold')
     ax1.legend(loc='best', fontsize=9, ncol=2)
     ax1.grid(True, alpha=0.3)
     ax1.set_aspect('equal', adjustable='box')
@@ -199,20 +200,36 @@ def create_visualization(planned, sailed):
     return fig
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Visualize planned vs sailed trajectories")
+    parser.add_argument("--method", default="mpc", help="Method to visualize: mpc, beam, or all")
+    parser.add_argument("--display", action="store_true", help="Display figures after saving")
+    args = parser.parse_args()
+
+    method = args.method.lower()
+    if method not in {"mpc", "beam", "all"}:
+        raise SystemExit("Invalid --method. Use mpc, beam, or all.")
+
     print("Loading trajectories...")
-    planned = parse_trajectory('mpc_planned.txt')
-    sailed = parse_trajectory('mpc_sailed.txt')
+    methods = ["mpc", "beam"] if method == "all" else [method]
 
-    print(f"Planned: {len(planned)} points")
-    print(f"Sailed: {len(sailed)} points")
+    for method_name in methods:
+        method_label = method_name.upper()
+        planned = parse_trajectory(f'{method_name}_planned.txt', method_name)
+        sailed = parse_trajectory(f'{method_name}_sailed.txt', method_name)
 
-    print("\nCreating time-aligned visualization...")
-    fig = create_visualization(planned, sailed)
+        print(f"{method_label} planned: {len(planned)} points")
+        print(f"{method_label} sailed: {len(sailed)} points")
 
-    output_file = 'trajectory_comparison.png'
-    fig.savefig(output_file, dpi=150, bbox_inches='tight')
+        print("\nCreating time-aligned visualization...")
+        fig = create_visualization(planned, sailed, method_label)
 
-    print(f"\nVisualization saved to: {output_file}")
-    print("Opening image...")
+        output_file = f'{method_name}_trajectory_comparison.png'
+        fig.savefig(output_file, dpi=150, bbox_inches='tight')
 
-    plt.show()
+        print(f"\nVisualization saved to: {output_file}")
+        if args.display:
+            print("Opening image...")
+            plt.show(block=False)
+
+    if args.display:
+        input("\nPress Enter to close visualizations...")

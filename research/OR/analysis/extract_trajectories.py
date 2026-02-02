@@ -1,68 +1,57 @@
 #!/usr/bin/env python3
 """
-Extract MPC trajectories from log files.
-Automatically identifies and extracts the most recent trajectory sequence from each log.
+Extract trajectories from log files (MPC and Beam).
+Automatically identifies and extracts the most recent trajectory sequence per method.
 """
 
 import re
 import os
 
-def find_trajectory_sequences(log_file, pattern_type):
+def find_latest_sequence(log_file, pattern_type, method):
     """
-    Find all trajectory sequences in a log file.
-    Each sequence starts with "DEBUG MPC trajectory" or "DEBUG MPC trajectory:" marker.
-    Returns dict: {timestamp: [(step, decision, lat, lng), ...]}
+    Find the latest trajectory sequence in a log file based on the last marker.
+    Sequence starts after the last marker and continues while entries match.
+    Returns (marker_line, entries) or None.
     """
-    marker_pattern = r'\[(.*?)\].*"DEBUG MPC trajectory:?"'
-    entry_pattern = rf'\[(.*?)\].*"DEBUG route \w+ trajectory \({pattern_type}\) (\d+) (\w+) ([\d.]+) ([\d.-]+)"'
-
-    sequences = {}
-    current_timestamp = None
+    marker_pattern = re.compile(
+        rf'(?i)\[(.*?)\].*"DEBUG (?:DEBUG {method} trajectory|{method} trajectory):?"'
+    )
+    entry_pattern = re.compile(
+        rf'\[(.*?)\].*"DEBUG route {method} trajectory \({pattern_type}\) (\d+) (\w+) ([\d.]+) ([\d.-]+)"'
+    )
 
     with open(log_file, 'r') as f:
-        for line in f:
-            # Check for trajectory start marker
-            marker_match = re.search(marker_pattern, line)
-            if marker_match:
-                current_timestamp = marker_match.group(1)
-                sequences[current_timestamp] = []
-                continue
+        lines = f.readlines()
 
-            # Check for trajectory entry
-            if current_timestamp:
-                entry_match = re.search(entry_pattern, line)
-                if entry_match:
-                    step = int(entry_match.group(2))
-                    decision = entry_match.group(3)
-                    lat = float(entry_match.group(4))
-                    lng = float(entry_match.group(5))
+    marker_index = None
+    marker_line = None
+    for i in range(len(lines) - 1, -1, -1):
+        if marker_pattern.search(lines[i]):
+            marker_index = i
+            marker_line = lines[i].strip()
+            break
 
-                    sequences[current_timestamp].append((step, decision, lat, lng))
-
-    return sequences
-
-def get_latest_sequence(sequences):
-    """
-    Get the most recent trajectory sequence based on timestamp.
-    Returns the latest timestamp and its entries.
-    """
-    if not sequences:
+    if marker_index is None:
         return None
 
-    # Find the most recent timestamp
-    latest_timestamp = max(sequences.keys())
-
-    entries = sequences[latest_timestamp]
+    entries = []
+    for line in lines[marker_index + 1:]:
+        entry_match = entry_pattern.search(line)
+        if not entry_match:
+            break
+        step = int(entry_match.group(2))
+        decision = entry_match.group(3)
+        lat = float(entry_match.group(4))
+        lng = float(entry_match.group(5))
+        entries.append((step, decision, lat, lng))
 
     if not entries:
         return None
 
-    # Sort by step number
     entries.sort(key=lambda x: x[0])
+    return marker_line, entries
 
-    return latest_timestamp, entries
-
-def extract_and_save(log_file, pattern_type, output_file):
+def extract_and_save(log_file, pattern_type, method, output_file):
     """Extract latest trajectory and save to file."""
 
     if not os.path.exists(log_file):
@@ -70,34 +59,25 @@ def extract_and_save(log_file, pattern_type, output_file):
         return None
 
     print(f"\nProcessing {log_file}...")
-    sequences = find_trajectory_sequences(log_file, pattern_type)
-
-    if not sequences:
-        print(f"  No '{pattern_type}' trajectories found!")
-        return None
-
-    print(f"  Found {len(sequences)} trajectory sequence(s)")
-
-    # Get latest sequence
-    result = get_latest_sequence(sequences)
+    result = find_latest_sequence(log_file, pattern_type, method)
     if result is None:
-        print(f"  No valid sequence found!")
+        print(f"  No '{pattern_type}' trajectories found for {method}!")
         return None
 
-    timestamp, entries = result
-
-    print(f"  Latest sequence: {timestamp}")
+    marker_line, entries = result
+    print(f"  Latest marker: {marker_line}")
     print(f"  Steps: {entries[0][0]} to {entries[-1][0]} ({len(entries)} points)")
 
     # Save to file
     with open(output_file, 'w') as f:
         for step, decision, lat, lng in entries:
-            f.write(f"DEBUG route mpc trajectory ({pattern_type}) {step:04d} {decision} {lat:.7f} {lng:.7f}\n")
+            f.write(f"DEBUG route {method} trajectory ({pattern_type}) {step:04d} {decision} {lat:.7f} {lng:.7f}\n")
 
     print(f"  Saved to: {output_file}")
 
     return {
-        'timestamp': timestamp,
+        'method': method,
+        'timestamp': marker_line,
         'count': len(entries),
         'first_step': entries[0][0],
         'last_step': entries[-1][0],
@@ -109,6 +89,12 @@ def extract_and_save(log_file, pattern_type, output_file):
     }
 
 if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Extract latest trajectories from logs")
+    parser.add_argument("--method", default="all", help="Method to extract: mpc, beam, or all")
+    args = parser.parse_args()
+
     # Determine paths relative to script location
     script_dir = os.path.dirname(os.path.abspath(__file__))
     base_dir = os.path.abspath(os.path.join(script_dir, '..', '..', '..'))
@@ -116,41 +102,48 @@ if __name__ == '__main__':
     server_log = os.path.join(base_dir, 'logs', 'server.log')
     frontend_log = os.path.join(base_dir, 'logs', 'frontend.log')
     
-    output_planned = os.path.join(script_dir, 'mpc_planned.txt')
-    output_sailed = os.path.join(script_dir, 'mpc_sailed.txt')
+    methods = []
+    if args.method == "all":
+        methods = ["mpc", "beam"]
+    else:
+        methods = [args.method]
     
     print("=" * 80)
     print("MPC TRAJECTORY EXTRACTION")
     print("=" * 80)
     
-    # Extract planned trajectory
-    planned_info = extract_and_save(server_log, 'planned', output_planned)
-    
-    # Extract sailed trajectory
-    sailed_info = extract_and_save(frontend_log, 'sailed', output_sailed)
-    
+    planned_infos = []
+    sailed_infos = []
+    for method in methods:
+        output_planned = os.path.join(script_dir, f'{method}_planned.txt')
+        output_sailed = os.path.join(script_dir, f'{method}_sailed.txt')
+        planned_infos.append(extract_and_save(server_log, 'planned', method, output_planned))
+        sailed_infos.append(extract_and_save(frontend_log, 'sailed', method, output_sailed))
+
     # Summary
     print("\n" + "=" * 80)
     print("EXTRACTION SUMMARY")
     print("=" * 80)
-    
-    if planned_info:
-        print(f"\nPlanned Trajectory ({planned_info['timestamp']}):")
-        print(f"  Steps: {planned_info['first_step']} to {planned_info['last_step']} ({planned_info['count']} points)")
-        print(f"  Decisions: KEEP={planned_info['decisions']['KEEP']}, P={planned_info['decisions']['P']}, S={planned_info['decisions']['S']}")
-    else:
-        print("\nPlanned Trajectory: NOT FOUND")
-    
-    if sailed_info:
-        print(f"\nSailed Trajectory ({sailed_info['timestamp']}):")
-        print(f"  Steps: {sailed_info['first_step']} to {sailed_info['last_step']} ({sailed_info['count']} points)")
-        print(f"  Decisions: KEEP={sailed_info['decisions']['KEEP']}, P={sailed_info['decisions']['P']}, S={sailed_info['decisions']['S']}")
-    else:
-        print("\nSailed Trajectory: NOT FOUND")
-    
+
+    for info in planned_infos:
+        if info:
+            print(f"\n{info['method'].upper()} Planned Trajectory ({info['timestamp']}):")
+            print(f"  Steps: {info['first_step']} to {info['last_step']} ({info['count']} points)")
+            print(f"  Decisions: KEEP={info['decisions']['KEEP']}, P={info['decisions']['P']}, S={info['decisions']['S']}")
+        else:
+            print("\nPlanned Trajectory: NOT FOUND")
+
+    for info in sailed_infos:
+        if info:
+            print(f"\n{info['method'].upper()} Sailed Trajectory ({info['timestamp']}):")
+            print(f"  Steps: {info['first_step']} to {info['last_step']} ({info['count']} points)")
+            print(f"  Decisions: KEEP={info['decisions']['KEEP']}, P={info['decisions']['P']}, S={info['decisions']['S']}")
+        else:
+            print("\nSailed Trajectory: NOT FOUND")
+
     print("\n" + "=" * 80)
-    
-    if planned_info and sailed_info:
+
+    if any(planned_infos) and any(sailed_infos):
         print("\n✓ Extraction complete! You can now run:")
         print("  - compare_trajectories.py (for analysis)")
         print("  - visualize_trajectories.py (for PNG visualization)")

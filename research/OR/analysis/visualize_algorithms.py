@@ -25,8 +25,16 @@ from matplotlib.colors import LinearSegmentedColormap
 plt.style.use('seaborn-v0_8-whitegrid')
 
 
+DISPLAY = False
+
+
 def apply_prefix(prefix, name):
     return f"{prefix}{name}" if prefix else name
+
+
+def close_fig():
+    if not DISPLAY:
+        close_fig()
 
 
 def load_results(json_path):
@@ -116,7 +124,7 @@ def _plot_singleton_line(
     plt.tight_layout()
     filepath = os.path.join(output_dir, apply_prefix(prefix, filename))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
     return filepath
 
 
@@ -210,7 +218,7 @@ def create_heatmap(df, algo, x_param, y_param, metric, output_dir, fixed_params=
     filename += ".png"
     filepath = os.path.join(output_dir, apply_prefix(prefix, filename))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
     return filepath
 
 
@@ -288,7 +296,7 @@ def create_coverage_heatmap(df_all, metadata, algo, x_param, y_param, output_dir
         plt.tight_layout()
         filepath = os.path.join(output_dir, apply_prefix(prefix, filename))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
         return filepath
 
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -318,7 +326,7 @@ def create_coverage_heatmap(df_all, metadata, algo, x_param, y_param, output_dir
     filename = f"coverage_heatmap_{algo}_{x_param}_vs_{y_param}.png"
     filepath = os.path.join(output_dir, apply_prefix(prefix, filename))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
     return filepath
 
 
@@ -351,7 +359,7 @@ def create_algorithm_comparison(df, output_dir, prefix=""):
     plt.tight_layout()
     filepath = os.path.join(output_dir, apply_prefix(prefix, "compare_total_sailed_mean.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
 
     # Median +/- IQR
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -379,7 +387,7 @@ def create_algorithm_comparison(df, output_dir, prefix=""):
     plt.tight_layout()
     filepath = os.path.join(output_dir, apply_prefix(prefix, "compare_total_sailed_median.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
 
     # Best results per algorithm
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -407,7 +415,7 @@ def create_algorithm_comparison(df, output_dir, prefix=""):
     plt.tight_layout()
     filepath = os.path.join(output_dir, apply_prefix(prefix, "compare_total_sailed_min.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
 
 
 def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
@@ -448,7 +456,7 @@ def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
         plt.tight_layout()
         filepath = os.path.join(output_dir, apply_prefix(prefix, f"sensitivity_{param}_mean_total_sailed.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
 
         # Median (IQR) total_sailed
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -483,7 +491,7 @@ def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
         plt.tight_layout()
         filepath = os.path.join(output_dir, apply_prefix(prefix, f"sensitivity_{param}_median_total_sailed.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
 
         # Best (min) total_sailed
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -511,7 +519,7 @@ def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
         plt.tight_layout()
         filepath = os.path.join(output_dir, apply_prefix(prefix, f"sensitivity_{param}_min_total_sailed.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
 
     # Special plot for beam_width (only beam_realmove)
     beam_df = df[df["algorithm"] == "beam_realmove"]
@@ -536,7 +544,7 @@ def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
         plt.tight_layout()
         filepath = os.path.join(output_dir, apply_prefix(prefix, "sensitivity_beam_width_mean_total_sailed.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
 
         fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -563,7 +571,7 @@ def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
         plt.tight_layout()
         filepath = os.path.join(output_dir, apply_prefix(prefix, "sensitivity_beam_width_median_total_sailed.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
 
         fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -583,7 +591,7 @@ def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
         plt.tight_layout()
         filepath = os.path.join(output_dir, apply_prefix(prefix, "sensitivity_beam_width_min_total_sailed.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
 
 
 def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None, skip_params=None):
@@ -605,7 +613,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
     plt.tight_layout()
     filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_distribution.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
 
     # 3. Time vs beam_width (beam_realmove only)
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -623,7 +631,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
     plt.tight_layout()
     filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_vs_beam_width_mean.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
 
     fig, ax = plt.subplots(figsize=(10, 6))
     if not beam_df.empty:
@@ -644,7 +652,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
     plt.tight_layout()
     filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_vs_beam_width_median.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
 
     # 4. Time heatmaps: all parameter pairs per algorithm
     skip_heatmaps = skip_heatmaps or set()
@@ -707,7 +715,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
                     apply_prefix(prefix, f"exec_time_{algo}_{x_param}_vs_{y_param}_heatmap_mean.png")
                 )
                 plt.savefig(filepath, dpi=150, bbox_inches="tight")
-                plt.close()
+                close_fig()
 
                 if not algo_df.empty:
                     pivot = algo_df.pivot_table(
@@ -754,7 +762,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
                         apply_prefix(prefix, f"exec_time_{algo}_{x_param}_vs_{y_param}_heatmap_median.png")
                     )
                     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-                    plt.close()
+                    close_fig()
 
     # === Figure 2: Per-parameter sensitivity (separate files) ===
     params = ["horizon", "alpha"]
@@ -778,7 +786,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
         plt.tight_layout()
         filepath = os.path.join(output_dir, apply_prefix(prefix, f"exec_time_vs_{param}_mean.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
 
         fig, ax = plt.subplots(figsize=(10, 6))
         for algo in df["algorithm"].unique():
@@ -802,7 +810,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
         plt.tight_layout()
         filepath = os.path.join(output_dir, apply_prefix(prefix, f"exec_time_vs_{param}_median.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
 
     # === Figure 3: Algorithm comparison - time efficiency ===
     # Time per step (efficiency)
@@ -822,7 +830,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
     plt.tight_layout()
     filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_per_step_mean.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
 
     fig, ax = plt.subplots(figsize=(10, 6))
     for algo in df["algorithm"].unique():
@@ -843,7 +851,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
     plt.tight_layout()
     filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_per_step_median.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
 
     # Total time comparison by horizon (bar chart)
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -873,7 +881,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
     plt.tight_layout()
     filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_by_horizon_comparison_mean.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
 
     fig, ax = plt.subplots(figsize=(10, 6))
     for i, algo in enumerate(algos_list):
@@ -897,7 +905,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
     plt.tight_layout()
     filepath = os.path.join(output_dir, apply_prefix(prefix, "exec_time_by_horizon_comparison_median.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
 
     # === Figure 4: Beam search specific - horizon x beam_width heatmaps ===
     if not beam_df.empty:
@@ -930,7 +938,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
         plt.tight_layout()
         filepath = os.path.join(output_dir, apply_prefix(prefix, "beam_total_sailed_heatmap_mean.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
 
         # Heatmap: total_sailed (median)
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -961,7 +969,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
         plt.tight_layout()
         filepath = os.path.join(output_dir, apply_prefix(prefix, "beam_total_sailed_heatmap_median.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
 
         # Heatmap: total_sailed (min)
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -992,7 +1000,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
         plt.tight_layout()
         filepath = os.path.join(output_dir, apply_prefix(prefix, "beam_total_sailed_heatmap_min.png"))
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
 
 
 def create_summary_table(df, df_all, output_dir, prefix=""):
@@ -1053,9 +1061,6 @@ def create_summary_table(df, df_all, output_dir, prefix=""):
 
     summary_df = pd.DataFrame(summary_data)
 
-    # Save as CSV
-    summary_df.to_csv(os.path.join(output_dir, apply_prefix(prefix, "summary_results.csv")), index=False)
-
     # Create figure with table
     fig_width = max(14, 1.6 * len(summary_df.columns))
     fig, ax = plt.subplots(figsize=(fig_width, 4))
@@ -1080,7 +1085,7 @@ def create_summary_table(df, df_all, output_dir, prefix=""):
     plt.tight_layout()
     filepath = os.path.join(output_dir, apply_prefix(prefix, "summary_results_table.png"))
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    plt.close()
+    close_fig()
 
     return summary_df
 
@@ -1127,7 +1132,7 @@ def create_scatter_plots(df, output_dir, prefix="", skip_params=None):
                 plt.tight_layout()
                 filename = f"scatter_{y_param}_vs_{x_param}_by_{color_param}.png"
                 plt.savefig(os.path.join(output_dir, apply_prefix(prefix, filename)), dpi=150, bbox_inches="tight")
-                plt.close()
+                close_fig()
 
 
 def compute_finished_mask(df_all, metadata):
@@ -1209,7 +1214,7 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix="", ski
                 plt.tight_layout()
                 filename = f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_mean.png"
                 plt.savefig(os.path.join(output_dir, apply_prefix(prefix, filename)), dpi=150, bbox_inches="tight")
-                plt.close()
+                close_fig()
 
                 pivot_median = subset.pivot_table(
                     values="unfinished",
@@ -1252,7 +1257,7 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix="", ski
                 plt.tight_layout()
                 filename = f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_median.png"
                 plt.savefig(os.path.join(output_dir, apply_prefix(prefix, filename)), dpi=150, bbox_inches="tight")
-                plt.close()
+                close_fig()
 
 
 def create_failure_probability_plots(df_all, metadata, output_dir, prefix="", skip_params=None):
@@ -1283,7 +1288,7 @@ def create_failure_probability_plots(df_all, metadata, output_dir, prefix="", sk
             ax.plot(grouped[param], grouped["unfinished"], marker="o", linestyle="-", label=algo)
             plotted = True
         if not plotted:
-            plt.close()
+            close_fig()
             continue
         ax.set_xlabel(param.replace("_", " ").title())
         ax.set_ylabel("Unfinished Rate")
@@ -1295,7 +1300,7 @@ def create_failure_probability_plots(df_all, metadata, output_dir, prefix="", sk
         plt.tight_layout()
         filename = f"unfinished_rate_compare_{param}_mean.png"
         plt.savefig(os.path.join(output_dir, apply_prefix(prefix, filename)), dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
 
         fig, ax = plt.subplots(figsize=(9, 6))
         plotted = False
@@ -1313,7 +1318,7 @@ def create_failure_probability_plots(df_all, metadata, output_dir, prefix="", sk
             ax.plot(grouped[param], grouped["unfinished"], marker="o", linestyle="-", label=algo)
             plotted = True
         if not plotted:
-            plt.close()
+            close_fig()
             continue
         ax.set_xlabel(param.replace("_", " ").title())
         ax.set_ylabel("Unfinished Rate")
@@ -1325,14 +1330,17 @@ def create_failure_probability_plots(df_all, metadata, output_dir, prefix="", sk
         plt.tight_layout()
         filename = f"unfinished_rate_compare_{param}_median.png"
         plt.savefig(os.path.join(output_dir, apply_prefix(prefix, filename)), dpi=150, bbox_inches="tight")
-        plt.close()
+        close_fig()
 
 
 def main():
     parser = argparse.ArgumentParser(description="Visualize benchmark results")
     parser.add_argument("--input", default="benchmark_results.json", help="Input JSON file")
     parser.add_argument("--output-dir", default=".", help="Output directory for images")
+    parser.add_argument("--display", action="store_true", help="Display figures after saving")
     args = parser.parse_args()
+    global DISPLAY
+    DISPLAY = args.display
 
     # Resolve paths
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1416,6 +1424,11 @@ def main():
     print("SUMMARY OF BEST RESULTS")
     print("=" * 60)
     print(summary.to_string(index=False))
+
+    if args.display:
+        plt.show(block=False)
+        print("\nPress Enter to close visualizations...")
+        input()
 
 
 if __name__ == "__main__":
