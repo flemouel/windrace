@@ -312,7 +312,13 @@ class WindGameHandler(SimpleHTTPRequestHandler):
                 f"tackangle={tackangle} goal={goal} alpha={alpha} beam_width={beam_width} "
                 f"near_threshold={near_threshold} near_delay={near_delay} far_delay={far_delay}"
             )
-            self.send_json_response(self._route_cache[cache_key])
+            payload = self._route_cache[cache_key]
+            result_traj = payload.get("trajectory", [])
+            if result_traj:
+                log("DEBUG", f"DEBUG {method} trajectory")
+                for step, decision, lat, lng in result_traj:
+                    log("DEBUG", f"route {method} trajectory (planned) {step:04d} {decision} {lat:.7f} {lng:.7f}")
+            self.send_json_response(payload)
             return
 
         log(
@@ -404,6 +410,7 @@ class WindGameHandler(SimpleHTTPRequestHandler):
             'tacks': ",".join(tacks_list),
             'steps': result_steps,
             'total_sailed': result_total,
+            'trajectory': result_traj,
         }
         self._route_cache[cache_key] = payload
         save_route_cache(self._route_cache)
