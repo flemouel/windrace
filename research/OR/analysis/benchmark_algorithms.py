@@ -9,6 +9,7 @@ Algorithms tested:
 - beam_realmove.py
 - mpc_realmove.py
 - mpc_simplemove.py
+- spst_realmove.py
 
 Features:
 - Incremental save: results saved after each test
@@ -43,6 +44,7 @@ FIXED_PARAMS = {
     "near_threshold": 200,
     "near_delay": 10,
     "far_delay": 20,
+    "seed": 42,
 }
 
 # Parameter ranges for grid search
@@ -50,6 +52,9 @@ PARAM_RANGES = {
     "horizon": [10, 20, 30, 50, 75, 100, 125, 150, 175, 200, 250, 300, 350, 400, 600, 800, 1000, 1200, 1500, 2000],
     "alpha": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5],
     "beam_width": [5, 10, 20, 30, 50, 75, 100, 150, 175, 200, 225, 250, 275, 300, 325, 350, 375, 400, 500, 600, 800, 1000],
+    "scenarios": list(range(3, 16)),
+    "dir_noise": list(range(0, 11)),
+    "speed_noise": [round(i * 0.02, 2) for i in range(0, 11)],
 }
 
 # Total tests per algorithm (derived from PARAM_RANGES)
@@ -61,6 +66,8 @@ ALGO_TOTALS = {
     "mpc_realmove": _range_len("horizon") * _range_len("alpha"),
     "mpc_simplemove": _range_len("horizon") * _range_len("alpha"),
     "beam_realmove": _range_len("horizon") * _range_len("alpha") * _range_len("beam_width"),
+    "spst_realmove": _range_len("horizon") * _range_len("alpha") * _range_len("scenarios")
+    * _range_len("dir_noise") * _range_len("speed_noise"),
 }
 
 # Base directory (where the algorithm scripts are located)
@@ -78,6 +85,7 @@ def run_algorithm(algo_name, params, timeout=300):
         "beam_realmove": "beam_realmove.py",
         "mpc_realmove": "mpc_realmove.py",
         "mpc_simplemove": "mpc_simplemove.py",
+        "spst_realmove": "spst_realmove.py",
     }
 
     script_path = os.path.join(BASE_DIR, script_map[algo_name])
@@ -111,6 +119,16 @@ def run_algorithm(algo_name, params, timeout=300):
             "--near-threshold", str(FIXED_PARAMS["near_threshold"]),
             "--near-delay", str(FIXED_PARAMS["near_delay"]),
             "--far-delay", str(FIXED_PARAMS["far_delay"]),
+        ])
+    elif algo_name == "spst_realmove":
+        cmd.extend([
+            "--near-threshold", str(FIXED_PARAMS["near_threshold"]),
+            "--near-delay", str(FIXED_PARAMS["near_delay"]),
+            "--far-delay", str(FIXED_PARAMS["far_delay"]),
+            "--scenarios", str(params["scenarios"]),
+            "--dir-noise", str(params["dir_noise"]),
+            "--speed-noise", str(params["speed_noise"]),
+            "--seed", str(FIXED_PARAMS["seed"]),
         ])
     # mpc_simplemove doesn't have near/far delay parameters
 
@@ -226,12 +244,90 @@ def generate_test_cases():
         test_cases.append(("beam_realmove", params, test_id))
         test_id += 1
 
+    # spst_realmove: horizon, alpha + stochastic parameters
+    for horizon, alpha, scenarios, dir_noise, speed_noise in itertools.product(
+        PARAM_RANGES["horizon"],
+        PARAM_RANGES["alpha"],
+        PARAM_RANGES["scenarios"],
+        PARAM_RANGES["dir_noise"],
+        PARAM_RANGES["speed_noise"],
+    ):
+        params = {
+            "horizon": horizon,
+            "tackangle": FIXED_PARAMS["tackangle"],
+            "alpha": alpha,
+            "beam_width": None,
+            "scenarios": scenarios,
+            "dir_noise": dir_noise,
+            "speed_noise": speed_noise,
+        }
+        test_cases.append(("spst_realmove", params, test_id))
+        test_id += 1
+
     return test_cases
+
+
+def algo_param_pairs(algo_name):
+    if algo_name in ("mpc_realmove", "mpc_simplemove"):
+        return [("horizon", "alpha")]
+    if algo_name == "beam_realmove":
+        return [("horizon", "alpha"), ("horizon", "beam_width"), ("alpha", "beam_width")]
+    if algo_name == "spst_realmove":
+        params = ["horizon", "alpha", "scenarios", "dir_noise", "speed_noise"]
+        return [(params[i], params[j]) for i in range(len(params)) for j in range(i + 1, len(params))]
+    return []
+
+
+def order_cases_coverage_roundrobin(test_cases, algo_order):
+    by_algo = {}
+    for algo, params, tid in test_cases:
+        by_algo.setdefault(algo, []).append((algo, params, tid))
+
+    pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order if algo in by_algo}
+    covered = {(algo, pair): set() for algo in pairs_by_algo for pair in pairs_by_algo[algo]}
+
+    total = sum(len(cases) for cases in by_algo.values())
+    ordered = []
+
+    while len(ordered) < total:
+        progress = False
+        for algo in algo_order:
+            cases = by_algo.get(algo)
+            if not cases:
+                continue
+            for pair in pairs_by_algo.get(algo, []):
+                idx = None
+                for i, (_, params, _) in enumerate(cases):
+                    combo = (params.get(pair[0]), params.get(pair[1]))
+                    if combo not in covered[(algo, pair)]:
+                        idx = i
+                        break
+                if idx is None:
+                    continue
+                tc = cases.pop(idx)
+                ordered.append(tc)
+                covered[(algo, pair)].add(combo)
+                progress = True
+                if len(ordered) >= total:
+                    break
+            if len(ordered) >= total:
+                break
+        if not progress:
+            for algo in algo_order:
+                ordered.extend(by_algo.get(algo, []))
+                by_algo[algo] = []
+            break
+
+    return ordered
 
 
 def make_test_key(algo_name, params):
     """Create a unique key for a test case."""
-    return f"{algo_name}|h{params['horizon']}|ta{params['tackangle']}|a{params['alpha']}|bw{params.get('beam_width', 'None')}"
+    return (
+        f"{algo_name}|h{params['horizon']}|ta{params['tackangle']}|a{params['alpha']}"
+        f"|bw{params.get('beam_width', 'None')}|sc{params.get('scenarios', 'None')}"
+        f"|dn{params.get('dir_noise', 'None')}|sn{params.get('speed_noise', 'None')}"
+    )
 
 
 def load_existing_results(json_path):
@@ -253,7 +349,10 @@ def load_existing_results(json_path):
                     "horizon": r["horizon"],
                     "tackangle": r["tackangle"],
                     "alpha": r["alpha"],
-                    "beam_width": r.get("beam_width")
+                    "beam_width": r.get("beam_width"),
+                    "scenarios": r.get("scenarios"),
+                    "dir_noise": r.get("dir_noise"),
+                    "speed_noise": r.get("speed_noise"),
                 }
             )
             completed_keys.add(key)
@@ -264,12 +363,12 @@ def load_existing_results(json_path):
         return [], set()
 
 
-DEFAULT_ALGO_ORDER = ["mpc_simplemove", "mpc_realmove", "beam_realmove"]
+DEFAULT_ALGO_ORDER = ["mpc_simplemove", "mpc_realmove", "beam_realmove", "spst_realmove"]
 
 
 def count_by_algorithm(results):
     """Count completed tests per algorithm."""
-    counts = {"mpc_realmove": 0, "mpc_simplemove": 0, "beam_realmove": 0}
+    counts = {"mpc_realmove": 0, "mpc_simplemove": 0, "beam_realmove": 0, "spst_realmove": 0}
     for r in results:
         algo = r["algorithm"]
         if algo in counts:
@@ -325,6 +424,7 @@ def print_progress_line(results, elapsed_time, rate, algo_order):
         "mpc_realmove": "mpc_r",
         "mpc_simplemove": "mpc_s",
         "beam_realmove": "beam",
+        "spst_realmove": "spst",
     }
     parts = []
     for algo in algo_order:
@@ -342,6 +442,7 @@ def save_results(results, csv_path, json_path, start_time, total_tests, interrup
     # CSV output
     with open(csv_path, "w", newline="") as f:
         fieldnames = ["algorithm", "horizon", "tackangle", "alpha", "beam_width",
+                      "scenarios", "dir_noise", "speed_noise", "seed",
                       "total_sailed", "nb_tacks", "steps", "distance_to_mark",
                       "elapsed_time", "finished", "success"]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -370,7 +471,10 @@ def save_results(results, csv_path, json_path, start_time, total_tests, interrup
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Benchmark trajectory planning algorithms")
+    parser = argparse.ArgumentParser(
+        description="Benchmark trajectory planning algorithms",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--output", default="benchmark_results.csv", help="Output CSV file")
     parser.add_argument("--json-output", default="benchmark_results.json", help="Output JSON file")
     parser.add_argument("--workers", type=int, default=12, help="Number of parallel workers")
@@ -378,8 +482,9 @@ def main():
                         help="Which algorithm(s) to benchmark (comma-separated or 'all')")
     parser.add_argument("--quick", action="store_true", help="Run quick test with reduced parameter ranges")
     parser.add_argument("--resume", action="store_true", help="Resume from previous run (skip completed tests)")
-    parser.add_argument("--order", default="shuffle",
-                        help="Execution order: 'shuffle' or comma-separated algo list")
+    parser.add_argument("--order", default="coverage-roundrobin",
+                        help="Execution order: 'coverage-roundrobin' (round-robin per algo/param pair), "
+                             "'shuffle', or comma-separated algo list")
     parser.add_argument("--save-interval", type=int, default=10, help="Save results every N completed tests")
     args = parser.parse_args()
 
@@ -412,7 +517,7 @@ def main():
     # Filter by algorithm if specified
     if args.algo != "all":
         algo_list = [item.strip() for item in args.algo.split(",") if item.strip()]
-        valid_algos = {"beam_realmove", "mpc_realmove", "mpc_simplemove"}
+        valid_algos = {"beam_realmove", "mpc_realmove", "mpc_simplemove", "spst_realmove"}
         unknown_algos = [algo for algo in algo_list if algo not in valid_algos]
         if unknown_algos:
             print(f"Unknown algo(s) in --algo: {', '.join(unknown_algos)}")
@@ -426,6 +531,9 @@ def main():
         quick_tackangles = [FIXED_PARAMS["tackangle"]]
         quick_alphas = [0.0, 0.5, 1.0]
         quick_beam_widths = [50, 200, 400]
+        quick_scenarios = [5, 10]
+        quick_dir_noise = [0, 5, 10]
+        quick_speed_noise = [0.0, 0.1, 0.2]
 
         filtered = []
         for algo, params, tid in all_test_cases:
@@ -437,6 +545,13 @@ def main():
                 continue
             if algo == "beam_realmove" and params["beam_width"] not in quick_beam_widths:
                 continue
+            if algo == "spst_realmove":
+                if params["scenarios"] not in quick_scenarios:
+                    continue
+                if params["dir_noise"] not in quick_dir_noise:
+                    continue
+                if params["speed_noise"] not in quick_speed_noise:
+                    continue
             filtered.append((algo, params, tid))
         all_test_cases = filtered
 
@@ -454,10 +569,14 @@ def main():
     if args.order == "shuffle":
         random.shuffle(all_test_cases)
         print("Test cases shuffled for random execution order")
+    elif args.order == "coverage-roundrobin":
+        algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in {tc[0] for tc in all_test_cases}]
+        all_test_cases = order_cases_coverage_roundrobin(all_test_cases, algo_order)
+        print("Test cases ordered by: coverage-roundrobin")
     else:
         order_list = [item.strip() for item in args.order.split(",") if item.strip()]
         order_set = set(order_list)
-        unknown = order_set - {"mpc_simplemove", "mpc_realmove", "beam_realmove"}
+        unknown = order_set - {"mpc_simplemove", "mpc_realmove", "beam_realmove", "spst_realmove"}
         if unknown:
             print(f"Unknown algo(s) in --order: {', '.join(sorted(unknown))}")
             return
@@ -470,6 +589,9 @@ def main():
 
     present_algos = {tc[0] for tc in all_test_cases}
     if args.order == "shuffle":
+        algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in present_algos]
+        algo_order.extend(sorted(present_algos - set(algo_order)))
+    elif args.order == "coverage-roundrobin":
         algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in present_algos]
         algo_order.extend(sorted(present_algos - set(algo_order)))
     else:
@@ -537,6 +659,10 @@ def main():
                         "tackangle": params["tackangle"],
                         "alpha": params["alpha"],
                         "beam_width": params.get("beam_width"),
+                        "scenarios": params.get("scenarios"),
+                        "dir_noise": params.get("dir_noise"),
+                        "speed_noise": params.get("speed_noise"),
+                        "seed": FIXED_PARAMS["seed"],
                         "total_sailed": result.get("total_sailed") if result else None,
                         "nb_tacks": result.get("nb_tacks") if result else None,
                         "steps": result.get("steps") if result else None,
@@ -590,7 +716,7 @@ def main():
     finished_races = [r for r in results if r.get("finished", False)]
     print(f"\nSummary: {len(successful)}/{total_tests_original} tests ran, {len(finished_races)} finished the race")
 
-    for algo in ["beam_realmove", "mpc_realmove", "mpc_simplemove"]:
+    for algo in ["beam_realmove", "mpc_realmove", "mpc_simplemove", "spst_realmove"]:
         algo_results = [r for r in finished_races if r["algorithm"] == algo]
         if algo_results:
             sailed = [r["total_sailed"] for r in algo_results if r["total_sailed"]]

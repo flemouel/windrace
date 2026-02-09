@@ -4,7 +4,7 @@ Visualization script for benchmark results.
 
 Generates:
 1. Heatmaps: parameter combinations (alpha vs horizon, horizon vs beam-width, etc.)
-2. Algorithm comparison: bar charts comparing the 3 algorithms
+2. Algorithm comparison: bar charts comparing the algorithms
 3. Parameter sensitivity plots
 4. Scatter plots: total_sailed vs each parameter
 
@@ -34,7 +34,23 @@ def apply_prefix(prefix, name):
 
 def close_fig():
     if not DISPLAY:
-        close_fig()
+        plt.close()
+
+
+ALGO_PARAMS = {
+    "mpc_simplemove": ["horizon", "alpha"],
+    "mpc_realmove": ["horizon", "alpha"],
+    "beam_realmove": ["horizon", "alpha", "beam_width"],
+    "spst_realmove": ["horizon", "alpha", "scenarios", "dir_noise", "speed_noise"],
+}
+
+
+def algo_params_union(df):
+    algos_present = df["algorithm"].unique()
+    params = set()
+    for algo in algos_present:
+        params.update(ALGO_PARAMS.get(algo, []))
+    return list(params)
 
 
 def load_results(json_path):
@@ -240,7 +256,7 @@ def create_coverage_heatmap(df_all, metadata, algo, x_param, y_param, output_dir
     if algo_df.empty:
         return None
 
-    params = ["horizon", "alpha", "beam_width"]
+    params = ALGO_PARAMS.get(algo, ["horizon", "alpha", "beam_width"])
     remaining = [p for p in params if p not in (x_param, y_param)]
     remaining_ranges = []
     for p in remaining:
@@ -340,7 +356,12 @@ def create_algorithm_comparison(df, output_dir, prefix=""):
     stats = df.groupby("algorithm")[metric].agg(["mean", "std", "min", "max"])
     stats = stats.sort_values("mean")
 
-    colors = {"beam_realmove": "#3498db", "mpc_realmove": "#e74c3c", "mpc_simplemove": "#2ecc71"}
+    colors = {
+        "beam_realmove": "#3498db",
+        "mpc_realmove": "#e74c3c",
+        "mpc_simplemove": "#2ecc71",
+        "spst_realmove": "#9b59b6",
+    }
     bar_colors = [colors.get(algo, "#95a5a6") for algo in stats.index]
 
     x = range(len(stats))
@@ -392,7 +413,7 @@ def create_algorithm_comparison(df, output_dir, prefix=""):
     # Best results per algorithm
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    best_per_algo = df.loc[df.groupby("algorithm")[metric].idxmin()]
+    best_per_algo = df.loc[df.groupby("algorithm")[metric].idxmin()].sort_values(metric)
 
     bar_colors = [colors.get(algo, "#95a5a6") for algo in best_per_algo["algorithm"]]
 
@@ -409,6 +430,8 @@ def create_algorithm_comparison(df, output_dir, prefix=""):
         params = f"h={row['horizon']}, a={row['alpha']}"
         if row["algorithm"] == "beam_realmove":
             params += f", bw={row['beam_width']}"
+        elif row["algorithm"] == "spst_realmove":
+            params += f", sc={row['scenarios']}, dn={row['dir_noise']}, sn={row['speed_noise']}"
         ax.text(i, bars[i].get_height() + 0.01 * best_per_algo[metric].max(),
                 f"{row[metric]:.1f}\n({params})", ha="center", va="bottom", fontsize=8)
 
@@ -420,11 +443,16 @@ def create_algorithm_comparison(df, output_dir, prefix=""):
 
 def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
     """Create plots showing how each parameter affects total_sailed."""
-    params = ["horizon", "alpha"]
+    params = algo_params_union(df)
     skip_params = skip_params or set()
     metric = "total_sailed"
     algos = df["algorithm"].unique()
-    colors = {"beam_realmove": "#3498db", "mpc_realmove": "#e74c3c", "mpc_simplemove": "#2ecc71"}
+    colors = {
+        "beam_realmove": "#3498db",
+        "mpc_realmove": "#e74c3c",
+        "mpc_simplemove": "#2ecc71",
+        "spst_realmove": "#9b59b6",
+    }
 
     for param in params:
         if param in skip_params:
@@ -433,6 +461,8 @@ def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
 
         for algo in algos:
             algo_df = df[df["algorithm"] == algo]
+            if param not in algo_df.columns:
+                continue
             grouped = algo_df.groupby(param)[metric].agg(["mean", "std"])
 
             ax.errorbar(
@@ -463,6 +493,8 @@ def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
 
         for algo in algos:
             algo_df = df[df["algorithm"] == algo]
+            if param not in algo_df.columns:
+                continue
             grouped = algo_df.groupby(param)[metric].agg(
                 median="median",
                 q1=lambda s: s.quantile(0.25),
@@ -498,6 +530,8 @@ def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
 
         for algo in algos:
             algo_df = df[df["algorithm"] == algo]
+            if param not in algo_df.columns:
+                continue
             grouped = algo_df.groupby(param)[metric].agg(["min"])
 
             ax.plot(
@@ -593,10 +627,82 @@ def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
         plt.savefig(filepath, dpi=150, bbox_inches="tight")
         close_fig()
 
+    # Special plots for SPST parameters (only spst_realmove)
+    spst_df = df[df["algorithm"] == "spst_realmove"]
+    for spst_param, label in [
+        ("scenarios", "Scenarios"),
+        ("dir_noise", "Dir Noise (deg)"),
+        ("speed_noise", "Speed Noise"),
+    ]:
+        if spst_df.empty or spst_param not in spst_df.columns:
+            continue
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        grouped = spst_df.groupby(spst_param)[metric].agg(["mean", "std"])
+        ax.errorbar(
+            grouped.index,
+            grouped["mean"],
+            yerr=grouped["std"],
+            marker="o",
+            color="#9b59b6",
+            capsize=3
+        )
+        ax.set_xlabel(label)
+        ax.set_ylabel("Total Sailed (m)")
+        ax.set_title(f"Sensitivity: Total Sailed Distance (mean ± std) — spst_realmove ({label})")
+        plt.tight_layout()
+        filepath = os.path.join(output_dir, apply_prefix(prefix, f"sensitivity_{spst_param}_mean_total_sailed.png"))
+        plt.savefig(filepath, dpi=150, bbox_inches="tight")
+        close_fig()
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        grouped = spst_df.groupby(spst_param)[metric].agg(
+            median="median",
+            q1=lambda s: s.quantile(0.25),
+            q3=lambda s: s.quantile(0.75)
+        )
+        grouped["iqr"] = grouped["q3"] - grouped["q1"]
+        ax.errorbar(
+            grouped.index,
+            grouped["median"],
+            yerr=grouped["iqr"],
+            marker="o",
+            color="#9b59b6",
+            capsize=3
+        )
+        ax.set_xlabel(label)
+        ax.set_ylabel("Total Sailed (m)")
+        ax.set_title(f"Sensitivity: Total Sailed Distance (median ± IQR) — spst_realmove ({label})")
+        plt.tight_layout()
+        filepath = os.path.join(output_dir, apply_prefix(prefix, f"sensitivity_{spst_param}_median_total_sailed.png"))
+        plt.savefig(filepath, dpi=150, bbox_inches="tight")
+        close_fig()
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        grouped = spst_df.groupby(spst_param)[metric].agg(["min"])
+        ax.plot(
+            grouped.index,
+            grouped["min"],
+            marker="o",
+            color="#9b59b6"
+        )
+        ax.set_xlabel(label)
+        ax.set_ylabel("Total Sailed (m)")
+        ax.set_title(f"Sensitivity: Best Total Sailed Distance — spst_realmove ({label})")
+        plt.tight_layout()
+        filepath = os.path.join(output_dir, apply_prefix(prefix, f"sensitivity_{spst_param}_min_total_sailed.png"))
+        plt.savefig(filepath, dpi=150, bbox_inches="tight")
+        close_fig()
+
 
 def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None, skip_params=None):
     """Analyze execution times."""
-    colors = {"beam_realmove": "#3498db", "mpc_realmove": "#e74c3c", "mpc_simplemove": "#2ecc71"}
+    colors = {
+        "beam_realmove": "#3498db",
+        "mpc_realmove": "#e74c3c",
+        "mpc_simplemove": "#2ecc71",
+        "spst_realmove": "#9b59b6",
+    }
 
     # 1. Time distribution per algorithm
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -654,15 +760,51 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     close_fig()
 
+    # SPST-specific execution time vs parameters
+    spst_df = df[df["algorithm"] == "spst_realmove"]
+    for spst_param, label in [
+        ("scenarios", "Scenarios"),
+        ("dir_noise", "Dir Noise (deg)"),
+        ("speed_noise", "Speed Noise"),
+    ]:
+        if spst_df.empty or spst_param not in spst_df.columns:
+            continue
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        grouped = spst_df.groupby(spst_param)["elapsed_time"].agg(["mean", "std"])
+        ax.errorbar(grouped.index, grouped["mean"], yerr=grouped["std"],
+                    marker="o", color="#9b59b6", capsize=3)
+        ax.set_xlabel(label)
+        ax.set_ylabel("Execution Time (s)")
+        ax.set_title(f"Sensitivity: Execution Time (mean ± std) — spst_realmove ({label})")
+        plt.tight_layout()
+        filepath = os.path.join(output_dir, apply_prefix(prefix, f"exec_time_vs_{spst_param}_mean.png"))
+        plt.savefig(filepath, dpi=150, bbox_inches="tight")
+        close_fig()
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        grouped = spst_df.groupby(spst_param)["elapsed_time"].agg(
+            median="median",
+            q1=lambda s: s.quantile(0.25),
+            q3=lambda s: s.quantile(0.75)
+        )
+        grouped["iqr"] = grouped["q3"] - grouped["q1"]
+        ax.errorbar(grouped.index, grouped["median"], yerr=grouped["iqr"],
+                    marker="o", color="#9b59b6", capsize=3)
+        ax.set_xlabel(label)
+        ax.set_ylabel("Execution Time (s)")
+        ax.set_title(f"Sensitivity: Execution Time (median ± IQR) — spst_realmove ({label})")
+        plt.tight_layout()
+        filepath = os.path.join(output_dir, apply_prefix(prefix, f"exec_time_vs_{spst_param}_median.png"))
+        plt.savefig(filepath, dpi=150, bbox_inches="tight")
+        close_fig()
+
     # 4. Time heatmaps: all parameter pairs per algorithm
     skip_heatmaps = skip_heatmaps or set()
     skip_params = skip_params or set()
     for algo in df["algorithm"].unique():
         algo_df = df[df["algorithm"] == algo]
-        if algo == "beam_realmove":
-            params = ["horizon", "alpha", "beam_width"]
-        else:
-            params = ["horizon", "alpha"]
+        params = ALGO_PARAMS.get(algo, ["horizon", "alpha"])
         for i in range(len(params)):
             for j in range(i + 1, len(params)):
                 x_param = params[i]
@@ -1021,7 +1163,7 @@ def create_summary_table(df, df_all, output_dir, prefix=""):
         return f"{median:.{decimals}f} ± {iqr:.{decimals}f}"
     summary_data = []
 
-    preferred_order = ["mpc_simplemove", "mpc_realmove", "beam_realmove"]
+    preferred_order = ["mpc_simplemove", "mpc_realmove", "spst_realmove", "beam_realmove"]
     algos = preferred_order + [algo for algo in df_all["algorithm"].unique() if algo not in preferred_order]
     for algo in algos:
         algo_df = df[df["algorithm"] == algo]
@@ -1092,7 +1234,7 @@ def create_summary_table(df, df_all, output_dir, prefix=""):
 
 def create_scatter_plots(df, output_dir, prefix="", skip_params=None):
     """Scatter plots: all parameter pairs, colored by each remaining parameter."""
-    params = ["horizon", "alpha", "beam_width"]
+    params = algo_params_union(df)
     skip_params = skip_params or set()
     targets = ["total_sailed", "elapsed_time"]
     for y_param in targets:
@@ -1155,7 +1297,7 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix="", ski
         return
     skip_params = skip_params or set()
 
-    params = ["horizon", "alpha", "beam_width"]
+    params = algo_params_union(df_all)
     for algo in df_all["algorithm"].unique():
         algo_df = df_all[df_all["algorithm"] == algo]
         finished_mask = compute_finished_mask(algo_df, metadata)
@@ -1266,7 +1408,7 @@ def create_failure_probability_plots(df_all, metadata, output_dir, prefix="", sk
         return
 
     skip_params = skip_params or set()
-    params = ["horizon", "alpha", "beam_width"]
+    params = algo_params_union(df_all)
     for param in params:
         if param in skip_params:
             continue
@@ -1358,10 +1500,7 @@ def main():
     # 1. Heatmaps (all parameter pairs, total_sailed and elapsed_time)
     print("  Creating heatmaps...")
     for algo in df["algorithm"].unique():
-        if algo == "beam_realmove":
-            params = ["horizon", "alpha", "beam_width"]
-        else:
-            params = ["horizon", "alpha"]
+        params = ALGO_PARAMS.get(algo, ["horizon", "alpha"])
         metrics = ["total_sailed", "elapsed_time"]
         for i in range(len(params)):
             for j in range(i + 1, len(params)):
@@ -1375,10 +1514,7 @@ def main():
 
     print("  Creating coverage heatmaps...")
     for algo in df_all["algorithm"].unique():
-        if algo == "beam_realmove":
-            params = ["horizon", "alpha", "beam_width"]
-        else:
-            params = ["horizon", "alpha"]
+        params = ALGO_PARAMS.get(algo, ["horizon", "alpha"])
         for i in range(len(params)):
             for j in range(i + 1, len(params)):
                 x_param = params[i]
