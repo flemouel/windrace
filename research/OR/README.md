@@ -63,6 +63,15 @@ python3 beam_search.py \
   --finish-lng -64.53339266400592 \
 ```
 
+```bash
+python3 spst_realmove.py \
+  --wind ../../winddata/wind_data.json \
+  --start-lat 18.38142820098676 \
+  --start-lng -64.56660471988445 \
+  --finish-lat 18.40857035782242 \
+  --finish-lng -64.53339266400592 \
+```
+
 ### Detailed examples
 ```bash
 python3 mpc_simplemove.py \
@@ -112,6 +121,28 @@ python3 beam_realmove.py \
   --far-delay 20 \
   --beam-width 200 \
   --start-index 600
+```
+
+```bash
+python3 spst_realmove.py \
+  --wind ../../winddata/wind_data.json \
+  --start-lat 18.38142820098676 \
+  --start-lng -64.56660471988445 \
+  --finish-lat 18.40857035782242 \
+  --finish-lng -64.53339266400592 \
+  --start-index 600 \
+  --horizon 90 \
+  --tackangle 43 \
+  --goal 20 \
+  --alpha 1.2 \
+  --near-threshold 200 \
+  --near-delay 10 \
+  --far-delay 20 \
+  --scenarios 7 \
+  --dir-noise 6 \
+  --speed-noise 0.1 \
+  --seed 42 \
+  --verbose 2
 ```
 
 ### Verbose output
