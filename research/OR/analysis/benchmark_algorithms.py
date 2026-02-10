@@ -285,6 +285,12 @@ def order_cases_coverage_roundrobin(test_cases, algo_order):
 
     pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order if algo in by_algo}
     covered = {(algo, pair): set() for algo in pairs_by_algo for pair in pairs_by_algo[algo]}
+    case_pairs = {}
+    for algo, params, tid in test_cases:
+        pairs = {}
+        for pair in pairs_by_algo.get(algo, []):
+            pairs[pair] = (params.get(pair[0]), params.get(pair[1]))
+        case_pairs[tid] = pairs
 
     total = sum(len(cases) for cases in by_algo.values())
     ordered = []
@@ -296,17 +302,27 @@ def order_cases_coverage_roundrobin(test_cases, algo_order):
             if not cases:
                 continue
             for pair in pairs_by_algo.get(algo, []):
-                idx = None
-                for i, (_, params, _) in enumerate(cases):
-                    combo = (params.get(pair[0]), params.get(pair[1]))
-                    if combo not in covered[(algo, pair)]:
-                        idx = i
-                        break
-                if idx is None:
+                best_idx = None
+                best_score = -1
+                for i, (_, params, tid) in enumerate(cases):
+                    if tid not in case_pairs:
+                        continue
+                    score = 0
+                    for p in pairs_by_algo.get(algo, []):
+                        combo = case_pairs[tid].get(p)
+                        if combo is not None and combo not in covered[(algo, p)]:
+                            score += 1
+                    if score > best_score:
+                        best_score = score
+                        best_idx = i
+                if best_idx is None or best_score <= 0:
                     continue
-                tc = cases.pop(idx)
+                tc = cases.pop(best_idx)
                 ordered.append(tc)
-                covered[(algo, pair)].add(combo)
+                for p in pairs_by_algo.get(algo, []):
+                    combo = case_pairs[tc[2]].get(p)
+                    if combo is not None:
+                        covered[(algo, p)].add(combo)
                 progress = True
                 if len(ordered) >= total:
                     break
@@ -482,9 +498,10 @@ def main():
                         help="Which algorithm(s) to benchmark (comma-separated or 'all')")
     parser.add_argument("--quick", action="store_true", help="Run quick test with reduced parameter ranges")
     parser.add_argument("--resume", action="store_true", help="Resume from previous run (skip completed tests)")
-    parser.add_argument("--order", default="coverage-roundrobin",
-                        help="Execution order: 'coverage-roundrobin' (round-robin per algo/param pair), "
-                             "'shuffle', or comma-separated algo list")
+    parser.add_argument("--order", default="coverage-round-robin",
+                        help="Execution order: 'coverage-round-robin' (round-robin per algo/coverage param pair), "
+                             "'shuffle' (random across algos/params), or comma-separated algo list "
+                             "(sequential params per algo)")
     parser.add_argument("--save-interval", type=int, default=10, help="Save results every N completed tests")
     args = parser.parse_args()
 
@@ -569,10 +586,10 @@ def main():
     if args.order == "shuffle":
         random.shuffle(all_test_cases)
         print("Test cases shuffled for random execution order")
-    elif args.order == "coverage-roundrobin":
+    elif args.order == "coverage-round-robin":
         algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in {tc[0] for tc in all_test_cases}]
         all_test_cases = order_cases_coverage_roundrobin(all_test_cases, algo_order)
-        print("Test cases ordered by: coverage-roundrobin")
+        print("Test cases ordered by: coverage-round-robin")
     else:
         order_list = [item.strip() for item in args.order.split(",") if item.strip()]
         order_set = set(order_list)
@@ -591,7 +608,7 @@ def main():
     if args.order == "shuffle":
         algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in present_algos]
         algo_order.extend(sorted(present_algos - set(algo_order)))
-    elif args.order == "coverage-roundrobin":
+    elif args.order == "coverage-round-robin":
         algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in present_algos]
         algo_order.extend(sorted(present_algos - set(algo_order)))
     else:

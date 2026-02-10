@@ -17,6 +17,7 @@ import json
 import os
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
 from matplotlib.colors import LinearSegmentedColormap
@@ -89,61 +90,6 @@ def load_results(json_path):
     return df, metadata, df_all
 
 
-def _extract_singleton_line(pivot, x_param, y_param):
-    if pivot.shape[0] == 1:
-        return {
-            "x_values": pivot.columns,
-            "y_values": pivot.iloc[0].values,
-            "x_label": x_param,
-            "fixed_param": y_param,
-            "fixed_value": pivot.index[0],
-        }
-    if pivot.shape[1] == 1:
-        return {
-            "x_values": pivot.index,
-            "y_values": pivot.iloc[:, 0].values,
-            "x_label": y_param,
-            "fixed_param": x_param,
-            "fixed_value": pivot.columns[0],
-        }
-    return None
-
-
-def _plot_singleton_line(
-    pivot,
-    x_param,
-    y_param,
-    output_dir,
-    filename,
-    prefix,
-    title_template,
-    y_label,
-    color="#3498db",
-):
-    line = _extract_singleton_line(pivot, x_param, y_param)
-    if not line:
-        return None
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(line["x_values"], line["y_values"], marker="o", color=color)
-    ax.set_xlabel(line["x_label"].replace("_", " ").title())
-    ax.set_ylabel(y_label)
-    ax.set_title(
-        title_template.format(
-            x_label=line["x_label"],
-            fixed_param=line["fixed_param"],
-            fixed_value=line["fixed_value"],
-        )
-    )
-    if line["x_label"] == "horizon":
-        ax.set_xscale("log")
-    plt.tight_layout()
-    filepath = os.path.join(output_dir, apply_prefix(prefix, filename))
-    plt.savefig(filepath, dpi=150, bbox_inches="tight")
-    close_fig()
-    return filepath
-
-
 def create_heatmap(df, algo, x_param, y_param, metric, output_dir, fixed_params=None, agg="mean", prefix=""):
     """
     Create a heatmap for a specific algorithm and parameter combination.
@@ -168,26 +114,6 @@ def create_heatmap(df, algo, x_param, y_param, metric, output_dir, fixed_params=
 
     if pivot.empty:
         return None
-
-    if prefix.startswith("ta43_") and (pivot.shape[0] == 1 or pivot.shape[1] == 1):
-        metric_label = metric.replace("_", " ").title()
-        fixed_suffix = "_".join(f"{k}{v}" for k, v in (fixed_params or {}).items())
-        filename = f"heatmap_{algo}_{x_param}_vs_{y_param}_{agg}_{metric}"
-        if fixed_suffix:
-            filename += f"_{fixed_suffix}"
-        filename += ".png"
-        title_template = f"Line: {metric_label} ({agg}) — {algo}\n{{x_label}} (fixed {{fixed_param}}={{fixed_value}})"
-        return _plot_singleton_line(
-            pivot,
-            x_param,
-            y_param,
-            output_dir,
-            filename,
-            prefix,
-            title_template,
-            metric_label,
-            color="#3498db",
-        )
 
     fig, ax = plt.subplots(figsize=(12, 8))
 
@@ -289,31 +215,6 @@ def create_coverage_heatmap(df_all, metadata, algo, x_param, y_param, output_dir
     pivot = pd.DataFrame(grid, index=y_values, columns=x_values)
     if pivot.empty:
         return None
-
-    if prefix.startswith("ta43_") and (pivot.shape[0] == 1 or pivot.shape[1] == 1):
-        filename = f"coverage_heatmap_{algo}_{x_param}_vs_{y_param}.png"
-        title_template = f"Line: Coverage Rate — {algo}\n{{x_label}} (fixed {{fixed_param}}={{fixed_value}})"
-        line = _extract_singleton_line(pivot, x_param, y_param)
-        if not line:
-            return None
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.plot(line["x_values"], line["y_values"] * 100, marker="o", color="#8e44ad")
-        ax.set_xlabel(line["x_label"].replace("_", " ").title())
-        ax.set_ylabel("Coverage Rate (%)")
-        ax.set_title(
-            title_template.format(
-                x_label=line["x_label"],
-                fixed_param=line["fixed_param"],
-                fixed_value=line["fixed_value"],
-            )
-        )
-        if line["x_label"] == "horizon":
-            ax.set_xscale("log")
-        plt.tight_layout()
-        filepath = os.path.join(output_dir, apply_prefix(prefix, filename))
-        plt.savefig(filepath, dpi=150, bbox_inches="tight")
-        close_fig()
-        return filepath
 
     fig, ax = plt.subplots(figsize=(12, 8))
     cmap = LinearSegmentedColormap.from_list("coverage", ["#e74c3c", "#f1c40f", "#2ecc71"])
@@ -819,20 +720,6 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
                         columns=x_param,
                         aggfunc="mean"
                     )
-                    if prefix.startswith("ta43_") and (pivot.shape[0] == 1 or pivot.shape[1] == 1):
-                        filepath = _plot_singleton_line(
-                            pivot,
-                            x_param,
-                            y_param,
-                            output_dir,
-                            f"exec_time_{algo}_{x_param}_vs_{y_param}_heatmap_mean.png",
-                            prefix,
-                            f"Line: Execution Time (mean) — {algo}\n{{x_label}} (fixed {{fixed_param}}={{fixed_value}})",
-                            "Time (s)",
-                            color="#3498db",
-                        )
-                        if filepath:
-                            continue
                     im = ax.imshow(pivot.values, cmap="YlOrRd", aspect="auto")
                     ax.set_xticks(range(len(pivot.columns)))
                     ax.set_yticks(range(len(pivot.index)))
@@ -868,20 +755,6 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
                     )
                     if pivot.empty:
                         continue
-                    if prefix.startswith("ta43_") and (pivot.shape[0] == 1 or pivot.shape[1] == 1):
-                        filepath = _plot_singleton_line(
-                            pivot,
-                            x_param,
-                            y_param,
-                            output_dir,
-                            f"exec_time_{algo}_{x_param}_vs_{y_param}_heatmap_median.png",
-                            prefix,
-                            f"Line: Execution Time (median) — {algo}\n{{x_label}} (fixed {{fixed_param}}={{fixed_value}})",
-                            "Time (s)",
-                            color="#3498db",
-                        )
-                        if filepath:
-                            continue
                     fig, ax = plt.subplots(figsize=(10, 6))
                     im = ax.imshow(pivot.values, cmap="YlOrRd", aspect="auto")
                     ax.set_xticks(range(len(pivot.columns)))
@@ -1323,20 +1196,6 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix="", ski
                 )
                 if pivot.empty:
                     continue
-                if prefix.startswith("ta43_") and (pivot.shape[0] == 1 or pivot.shape[1] == 1):
-                    filepath = _plot_singleton_line(
-                        pivot,
-                        x_param,
-                        y_param,
-                        output_dir,
-                        f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_mean.png",
-                        prefix,
-                        f"Line: Unfinished Rate (mean) — {algo}\n{{x_label}} (fixed {{fixed_param}}={{fixed_value}})",
-                        "Unfinished Rate",
-                        color="#e67e22",
-                    )
-                    if filepath:
-                        continue
                 fig, ax = plt.subplots(figsize=(10, 7))
                 im = ax.imshow(pivot.values, cmap="YlOrRd", aspect="auto", vmin=0, vmax=1)
                 ax.set_xticks(range(len(pivot.columns)))
@@ -1366,20 +1225,6 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix="", ski
                 )
                 if pivot_median.empty:
                     continue
-                if prefix.startswith("ta43_") and (pivot_median.shape[0] == 1 or pivot_median.shape[1] == 1):
-                    filepath = _plot_singleton_line(
-                        pivot_median,
-                        x_param,
-                        y_param,
-                        output_dir,
-                        f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_median.png",
-                        prefix,
-                        f"Line: Unfinished Rate (median) — {algo}\n{{x_label}} (fixed {{fixed_param}}={{fixed_value}})",
-                        "Unfinished Rate",
-                        color="#e67e22",
-                    )
-                    if filepath:
-                        continue
                 fig, ax = plt.subplots(figsize=(10, 7))
                 im = ax.imshow(pivot_median.values, cmap="YlOrRd", aspect="auto", vmin=0, vmax=1)
                 ax.set_xticks(range(len(pivot_median.columns)))
@@ -1475,6 +1320,315 @@ def create_failure_probability_plots(df_all, metadata, output_dir, prefix="", sk
         close_fig()
 
 
+def create_coverage_dispersion_plot(df_all, metadata, algo, output_dir, prefix=""):
+    """Plot global coverage dispersion using a 5% sliding window."""
+    algo_df = df_all[df_all["algorithm"] == algo].copy()
+    if algo_df.empty:
+        return None
+
+    params = ALGO_PARAMS.get(algo, [])
+    if len(params) < 2:
+        return None
+
+    ranges = (metadata or {}).get("param_ranges", {})
+    if not ranges:
+        ranges = {p: sorted(algo_df[p].dropna().unique().tolist()) for p in params if p in algo_df.columns}
+
+    total_possible = 1
+    for p in params:
+        total_possible *= len(ranges.get(p, []))
+
+    n = len(algo_df)
+    if n == 0:
+        return None
+
+    window_low = max(1, int(50 * len(params)))
+    window_high = max(window_low + 1, int(300 * len(params)))
+
+    percent = []
+    dim_score = []
+    mean_entropy = []
+    volume_low = []
+    volume_high = []
+
+    def entropy_from_counts(counts):
+        total = counts.sum()
+        if total == 0 or len(counts) <= 1:
+            return 0.0
+        probs = counts / total
+        return float(-(probs * np.log(probs)).sum())
+
+    def window_metrics(window):
+        if window.empty:
+            return None, None, None, None
+        varied = 0
+        entropies = []
+        value_sets = []
+        marginal_vals = []
+        joint_values = []
+        for p in params:
+            if p not in window.columns:
+                continue
+            values = window[p].dropna().tolist()
+            total_vals = len(ranges.get(p, []))
+            if not values:
+                entropies.append(0.0)
+                value_sets.append(set())
+                if total_vals:
+                    marginal_vals.append(0.0)
+                continue
+            counts = pd.Series(values).value_counts().values.astype(float)
+            if len(counts) > 1:
+                varied += 1
+            h = entropy_from_counts(counts)
+            h_max = float(np.log(len(counts))) if len(counts) > 1 else 1.0
+            entropies.append(h / h_max if h_max else 0.0)
+            value_sets.append(set(values))
+            if total_vals:
+                marginal_vals.append(len(set(values)) / total_vals)
+        total_params = len(params)
+        dim_val = varied / total_params if total_params else 0.0
+        ent_val = float(np.mean(entropies)) if entropies else 0.0
+
+        marginal_val = float(np.mean(marginal_vals)) if marginal_vals else 0.0
+
+        window_clean = window[params].dropna()
+        if not window_clean.empty:
+            joint_values = list(map(tuple, window_clean.values.tolist()))
+        joint_counts = pd.Series(joint_values).value_counts().values.astype(float) if joint_values else np.array([])
+        denom = 1
+        for s in value_sets:
+            denom *= max(1, len(s))
+        volume_val = len(set(joint_values)) / denom if denom else 0.0
+        combo_val = len(set(joint_values)) / total_possible if total_possible else 0.0
+        raw_ratio = marginal_val / max(combo_val, 1e-9)
+        ratio_val = raw_ratio / (1.0 + raw_ratio)
+        return dim_val, ent_val, volume_val, ratio_val
+
+    dim_low = []
+    dim_high = []
+    ent_low = []
+    ent_high = []
+
+    # Precompute full tuple per test for cumulative weighted coverage.
+    tuple_values = []
+    if params and all(p in algo_df.columns for p in params):
+        for row in algo_df[params].itertuples(index=False, name=None):
+            if any(v is None or (isinstance(v, float) and np.isnan(v)) for v in row):
+                tuple_values.append(None)
+            else:
+                tuple_values.append(row)
+    else:
+        tuple_values = [None] * n
+
+    seen_tuples = set()
+
+    for idx in range(1, n + 1):
+        start_low = max(0, idx - window_low)
+        start_high = max(0, idx - window_high)
+        window_l = algo_df.iloc[start_low:idx]
+        window_h = algo_df.iloc[start_high:idx]
+        dim_l, ent_l, vol_l, ratio_l = window_metrics(window_l)
+        dim_h, ent_h, vol_h, ratio_h = window_metrics(window_h)
+        if dim_l is None or dim_h is None:
+            return None
+        dim_low.append(dim_l)
+        dim_high.append(dim_h)
+        ent_low.append(ent_l)
+        ent_high.append(ent_h)
+        volume_low.append(vol_l)
+        volume_high.append(vol_h)
+        percent.append(idx / n * 100)
+
+        tup = tuple_values[idx - 1]
+        if tup is not None and tup not in seen_tuples:
+            seen_tuples.add(tup)
+
+    # Effective Dimensional Coverage Progress (cumulative, normalized to end at 1.0).
+    dim_progress = []
+    if params and all(p in algo_df.columns for p in params):
+        ranges_values = {
+            p: list(ranges.get(p, sorted(algo_df[p].dropna().unique().tolist()))) for p in params
+        }
+        ranges_total = {p: len(ranges_values[p]) for p in params}
+        index_maps = {p: {v: i for i, v in enumerate(ranges_values[p])} for p in params}
+        seen_per_dim = {p: set() for p in params}
+        seen_idx_per_dim = {p: set() for p in params}
+        dim_util = []
+        gini_progress = []
+        hrc_progress = []
+        hrc_weighted_progress = []
+        for row in algo_df[params].itertuples(index=False, name=None):
+            for p, v in zip(params, row):
+                if v is not None and not (isinstance(v, float) and np.isnan(v)):
+                    seen_per_dim[p].add(v)
+                    if v in index_maps[p]:
+                        seen_idx_per_dim[p].add(index_maps[p][v])
+            ratios = []
+            spans = []
+            for p in params:
+                total_vals = max(1, ranges_total.get(p, 0))
+                vals = seen_per_dim[p]
+                ratios.append(len(vals) / total_vals)
+                idxs = seen_idx_per_dim[p]
+                if idxs:
+                    spans.append((max(idxs) - min(idxs) + 1) / total_vals)
+                else:
+                    spans.append(0.0)
+            geom = float(np.prod(ratios) ** (1.0 / len(ratios))) if ratios else 0.0
+            dim_util.append(geom)
+            # Gini coefficient of per-dimension coverage ratios (0=balanced, 1=uneven).
+            arr = np.array(ratios, dtype=float)
+            if arr.size == 0:
+                gini = 0.0
+            else:
+                arr_sorted = np.sort(arr)
+                nvals = arr_sorted.size
+                if np.isclose(arr_sorted.sum(), 0.0):
+                    gini = 0.0
+                else:
+                    index = np.arange(1, nvals + 1)
+                    gini = float((np.sum((2 * index - nvals - 1) * arr_sorted)) / (nvals * arr_sorted.sum()))
+            gini_progress.append(gini)
+            # Hyper-rectangle coverage (envelope span normalized to 0-1).
+            hrc_val = float(np.prod(spans)) if spans else 0.0
+            hrc_progress.append(hrc_val)
+            hrc_weighted_progress.append(hrc_val * geom)
+        cum_avg = np.cumsum(dim_util) / np.arange(1, len(dim_util) + 1)
+        final = cum_avg[-1] if len(cum_avg) else 1.0
+        dim_progress = (cum_avg / final) if final > 0 else cum_avg
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    # Auto-detect breadth vs sequential zones using mean entropy band midpoint.
+    entropy_mid = (np.array(ent_low) + np.array(ent_high)) / 2.0
+    smooth_window = max(5, int(0.02 * n))
+    if smooth_window % 2 == 0:
+        smooth_window += 1
+    smoothed = (
+        pd.Series(entropy_mid)
+        .rolling(window=smooth_window, center=True, min_periods=1)
+        .mean()
+        .values
+    )
+
+    # k-means (k=2) on smoothed entropy to classify breadth vs depth.
+    values = smoothed.astype(float)
+    c1, c2 = float(values.min()), float(values.max())
+    for _ in range(20):
+        d1 = np.abs(values - c1)
+        d2 = np.abs(values - c2)
+        mask = d2 < d1
+        if mask.all() or (~mask).all():
+            break
+        new_c1 = float(values[~mask].mean())
+        new_c2 = float(values[mask].mean())
+        if np.isclose([c1, c2], [new_c1, new_c2]).all():
+            break
+        c1, c2 = new_c1, new_c2
+
+    high_cluster = c1 if c1 > c2 else c2
+    labels = np.abs(values - high_cluster) < np.abs(values - (c2 if high_cluster == c1 else c1))
+
+    # Merge short segments to avoid flicker.
+    min_segment = max(5, int(0.03 * n))
+    segments = []
+    start = 0
+    for i in range(1, n):
+        if labels[i] != labels[i - 1]:
+            segments.append((start, i, labels[i - 1]))
+            start = i
+    segments.append((start, n, labels[-1]))
+
+    merged = []
+    for seg in segments:
+        if merged and (seg[1] - seg[0]) < min_segment:
+            # Merge short segment into previous.
+            prev = merged.pop()
+            merged.append((prev[0], seg[1], prev[2]))
+        else:
+            merged.append(seg)
+
+    # Merge contiguous segments with the same label.
+    compact = []
+    for seg in merged:
+        if compact and seg[2] == compact[-1][2]:
+            prev = compact.pop()
+            compact.append((prev[0], seg[1], prev[2]))
+        else:
+            compact.append(seg)
+
+    for start, end, is_breadth in compact:
+        if end <= start:
+            continue
+        x0 = percent[start]
+        x1 = percent[end - 1] if end - 1 < len(percent) else percent[-1]
+        ax.axvspan(
+            x0,
+            x1,
+            color="#1f77b4" if is_breadth else "#d62728",
+            alpha=0.16,
+            zorder=0,
+        )
+        # Add dashed boundary line at segment start (except first).
+        if start != 0:
+            ax.axvline(x0, color="#7f8c8d", linestyle="--", linewidth=1.0, alpha=0.6, zorder=1)
+
+    # Legend for background zones.
+    zone_patches = [
+        Patch(facecolor="#1f77b4", edgecolor="none", alpha=0.16, label="Space-filling (Exploration)"),
+        Patch(facecolor="#d62728", edgecolor="none", alpha=0.16, label="Depth-first (Exploitation)"),
+    ]
+    ax.fill_between(percent, ent_low, ent_high, alpha=0.4, color="#e67e22", label="Mean entropy band (diversity per dimension)")
+    ax.fill_between(percent, volume_low, volume_high, alpha=0.4, color="#3498db", label="Coverage Volume band (unique combos inside window)")
+    if len(dim_progress) == len(percent):
+        ax.plot(
+            percent,
+            dim_progress,
+            color="#2c3e50",
+            linewidth=2.0,
+            label="Effective dimensional coverage progress (Geometric-mean coverage)",
+        )
+    if "gini_progress" in locals() and len(gini_progress) == len(percent):
+        ax.plot(
+            percent,
+            gini_progress,
+            color="#8e44ad",
+            linewidth=2.0,
+            label="Coverage imbalance (Gini)",
+        )
+    if "hrc_progress" in locals() and len(hrc_progress) == len(percent):
+        ax.plot(
+            percent,
+            hrc_progress,
+            color="#27ae60",
+            linewidth=2.0,
+            label="Hyper-rectangle coverage (HRC)",
+        )
+    if "hrc_weighted_progress" in locals() and len(hrc_weighted_progress) == len(percent):
+        ax.plot(
+            percent,
+            hrc_weighted_progress,
+            color="#1abc9c",
+            linewidth=2.0,
+            label="Weighted HRC (HRC × geometric mean)",
+        )
+    ax.set_xlabel("Progress (% of tests)")
+    ax.set_ylabel("Exploration metrics (0–1)")
+    ax.set_title(
+        f"Exploration Breadth (window={window_low}-{window_high} tests) — {algo}"
+    )
+    ax.set_ylim(0, 1.05)
+    ax.grid(True, alpha=0.3)
+    ax.legend(handles=zone_patches + ax.get_legend_handles_labels()[0], loc="upper left")
+    plt.tight_layout()
+
+    filename = f"coverage_dispersion_{algo}.png"
+    filepath = os.path.join(output_dir, apply_prefix(prefix, filename))
+    plt.savefig(filepath, dpi=150, bbox_inches="tight")
+    close_fig()
+    return filepath
+
+
 def main():
     parser = argparse.ArgumentParser(description="Visualize benchmark results")
     parser.add_argument("--input", default="benchmark_results.json", help="Input JSON file")
@@ -1546,6 +1700,9 @@ def main():
     create_unfinished_rate_heatmaps(df_all, metadata, output_dir)
     print("  Creating unfinished rate vs param plots...")
     create_failure_probability_plots(df_all, metadata, output_dir)
+    print("  Creating coverage dispersion plots...")
+    for algo in df_all["algorithm"].unique():
+        create_coverage_dispersion_plot(df_all, metadata, algo, output_dir)
 
     print("\n" + "=" * 60)
     print("VISUALIZATION COMPLETE")
