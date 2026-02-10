@@ -4,15 +4,76 @@ This folder contains scripts that analyze and visualize benchmark results produc
 
 ## Files
 - `benchmark_algorithms.py`: Runs grid searches across algorithms and parameters, saving results to CSV/JSON.
-- `benchmark_results.json`: JSON output with metadata and per-run results.
-- `benchmark_results.csv`: Flat CSV output for quick inspection.
-- `visualize_algorithms.py`: Generates heatmaps, comparisons, and sensitivity plots from JSON results.
+- `visualize_algorithms.py`: Generates heatmaps, comparisons, sensitivity plots, execution-time charts, unfinished-rate visuals, and coverage-dispersion summaries from JSON results.
+- `extract_trajectories.py`: Extracts planned/sailed trajectories from logs for comparison and visualization.
+- `compare_trajectories.py`: Compares planned vs sailed trajectories (if extracted trajectories are available).
 - `visualize_trajectories.py`: Optional trajectory visualization (if present in results).
 
-## Typical workflow
+## Typical workflow - trajectories comparison
+1) Extract trajectories from logs:
+```bash
+python3 extract_trajectories.py --input ../../logs/frontend.log --output trajectories.json
+```
+
+2) Compare planned vs sailed:
+```bash
+python3 compare_trajectories.py --input trajectories.json --output-dir .
+```
+
+3) Visualize trajectories (if available in the extracted data):
+```bash
+python3 visualize_trajectories.py --input trajectories.json --output-dir .
+```
+
+## Parameters
+`extract_trajectories.py` uses:
+- `--input` (log file, e.g. `../../logs/frontend.log`)
+- `--output` (`trajectories.json`)
+- `--method` (`mpc`, `beam`, or `all`)
+
+`compare_trajectories.py` uses:
+- `--input` (`trajectories.json`)
+- `--output-dir` (`.`)
+
+`visualize_trajectories.py` uses:
+- `--input` (`trajectories.json`)
+- `--output-dir` (`.`)
+- `--display` (show figures after saving)
+
+## Example output
+From `extract_trajectories.py`:
+```
+Processing .../logs/frontend.log...
+  MPC Planned Trajectory (2026-01-26 00:58:22):
+    Steps: 900 to 2636 (1737 points)
+```
+
+From `compare_trajectories.py`:
+```
+Comparing trajectories...
+  MPC planned vs sailed: mean deviation = 12.4 m
+```
+
+From `visualize_trajectories.py`:
+```
+Saved trajectory plot to trajectories_mpc.png
+```
+
+## Output files
+Trajectory outputs:
+- `trajectories.json`
+- `trajectories_<method>.png`
+- `compare_trajectories_<method>.png`
+
+## Typical workflow - algorithms benchmarking
 1) Run benchmarks (partial runs are supported):
 ```bash
 python3 benchmark_algorithms.py --quick
+```
+
+Example with SPST and coverage-round-robin:
+```bash
+python3 benchmark_algorithms.py --algo spst_realmove --order coverage-round-robin --workers 12
 ```
 
 2) Generate visualizations:
@@ -25,16 +86,22 @@ python3 visualize_algorithms.py --input benchmark_results.json --output-dir .
 - `--output` (`benchmark_results.csv`)
 - `--json-output` (`benchmark_results.json`)
 - `--workers` (`12`)
-- `--algo` (`all` or comma-separated: `mpc_simplemove,mpc_realmove,beam_realmove`)
-- `--order` (`shuffle` or comma-separated algo order, e.g. `mpc_simplemove,mpc_realmove,beam_realmove`)
+- `--algo` (`all` or comma-separated: `mpc_simplemove,mpc_realmove,beam_realmove,spst_realmove`)
+- `--order` (`coverage-round-robin` = round-robin per algo/coverage param pair, `shuffle` = random across algos/params, or comma-separated algo list with sequential params per algo, e.g. `mpc_simplemove,mpc_realmove,beam_realmove,spst_realmove`)
 - `--quick` (reduced parameter ranges for fast runs)
 - `--resume` (continue from previous JSON results)
 - `--save-interval` (`10`)
-- fixed params: `goal=20`, `start_index=600`, `near_threshold=200`, `near_delay=10`, `far_delay=20`
+
+- fixed params: `goal=20`, `start_index=600`, `tackangle=43`, `near_threshold=200`, `near_delay=10`, `far_delay=20`, `seed=42`
+- parameter ranges live in `PARAM_RANGES`:
+  `horizon` + `alpha` for `mpc_simplemove`/`mpc_realmove`,
+  add `beam_width` for `beam_realmove`,
+  add `scenarios`, `dir_noise`, `speed_noise` for `spst_realmove`.
 
 `visualize_algorithms.py` uses:
 - `--input` (`benchmark_results.json`)
 - `--output-dir` (`.`)
+- `--display` (show figures after saving)
 
 ## Example output
 From `benchmark_algorithms.py`:
@@ -52,15 +119,18 @@ Generating visualizations...
 ```
 
 ## Output files
-Common outputs (all PNG):
+Common outputs:
+- `benchmark_results.json`
+- `benchmark_results.csv`
+- `summary_results_table.png`
+- `compare_total_sailed_mean.png`
+- `compare_total_sailed_median.png`
+- `compare_total_sailed_min.png`
 - `heatmap_<algo>_<param>_vs_<param>_mean_total_sailed.png`
 - `heatmap_<algo>_<param>_vs_<param>_median_total_sailed.png`
 - `heatmap_<algo>_<param>_vs_<param>_min_total_sailed.png`
 - `heatmap_<algo>_<param>_vs_<param>_mean_elapsed_time.png`
 - `heatmap_<algo>_<param>_vs_<param>_median_elapsed_time.png`
-- `compare_total_sailed_mean.png`
-- `compare_total_sailed_median.png`
-- `compare_total_sailed_min.png`
 - `sensitivity_<param>_mean_total_sailed.png`
 - `sensitivity_<param>_median_total_sailed.png`
 - `sensitivity_<param>_min_total_sailed.png`
@@ -85,14 +155,18 @@ Common outputs (all PNG):
 - `unfinished_rate_heatmap_<algo>_<param>_vs_<param>_median.png`
 - `unfinished_rate_compare_<param>_mean.png`
 - `unfinished_rate_compare_<param>_median.png`
-- `summary_results_table.png`
+- `coverage_dispersion_<algo>.png`
+Coverage dispersion metrics:
 
-When a tackangle=43 slice is generated, the same outputs are created with a `ta43_` prefix:
-- `ta43_<same filename>.png`
-- `ta43_summary_results.csv`
-- If a ta43 heatmap collapses to a single row/column, it is rendered as a 1D line plot with the same filename.
-- Tackangle-specific plots are omitted for ta43 slices (e.g. `ta43_exec_time_vs_tackangle_*`, `ta43_sensitivity_tackangle_*`,
-  `ta43_scatter_*_vs_tackangle_*`, `ta43_unfinished_rate_compare_tackangle_*`).
+| Metric | Description |
+| --- | --- |
+| Mean entropy band (diversity per dimension) | Average per-dimension entropy within the sliding window. |
+| Coverage Volume band (unique combos inside window) | Ratio of unique tuples inside the window over the window's possible combos. |
+| Effective dimensional coverage progress (Geometric-mean coverage) | Cumulative geometric mean of per-dimension coverage ratios, normalized to finish at 1.0. |
+| Coverage imbalance (Gini) | Inequality across per-dimension coverage ratios (0=balanced, 1=uneven). |
+| Hyper-rectangle coverage (HRC) | Envelope span across dimensions, normalized to 0–1. |
+| Weighted HRC (HRC × geometric mean) | Envelope span weighted by per-dimension coverage. |
+| Background zones | K-means (k=2) on smoothed entropy for Space-filling (Exploration) vs Depth-first (Exploitation). |
 
 ## Notes
 - Visualizations only consider finished races (`distance_to_mark <= goal`).
