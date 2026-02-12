@@ -14,52 +14,52 @@ that minimizes sailed distance while reaching the mark.
 - Choose the lower-cost option, advance one step, and repeat.
 
 ## OR classification (with current algorithms)
-- Mathematical optimization (deterministic optimization)
-  - Linear Programming (LP) (not used here)
-  - Mixed-Integer Linear Programming (MILP) (not used here)
-  - Mixed-Integer Programming (MIP) (not used here)
-  - Quadratic Programming (QP) (not used here)
-  - Mixed-Integer Quadratic Programming (MIQP) (not used here)
-  - Nonlinear Programming (NLP) (not used here)
-  - Mixed-Integer Nonlinear Programming (MINLP) (not used here)
-  - Second-Order Cone Programming (SOCP) (not used here)
-  - Semidefinite Programming (SDP) (not used here)
+- Mathematical optimization (deterministic optimization) *(not used here because the game dynamics are nonlinear with discrete tack decisions, making exact formulations heavy in practice)*
+  - *Linear Programming (LP)*
+  - *Mixed-Integer Linear Programming (MILP)*
+  - *Mixed-Integer Programming (MIP)*
+  - *Quadratic Programming (QP)*
+  - *Mixed-Integer Quadratic Programming (MIQP)*
+  - *Nonlinear Programming (NLP)*
+  - *Mixed-Integer Nonlinear Programming (MINLP)*
+  - *Second-Order Cone Programming (SOCP)*
+  - *Semidefinite Programming (SDP)*
 - Dynamic programming (sequential decision optimization)
-  - Dynamic Programming (DP) (not used here)
+  - *Dynamic Programming (DP) (not used here because of the curse of dimensionality)*
   - Approximate Dynamic Programming (ADP) (here: `adp_realmove.py`)
 - Optimal control / planning (receding horizon control)
   - Model Predictive Control (MPC) (here: `mpc_simplemove.py`, `mpc_realmove.py`)
-  - Differential Dynamic Programming (DDP) (not used here)
-- Constraint programming (combinatorial constraints)
-  - Constraint Programming (CP) (not used here)
-  - Constraint Programming SAT (CP-SAT) (not used here)
+  - *Differential Dynamic Programming (DDP) (not used here because the dynamics are not differentiable due to discrete tack decisions)*
+- Constraint programming (combinatorial constraints) *(not used here because the state is continuous and the horizon is long, so a discrete CP model would be overly approximate or too large)*
+  - *Constraint Programming (CP)*
+  - *Constraint Programming SAT (CP-SAT)*
 - Stochastic optimization (uncertainty-aware optimization)
   - Scenario Tree / Stochastic Programming (here: `spst_realmove.py`)
-  - Robust Optimization (not used here)
-  - Chance-Constrained (not used here)
-  - SAA (not used here)
+  - *Robust Optimization (not used here)*
+  - *Chance-Constrained (not used here)*
+  - *SAA (not used here)*
 - Heuristic search / meta-heuristics (approximate search)
-  - A* (not used here)
-  - D* (not used here)
-  - Iterative Deepening A* (IDA*) (not used here)
-  - Best-First (not used here)
+  - *A* (not used here)*
+  - *D* (not used here)*
+  - *Iterative Deepening A* (IDA*) (not used here)*
+  - *Best-First (not used here)*
   - Beam Search (here: `beam_search.py`, `beam_realmove.py`)
-  - Genetic Algorithms (GA) (not used here)
-  - Particle Swarm Optimization (PSO) (not used here)
-  - Simulated Annealing (SA) (not used here)
-  - Tabu Search (TS) (not used here)
-  - Greedy Randomized Adaptive Search Procedure (GRASP) (not used here)
-  - Variable Neighborhood Search (VNS) (not used here)
-  - Iterated Local Search (ILS) (not used here)
+  - *Genetic Algorithms (GA) (not used here)*
+  - *Particle Swarm Optimization (PSO) (not used here)*
+  - *Simulated Annealing (SA) (not used here)*
+  - *Tabu Search (TS) (not used here)*
+  - *Greedy Randomized Adaptive Search Procedure (GRASP) (not used here)*
+  - *Variable Neighborhood Search (VNS) (not used here)*
+  - *Iterated Local Search (ILS) (not used here)*
 - Simulation (optimization via repeated runs)
-  - Monte-Carlo Optimization (not used here)
-  - Stochastic Simulation Optimization (SimOpt) (not used here)
-  - Response Surface Methodology (RSM) (not used here)
-- Decomposition & advanced methods (large-scale decomposition)
-  - Benders (not used here)
-  - Column Generation (not used here)
-  - Lagrangian Relaxation (not used here)
-  - Branch-and-Bound / Branch-and-Cut (not used here)
+  - *Monte-Carlo Optimization (not used here)*
+  - *Stochastic Simulation Optimization (SimOpt) (not used here)*
+  - *Response Surface Methodology (RSM) (not used here)*
+- Decomposition & advanced methods (large-scale decomposition) *(not used here because there is no clear separable structure into master/subproblems in this sequential dynamics)*
+  - *Benders*
+  - *Column Generation*
+  - *Lagrangian Relaxation*
+  - *Branch-and-Bound / Branch-and-Cut*
 
 ## Scripts
 
