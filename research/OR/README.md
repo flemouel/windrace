@@ -84,7 +84,7 @@ Global search approximation:
 
 ### adp_realmove.py
 Approximate Dynamic Programming baseline:
-- Two actions (keep vs tack) with mini-horizon lookahead.
+- Two actions (keep vs tack) with mini-horizon evaluation.
 - Value-function approximation (linear, polynomial, or small network).
 - Optional epsilon-greedy exploration.
 - Uses the same movement logic as `mpc_realmove.py`.
@@ -224,7 +224,7 @@ python3 adp_realmove.py \
   --near-threshold 200 \
   --near-delay 10 \
   --far-delay 20 \
-  --lookahead 120 \
+  --horizon 120 \
   --epsilon 0.05 \
   --approx linear \
   --normalize-features \
@@ -247,15 +247,14 @@ python3 mpc_realmove.py \
 ```
 
 ## Key parameters
-- `--horizon`: lookahead window (seconds).
+- `--horizon`: evaluation window (seconds).
 - `--tackangle`: tack angle in degrees (default 43).
 - `--goal`: stop when distance to mark is below this threshold (meters).
 - `--alpha`: weight for remaining distance in the cost function.
 - `--start-index`: starting index in the wind data trace (default 0). Allows planning from a specific point in the wind history.
 - `--near-threshold`, `--near-delay`, `--far-delay` (real move only): tack delay tuning.
 - `--beam-width` (beam search only): number of states kept per step.
-- `--goal-penalty` (ADP only): extra weight on distance-to-mark inside the lookahead cost.
-- `--lookahead` (ADP only): mini-horizon for evaluating keep/tack.
+- `--goal-penalty` (ADP only): extra weight on distance-to-mark inside the horizon cost.
 - `--epsilon`, `--epsilon-decay`, `--epsilon-min` (ADP only): exploration settings.
 - `--approx` (ADP only): value-function approximation (`linear`, `poly`, `network`).
 - `--l2` (ADP only): L2 regularization on value weights.

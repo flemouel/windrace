@@ -4,7 +4,7 @@ Approximate Dynamic Programming (ADP) planner using game-like movement.
 
 This is a light-weight ADP baseline:
 - Two actions: KEEP tack vs TACK now (if allowed).
-- One-step lookahead cost + value-function estimate of next state.
+- One-step horizon cost + value-function estimate of next state.
 - Online TD(0) update of a linear value function.
 
 The move model mirrors the game's moveByWind behavior:
@@ -188,7 +188,7 @@ def adp_plan_real(
     goal_penalty=10.0,
     gamma=0.95,
     lr=0.01,
-    lookahead=10,
+    horizon=10,
     epsilon=0.0,
     approx="linear",
     l2=0.0,
@@ -233,7 +233,7 @@ def adp_plan_real(
         keep_state.target_lat = finish_lat
         keep_state.target_lng = finish_lng
         travel_a, lat_a, lng_a = simulate_horizon_real(
-            keep_state, wind_dir, wind_speed, step_count, lookahead, tackangle,
+            keep_state, wind_dir, wind_speed, step_count, horizon, tackangle,
             near_threshold=near_threshold, near_delay=near_delay, far_delay=far_delay
         )
         keep_cost = travel_a + (alpha * goal_penalty) * haversine_m(lat_a, lng_a, finish_lat, finish_lng)
@@ -254,7 +254,7 @@ def adp_plan_real(
             tack_state.target_lat = finish_lat
             tack_state.target_lng = finish_lng
             travel_b, lat_b, lng_b = simulate_horizon_real(
-                tack_state, wind_dir, wind_speed, step_count, lookahead, tackangle,
+                tack_state, wind_dir, wind_speed, step_count, horizon, tackangle,
                 near_threshold=near_threshold, near_delay=near_delay, far_delay=far_delay
             )
             tack_cost = travel_b + (alpha * goal_penalty) * haversine_m(lat_b, lng_b, finish_lat, finish_lng)
@@ -267,7 +267,7 @@ def adp_plan_real(
             else:
                 tack_v = value_linear(weights, tack_feats)
 
-        # Choose action by 1-step lookahead + value estimate
+        # Choose action by 1-step horizon + value estimate
         keep_score = keep_cost + gamma * keep_v
         tack_score = tack_cost + gamma * tack_v
 
@@ -354,7 +354,7 @@ def main():
     parser.add_argument("--goal-penalty", type=float, default=10.0)
     parser.add_argument("--gamma", type=float, default=0.95)
     parser.add_argument("--lr", type=float, default=1e-5)
-    parser.add_argument("--lookahead", type=int, default=90)
+    parser.add_argument("--horizon", type=int, default=90)
     parser.add_argument("--epsilon", type=float, default=0.0)
     parser.add_argument("--approx", type=str, default="linear", choices=["linear", "poly", "network"])
     parser.add_argument("--l2", type=float, default=0.0)
@@ -383,7 +383,7 @@ def main():
         goal_penalty=args.goal_penalty,
         gamma=args.gamma,
         lr=args.lr,
-        lookahead=args.lookahead,
+        horizon=args.horizon,
         epsilon=args.epsilon,
         approx=args.approx,
         l2=args.l2,
