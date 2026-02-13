@@ -9,6 +9,7 @@ Algorithms tested:
 - beam_realmove.py
 - mpc_realmove.py
 - mpc_simplemove.py
+- adp_realmove.py
 - spst_realmove.py
 
 Features:
@@ -55,6 +56,16 @@ PARAM_RANGES = {
     "scenarios": list(range(3, 16)),
     "dir_noise": list(range(0, 11)),
     "speed_noise": [round(i * 0.02, 2) for i in range(0, 11)],
+    "gamma": [0.9, 0.95],
+    "lr": [1e-6, 1e-5],
+    "goal_penalty": [20, 50],
+    "epsilon": [0.0, 0.1],
+    "epsilon_decay": [1.0, 0.9995],
+    "epsilon_min": [0.0, 0.01],
+    "approx": ["linear", "poly", "network"],
+    "hidden_size": [8, 16],
+    "l2": [0.0, 1e-5],
+    "normalize_features": [False, True],
 }
 
 # Total tests per algorithm (derived from PARAM_RANGES)
@@ -66,6 +77,9 @@ ALGO_TOTALS = {
     "mpc_realmove": _range_len("horizon") * _range_len("alpha"),
     "mpc_simplemove": _range_len("horizon") * _range_len("alpha"),
     "beam_realmove": _range_len("horizon") * _range_len("alpha") * _range_len("beam_width"),
+    "adp_realmove": _range_len("horizon") * _range_len("alpha") * _range_len("gamma") * _range_len("lr")
+    * _range_len("goal_penalty") * _range_len("epsilon") * _range_len("epsilon_decay") * _range_len("epsilon_min")
+    * _range_len("approx") * _range_len("hidden_size") * _range_len("l2") * _range_len("normalize_features"),
     "spst_realmove": _range_len("horizon") * _range_len("alpha") * _range_len("scenarios")
     * _range_len("dir_noise") * _range_len("speed_noise"),
 }
@@ -85,6 +99,7 @@ def run_algorithm(algo_name, params, timeout=300):
         "beam_realmove": "beam_realmove.py",
         "mpc_realmove": "mpc_realmove.py",
         "mpc_simplemove": "mpc_simplemove.py",
+        "adp_realmove": "adp_realmove.py",
         "spst_realmove": "spst_realmove.py",
     }
 
@@ -120,6 +135,24 @@ def run_algorithm(algo_name, params, timeout=300):
             "--near-delay", str(FIXED_PARAMS["near_delay"]),
             "--far-delay", str(FIXED_PARAMS["far_delay"]),
         ])
+    elif algo_name == "adp_realmove":
+        cmd.extend([
+            "--near-threshold", str(FIXED_PARAMS["near_threshold"]),
+            "--near-delay", str(FIXED_PARAMS["near_delay"]),
+            "--far-delay", str(FIXED_PARAMS["far_delay"]),
+            "--goal-penalty", str(params["goal_penalty"]),
+            "--gamma", str(params["gamma"]),
+            "--lr", str(params["lr"]),
+            "--horizon", str(params["horizon"]),
+            "--epsilon", str(params["epsilon"]),
+            "--epsilon-decay", str(params["epsilon_decay"]),
+            "--epsilon-min", str(params["epsilon_min"]),
+            "--approx", str(params["approx"]),
+            "--hidden-size", str(params["hidden_size"]),
+            "--l2", str(params["l2"]),
+        ])
+        if params.get("normalize_features"):
+            cmd.append("--normalize-features")
     elif algo_name == "spst_realmove":
         cmd.extend([
             "--near-threshold", str(FIXED_PARAMS["near_threshold"]),
@@ -200,8 +233,15 @@ def generate_test_cases():
     """Generate all test cases for grid search."""
     test_cases = []
     test_id = 0
+    total_expected = sum(ALGO_TOTALS.values())
+    print(f"Generating test cases (expected total: {total_expected})...")
+    if total_expected <= 0:
+        return test_cases
+
+    counts = {}
 
     # mpc_realmove: 3 parameters (no beam_width) - FIRST
+    last_pct = -1
     for horizon, alpha in itertools.product(
         PARAM_RANGES["horizon"],
         PARAM_RANGES["alpha"]
@@ -214,8 +254,15 @@ def generate_test_cases():
         }
         test_cases.append(("mpc_realmove", params, test_id))
         test_id += 1
+        pct = 100.0 * test_id / total_expected
+        if int(pct) != last_pct and int(pct) % 10 == 0:
+            bar = format_progress_bar(pct, width=20)
+            print(f"\r  generation [{bar}] {pct:3.0f}%", end="", flush=True)
+            last_pct = int(pct)
+    counts["mpc_realmove"] = test_id
 
     # mpc_simplemove: 3 parameters (no beam_width) - SECOND
+    start_count = test_id
     for horizon, alpha in itertools.product(
         PARAM_RANGES["horizon"],
         PARAM_RANGES["alpha"]
@@ -228,8 +275,15 @@ def generate_test_cases():
         }
         test_cases.append(("mpc_simplemove", params, test_id))
         test_id += 1
+        pct = 100.0 * test_id / total_expected
+        if int(pct) != last_pct and int(pct) % 10 == 0:
+            bar = format_progress_bar(pct, width=20)
+            print(f"\r  generation [{bar}] {pct:3.0f}%", end="", flush=True)
+            last_pct = int(pct)
+    counts["mpc_simplemove"] = test_id - start_count
 
     # beam_realmove: all 4 parameters - LAST
+    start_count = test_id
     for horizon, alpha, beam_width in itertools.product(
         PARAM_RANGES["horizon"],
         PARAM_RANGES["alpha"],
@@ -243,8 +297,59 @@ def generate_test_cases():
         }
         test_cases.append(("beam_realmove", params, test_id))
         test_id += 1
+        pct = 100.0 * test_id / total_expected
+        if int(pct) != last_pct and int(pct) % 10 == 0:
+            bar = format_progress_bar(pct, width=20)
+            print(f"\r  generation [{bar}] {pct:3.0f}%", end="", flush=True)
+            last_pct = int(pct)
+    counts["beam_realmove"] = test_id - start_count
+
+    # adp_realmove: horizon, alpha + ADP-specific parameters
+    start_count = test_id
+    for (
+        horizon, alpha, gamma, lr, goal_penalty, epsilon, epsilon_decay,
+        epsilon_min, approx, hidden_size, l2, normalize_features
+    ) in itertools.product(
+        PARAM_RANGES["horizon"],
+        PARAM_RANGES["alpha"],
+        PARAM_RANGES["gamma"],
+        PARAM_RANGES["lr"],
+        PARAM_RANGES["goal_penalty"],
+        PARAM_RANGES["epsilon"],
+        PARAM_RANGES["epsilon_decay"],
+        PARAM_RANGES["epsilon_min"],
+        PARAM_RANGES["approx"],
+        PARAM_RANGES["hidden_size"],
+        PARAM_RANGES["l2"],
+        PARAM_RANGES["normalize_features"],
+    ):
+        params = {
+            "horizon": horizon,
+            "tackangle": FIXED_PARAMS["tackangle"],
+            "alpha": alpha,
+            "beam_width": None,
+            "gamma": gamma,
+            "lr": lr,
+            "goal_penalty": goal_penalty,
+            "epsilon": epsilon,
+            "epsilon_decay": epsilon_decay,
+            "epsilon_min": epsilon_min,
+            "approx": approx,
+            "hidden_size": hidden_size,
+            "l2": l2,
+            "normalize_features": normalize_features,
+        }
+        test_cases.append(("adp_realmove", params, test_id))
+        test_id += 1
+        pct = 100.0 * test_id / total_expected
+        if int(pct) != last_pct and int(pct) % 10 == 0:
+            bar = format_progress_bar(pct, width=20)
+            print(f"\r  generation [{bar}] {pct:3.0f}%", end="", flush=True)
+            last_pct = int(pct)
+    counts["adp_realmove"] = test_id - start_count
 
     # spst_realmove: horizon, alpha + stochastic parameters
+    start_count = test_id
     for horizon, alpha, scenarios, dir_noise, speed_noise in itertools.product(
         PARAM_RANGES["horizon"],
         PARAM_RANGES["alpha"],
@@ -263,6 +368,19 @@ def generate_test_cases():
         }
         test_cases.append(("spst_realmove", params, test_id))
         test_id += 1
+        pct = 100.0 * test_id / total_expected
+        if int(pct) != last_pct and int(pct) % 10 == 0:
+            bar = format_progress_bar(pct, width=20)
+            print(f"\r  generation [{bar}] {pct:3.0f}%", end="", flush=True)
+            last_pct = int(pct)
+    counts["spst_realmove"] = test_id - start_count
+
+    print(f"\r  generation [{format_progress_bar(100.0, width=20)}] 100%   ", end="", flush=True)
+    print()
+    for algo in ["mpc_realmove", "mpc_simplemove", "beam_realmove", "adp_realmove", "spst_realmove"]:
+        if algo in counts:
+            print(f"  {algo}: {counts[algo]}")
+    print(f"Generated {len(test_cases)} test cases.")
 
     return test_cases
 
@@ -272,13 +390,19 @@ def algo_param_pairs(algo_name):
         return [("horizon", "alpha")]
     if algo_name == "beam_realmove":
         return [("horizon", "alpha"), ("horizon", "beam_width"), ("alpha", "beam_width")]
+    if algo_name == "adp_realmove":
+        params = [
+            "horizon", "alpha", "gamma", "lr", "goal_penalty", "epsilon",
+            "epsilon_decay", "epsilon_min", "approx", "hidden_size", "l2", "normalize_features"
+        ]
+        return [(params[i], params[j]) for i in range(len(params)) for j in range(i + 1, len(params))]
     if algo_name == "spst_realmove":
         params = ["horizon", "alpha", "scenarios", "dir_noise", "speed_noise"]
         return [(params[i], params[j]) for i in range(len(params)) for j in range(i + 1, len(params))]
     return []
 
 
-def order_cases_coverage_roundrobin(test_cases, algo_order):
+def order_cases_coverage_roundrobin(test_cases, algo_order, show_progress=True):
     by_algo = {}
     for algo, params, tid in test_cases:
         by_algo.setdefault(algo, []).append((algo, params, tid))
@@ -294,6 +418,7 @@ def order_cases_coverage_roundrobin(test_cases, algo_order):
 
     total = sum(len(cases) for cases in by_algo.values())
     ordered = []
+    last_pct = -1
 
     while len(ordered) < total:
         progress = False
@@ -324,6 +449,12 @@ def order_cases_coverage_roundrobin(test_cases, algo_order):
                     if combo is not None:
                         covered[(algo, p)].add(combo)
                 progress = True
+                if show_progress:
+                    pct = 100.0 * len(ordered) / total if total else 100.0
+                    if int(pct) != last_pct and int(pct) % 5 == 0:
+                        bar = format_progress_bar(pct, width=20)
+                        print(f"\r  coverage order [{bar}] {pct:3.0f}%", end="", flush=True)
+                        last_pct = int(pct)
                 if len(ordered) >= total:
                     break
             if len(ordered) >= total:
@@ -334,6 +465,40 @@ def order_cases_coverage_roundrobin(test_cases, algo_order):
                 by_algo[algo] = []
             break
 
+    if total and show_progress:
+        print(f"\r  coverage order [{format_progress_bar(100.0, width=20)}] 100%   ", end="", flush=True)
+        print()
+    return ordered
+
+
+def order_cases_coverage_roundrobin_worker(chunk, algo_order):
+    return order_cases_coverage_roundrobin(chunk, algo_order, show_progress=False)
+
+
+def order_cases_coverage_roundrobin_chunked(test_cases, algo_order, workers):
+    shuffled = list(test_cases)
+    if workers <= 1:
+        return order_cases_coverage_roundrobin(shuffled, algo_order, show_progress=True)
+
+    random.shuffle(shuffled)
+    chunk_size = max(1, (len(shuffled) + workers - 1) // workers)
+    chunks = [shuffled[i:i + chunk_size] for i in range(0, len(shuffled), chunk_size)]
+    ordered = []
+
+    print(f"Coverage order: shuffled + {len(chunks)} chunks (workers={workers}, chunk_size={chunk_size})")
+    print(f"  shuffle [{format_progress_bar(0.0, width=20)}]   0%", end="", flush=True)
+    print(f"\r  shuffle [{format_progress_bar(100.0, width=20)}] 100%   ")
+
+    done_chunks = 0
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(order_cases_coverage_roundrobin_worker, chunk, algo_order) for chunk in chunks]
+        for future in as_completed(futures):
+            ordered.extend(future.result())
+            done_chunks += 1
+            pct = 100.0 * done_chunks / len(chunks)
+            bar = format_progress_bar(pct, width=20)
+            print(f"\r  coverage chunks [{bar}] {done_chunks}/{len(chunks)} ({pct:.0f}%)", end="", flush=True)
+    print()
     return ordered
 
 
@@ -343,7 +508,25 @@ def make_test_key(algo_name, params):
         f"{algo_name}|h{params['horizon']}|ta{params['tackangle']}|a{params['alpha']}"
         f"|bw{params.get('beam_width', 'None')}|sc{params.get('scenarios', 'None')}"
         f"|dn{params.get('dir_noise', 'None')}|sn{params.get('speed_noise', 'None')}"
+        f"|g{params.get('gamma', 'None')}|lr{params.get('lr', 'None')}|gp{params.get('goal_penalty', 'None')}"
+        f"|e{params.get('epsilon', 'None')}|ed{params.get('epsilon_decay', 'None')}|emin{params.get('epsilon_min', 'None')}"
+        f"|ap{params.get('approx', 'None')}|hs{params.get('hidden_size', 'None')}|l2{params.get('l2', 'None')}"
+        f"|nf{params.get('normalize_features', 'None')}"
     )
+
+
+def filter_completed_chunk(chunk, completed_keys):
+    remaining = []
+    for algo, params, tid in chunk:
+        key = make_test_key(algo, params)
+        if key not in completed_keys:
+            remaining.append((algo, params, tid))
+    return remaining
+
+
+def format_progress_bar(pct, width=20):
+    filled = int((pct / 100.0) * width)
+    return "█" * filled + "░" * (width - filled)
 
 
 def load_existing_results(json_path):
@@ -369,6 +552,16 @@ def load_existing_results(json_path):
                     "scenarios": r.get("scenarios"),
                     "dir_noise": r.get("dir_noise"),
                     "speed_noise": r.get("speed_noise"),
+                    "gamma": r.get("gamma"),
+                    "lr": r.get("lr"),
+                    "goal_penalty": r.get("goal_penalty"),
+                    "epsilon": r.get("epsilon"),
+                    "epsilon_decay": r.get("epsilon_decay"),
+                    "epsilon_min": r.get("epsilon_min"),
+                    "approx": r.get("approx"),
+                    "hidden_size": r.get("hidden_size"),
+                    "l2": r.get("l2"),
+                    "normalize_features": r.get("normalize_features"),
                 }
             )
             completed_keys.add(key)
@@ -379,12 +572,12 @@ def load_existing_results(json_path):
         return [], set()
 
 
-DEFAULT_ALGO_ORDER = ["mpc_simplemove", "mpc_realmove", "beam_realmove", "spst_realmove"]
+DEFAULT_ALGO_ORDER = ["mpc_simplemove", "mpc_realmove", "adp_realmove", "beam_realmove", "spst_realmove"]
 
 
 def count_by_algorithm(results):
     """Count completed tests per algorithm."""
-    counts = {"mpc_realmove": 0, "mpc_simplemove": 0, "beam_realmove": 0, "spst_realmove": 0}
+    counts = {"mpc_realmove": 0, "mpc_simplemove": 0, "adp_realmove": 0, "beam_realmove": 0, "spst_realmove": 0}
     for r in results:
         algo = r["algorithm"]
         if algo in counts:
@@ -439,6 +632,7 @@ def print_progress_line(results, elapsed_time, rate, algo_order):
     label_map = {
         "mpc_realmove": "mpc_r",
         "mpc_simplemove": "mpc_s",
+        "adp_realmove": "adp",
         "beam_realmove": "beam",
         "spst_realmove": "spst",
     }
@@ -459,6 +653,8 @@ def save_results(results, csv_path, json_path, start_time, total_tests, interrup
     with open(csv_path, "w", newline="") as f:
         fieldnames = ["algorithm", "horizon", "tackangle", "alpha", "beam_width",
                       "scenarios", "dir_noise", "speed_noise", "seed",
+                      "gamma", "lr", "goal_penalty", "epsilon", "epsilon_decay", "epsilon_min",
+                      "approx", "hidden_size", "l2", "normalize_features",
                       "total_sailed", "nb_tacks", "steps", "distance_to_mark",
                       "elapsed_time", "finished", "success"]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -530,11 +726,12 @@ def main():
 
     # Generate test cases
     all_test_cases = generate_test_cases()
+    total_tests_original = len(all_test_cases)
 
     # Filter by algorithm if specified
     if args.algo != "all":
         algo_list = [item.strip() for item in args.algo.split(",") if item.strip()]
-        valid_algos = {"beam_realmove", "mpc_realmove", "mpc_simplemove", "spst_realmove"}
+        valid_algos = {"beam_realmove", "mpc_realmove", "mpc_simplemove", "adp_realmove", "spst_realmove"}
         unknown_algos = [algo for algo in algo_list if algo not in valid_algos]
         if unknown_algos:
             print(f"Unknown algo(s) in --algo: {', '.join(unknown_algos)}")
@@ -574,26 +771,48 @@ def main():
 
     # Filter out already completed tests
     if args.resume and completed_keys:
-        remaining_tests = []
-        for algo, params, tid in all_test_cases:
-            key = make_test_key(algo, params)
-            if key not in completed_keys:
-                remaining_tests.append((algo, params, tid))
+        print(f"Filtering completed tests from {len(all_test_cases)} cases...")
+        if args.workers > 1 and len(all_test_cases) > args.workers:
+            chunk_size = max(1, len(all_test_cases) // args.workers)
+            chunks = [all_test_cases[i:i + chunk_size] for i in range(0, len(all_test_cases), chunk_size)]
+            remaining_tests = []
+            done_chunks = 0
+            with ProcessPoolExecutor(max_workers=args.workers) as executor:
+                futures = [executor.submit(filter_completed_chunk, chunk, completed_keys) for chunk in chunks]
+                for future in as_completed(futures):
+                    remaining_tests.extend(future.result())
+                    done_chunks += 1
+                    if done_chunks % max(1, len(chunks) // 10) == 0 or done_chunks == len(chunks):
+                        pct = 100.0 * done_chunks / len(chunks)
+                        bar = format_progress_bar(pct, width=20)
+                        print(f"\r  filter progress [{bar}] {done_chunks}/{len(chunks)} chunks ({pct:.0f}%)", end="", flush=True)
+        else:
+            remaining_tests = []
+            for algo, params, tid in all_test_cases:
+                key = make_test_key(algo, params)
+                if key not in completed_keys:
+                    remaining_tests.append((algo, params, tid))
         skipped = len(all_test_cases) - len(remaining_tests)
         all_test_cases = remaining_tests
-        print(f"Skipping {skipped} already completed tests")
+        if args.workers > 1 and len(all_test_cases) > args.workers:
+            print()
+        print(f"  skipping {skipped} already completed tests")
 
     if args.order == "shuffle":
         random.shuffle(all_test_cases)
         print("Test cases shuffled for random execution order")
     elif args.order == "coverage-round-robin":
         algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in {tc[0] for tc in all_test_cases}]
-        all_test_cases = order_cases_coverage_roundrobin(all_test_cases, algo_order)
-        print("Test cases ordered by: coverage-round-robin")
+        if args.workers > 1 and len(all_test_cases) > args.workers:
+            all_test_cases = order_cases_coverage_roundrobin_chunked(all_test_cases, algo_order, args.workers)
+            print("Test cases ordered by: coverage-round-robin (chunked)")
+        else:
+            all_test_cases = order_cases_coverage_roundrobin(all_test_cases, algo_order, show_progress=True)
+            print("Test cases ordered by: coverage-round-robin")
     else:
         order_list = [item.strip() for item in args.order.split(",") if item.strip()]
         order_set = set(order_list)
-        unknown = order_set - {"mpc_simplemove", "mpc_realmove", "beam_realmove", "spst_realmove"}
+        unknown = order_set - {"mpc_simplemove", "mpc_realmove", "adp_realmove", "beam_realmove", "spst_realmove"}
         if unknown:
             print(f"Unknown algo(s) in --order: {', '.join(sorted(unknown))}")
             return
@@ -615,7 +834,6 @@ def main():
         algo_order = [algo for algo in order_list if algo in present_algos]
         algo_order.extend(sorted(present_algos - set(algo_order)))
 
-    total_tests_original = len(generate_test_cases())
     total_remaining = len(all_test_cases)
 
     if total_remaining == 0:
@@ -680,6 +898,16 @@ def main():
                         "dir_noise": params.get("dir_noise"),
                         "speed_noise": params.get("speed_noise"),
                         "seed": FIXED_PARAMS["seed"],
+                        "gamma": params.get("gamma"),
+                        "lr": params.get("lr"),
+                        "goal_penalty": params.get("goal_penalty"),
+                        "epsilon": params.get("epsilon"),
+                        "epsilon_decay": params.get("epsilon_decay"),
+                        "epsilon_min": params.get("epsilon_min"),
+                        "approx": params.get("approx"),
+                        "hidden_size": params.get("hidden_size"),
+                        "l2": params.get("l2"),
+                        "normalize_features": params.get("normalize_features"),
                         "total_sailed": result.get("total_sailed") if result else None,
                         "nb_tacks": result.get("nb_tacks") if result else None,
                         "steps": result.get("steps") if result else None,
@@ -733,7 +961,7 @@ def main():
     finished_races = [r for r in results if r.get("finished", False)]
     print(f"\nSummary: {len(successful)}/{total_tests_original} tests ran, {len(finished_races)} finished the race")
 
-    for algo in ["beam_realmove", "mpc_realmove", "mpc_simplemove", "spst_realmove"]:
+    for algo in ["beam_realmove", "mpc_realmove", "mpc_simplemove", "adp_realmove", "spst_realmove"]:
         algo_results = [r for r in finished_races if r["algorithm"] == algo]
         if algo_results:
             sailed = [r["total_sailed"] for r in algo_results if r["total_sailed"]]
