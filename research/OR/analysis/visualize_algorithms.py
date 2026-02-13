@@ -1088,6 +1088,7 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix="", ski
 
     params = algo_params_union(df_all)
     work = []
+    done = 0
     for algo in df_all["algorithm"].unique():
         algo_df = df_all[df_all["algorithm"] == algo]
         finished_mask = compute_finished_mask(algo_df, metadata)
@@ -1100,6 +1101,18 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix="", ski
                 if x_param in skip_params or y_param in skip_params:
                     continue
                 if x_param not in algo_df.columns or y_param not in algo_df.columns:
+                    continue
+                mean_path = os.path.join(
+                    output_dir,
+                    apply_prefix(prefix, f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_mean.png"),
+                )
+                median_path = os.path.join(
+                    output_dir,
+                    apply_prefix(prefix, f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_median.png"),
+                )
+                skip_mean = should_skip(mean_path)
+                skip_median = should_skip(median_path)
+                if skip_mean and skip_median:
                     continue
                 subset = algo_df[[x_param, y_param]].copy()
                 subset["unfinished"] = (~finished_mask).astype(int)
@@ -1137,6 +1150,20 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix="", ski
                     continue
                 if x_param not in algo_df.columns or y_param not in algo_df.columns:
                     continue
+                mean_path = os.path.join(
+                    output_dir,
+                    apply_prefix(prefix, f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_mean.png"),
+                )
+                median_path = os.path.join(
+                    output_dir,
+                    apply_prefix(prefix, f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_median.png"),
+                )
+                skip_mean = should_skip(mean_path)
+                skip_median = should_skip(median_path)
+                if skip_mean and skip_median:
+                    done += 2
+                    render_progress("unfinished rate heatmaps", done, total_plots)
+                    continue
                 subset = algo_df[[x_param, y_param]].copy()
                 subset["unfinished"] = (~finished_mask).astype(int)
                 if subset.empty:
@@ -1149,9 +1176,7 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix="", ski
                 )
                 if pivot.empty:
                     continue
-                filename = f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_mean.png"
-                filepath = os.path.join(output_dir, apply_prefix(prefix, filename))
-                if should_skip(filepath):
+                if skip_mean:
                     done += 1
                     render_progress("unfinished rate heatmaps", done, total_plots)
                 else:
@@ -1172,7 +1197,7 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix="", ski
                                 text_color = "white" if val > 0.5 else "black"
                                 ax.text(col, row, f"{val:.2f}", ha="center", va="center", fontsize=7, color=text_color)
                     plt.tight_layout()
-                    save_figure(filepath, dpi=150, bbox_inches="tight")
+                    save_figure(mean_path, dpi=150, bbox_inches="tight")
                     done += 1
                     render_progress("unfinished rate heatmaps", done, total_plots)
 
@@ -1184,9 +1209,7 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix="", ski
                 )
                 if pivot_median.empty:
                     continue
-                filename = f"unfinished_rate_heatmap_{algo}_{x_param}_vs_{y_param}_median.png"
-                filepath = os.path.join(output_dir, apply_prefix(prefix, filename))
-                if should_skip(filepath):
+                if skip_median:
                     done += 1
                     render_progress("unfinished rate heatmaps", done, total_plots)
                     continue
@@ -1207,7 +1230,7 @@ def create_unfinished_rate_heatmaps(df_all, metadata, output_dir, prefix="", ski
                             text_color = "white" if val > 0.5 else "black"
                             ax.text(col, row, f"{val:.2f}", ha="center", va="center", fontsize=7, color=text_color)
                 plt.tight_layout()
-                save_figure(filepath, dpi=150, bbox_inches="tight")
+                save_figure(median_path, dpi=150, bbox_inches="tight")
                 done += 1
                 render_progress("unfinished rate heatmaps", done, total_plots)
     if total_plots > 0:

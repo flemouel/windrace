@@ -21,6 +21,7 @@ Features:
 import csv
 import itertools
 import json
+import math
 import os
 import random
 import signal
@@ -402,7 +403,7 @@ def algo_param_pairs(algo_name):
     return []
 
 
-def order_cases_coverage_roundrobin(test_cases, algo_order, show_progress=True):
+def order_cases_coverage_roundrobin(test_cases, algo_order, show_progress=True, return_forced=False):
     by_algo = {}
     for algo, params, tid in test_cases:
         by_algo.setdefault(algo, []).append((algo, params, tid))
@@ -419,44 +420,78 @@ def order_cases_coverage_roundrobin(test_cases, algo_order, show_progress=True):
     total = sum(len(cases) for cases in by_algo.values())
     ordered = []
     last_pct = -1
+    forced_hits = 0
+
+    total_by_algo = {algo: len(cases) for algo, cases in by_algo.items()}
+    max_gap = {}
+    for algo, count in total_by_algo.items():
+        if count <= 0:
+            continue
+        gap = math.ceil((total - count) / count)
+        max_gap[algo] = max(1, gap)
+    last_seen = {algo: -1 for algo in total_by_algo}
+    step_idx = 0
+
+    def best_case_index(cases, algo):
+        best_idx = None
+        best_score = -1
+        for i, (_, params, tid) in enumerate(cases):
+            if tid not in case_pairs:
+                continue
+            score = 0
+            for p in pairs_by_algo.get(algo, []):
+                combo = case_pairs[tid].get(p)
+                if combo is not None and combo not in covered[(algo, p)]:
+                    score += 1
+            if score > best_score:
+                best_score = score
+                best_idx = i
+        return best_idx, best_score
 
     while len(ordered) < total:
         progress = False
-        for algo in algo_order:
+        starving_algos = [
+            algo
+            for algo in algo_order
+            if by_algo.get(algo)
+            and algo in max_gap
+            and (step_idx - last_seen.get(algo, -1)) >= max_gap[algo]
+        ]
+        forced_algo = None
+        if starving_algos:
+            forced_algo = max(starving_algos, key=lambda a: step_idx - last_seen.get(a, -1))
+        algo_iter = [forced_algo] if forced_algo else algo_order
+
+        for algo in algo_iter:
             cases = by_algo.get(algo)
             if not cases:
                 continue
-            for pair in pairs_by_algo.get(algo, []):
-                best_idx = None
-                best_score = -1
-                for i, (_, params, tid) in enumerate(cases):
-                    if tid not in case_pairs:
-                        continue
-                    score = 0
-                    for p in pairs_by_algo.get(algo, []):
-                        combo = case_pairs[tid].get(p)
-                        if combo is not None and combo not in covered[(algo, p)]:
-                            score += 1
-                    if score > best_score:
-                        best_score = score
-                        best_idx = i
-                if best_idx is None or best_score <= 0:
-                    continue
-                tc = cases.pop(best_idx)
-                ordered.append(tc)
-                for p in pairs_by_algo.get(algo, []):
-                    combo = case_pairs[tc[2]].get(p)
-                    if combo is not None:
-                        covered[(algo, p)].add(combo)
-                progress = True
-                if show_progress:
-                    pct = 100.0 * len(ordered) / total if total else 100.0
-                    if int(pct) != last_pct and int(pct) % 5 == 0:
-                        bar = format_progress_bar(pct, width=20)
-                        print(f"\r  coverage order [{bar}] {pct:3.0f}%", end="", flush=True)
+            best_idx, best_score = best_case_index(cases, algo)
+            if best_idx is None or best_score <= 0:
+                continue
+            tc = cases.pop(best_idx)
+            ordered.append(tc)
+            for p in pairs_by_algo.get(algo, []):
+                combo = case_pairs[tc[2]].get(p)
+                if combo is not None:
+                    covered[(algo, p)].add(combo)
+            progress = True
+            forced_flag = forced_algo is not None and algo == forced_algo
+            if forced_flag:
+                forced_hits += 1
+            last_seen[algo] = step_idx
+            step_idx += 1
+            if show_progress:
+                pct = 100.0 * len(ordered) / total if total else 100.0
+                show_now = forced_flag or (int(pct) != last_pct and int(pct) % 5 == 0)
+                if show_now:
+                    bar = format_progress_bar(pct, width=20)
+                    suffix = f" forced:{forced_hits}"
+                    print(f"\r  coverage order [{bar}] {pct:3.0f}%{suffix}", end="", flush=True)
+                    if int(pct) % 5 == 0:
                         last_pct = int(pct)
-                if len(ordered) >= total:
-                    break
+            if len(ordered) >= total:
+                break
             if len(ordered) >= total:
                 break
         if not progress:
@@ -468,11 +503,16 @@ def order_cases_coverage_roundrobin(test_cases, algo_order, show_progress=True):
     if total and show_progress:
         print(f"\r  coverage order [{format_progress_bar(100.0, width=20)}] 100%   ", end="", flush=True)
         print()
+    if return_forced:
+        return ordered, forced_hits
     return ordered
 
 
-def order_cases_coverage_roundrobin_worker(chunk, algo_order):
-    return order_cases_coverage_roundrobin(chunk, algo_order, show_progress=False)
+def order_cases_coverage_roundrobin_worker(chunk, algo_order, worker_id=None):
+    ordered, forced_hits = order_cases_coverage_roundrobin(
+        chunk, algo_order, show_progress=False, return_forced=True
+    )
+    return worker_id, ordered, forced_hits
 
 
 def order_cases_coverage_roundrobin_chunked(test_cases, algo_order, workers):
@@ -481,23 +521,85 @@ def order_cases_coverage_roundrobin_chunked(test_cases, algo_order, workers):
         return order_cases_coverage_roundrobin(shuffled, algo_order, show_progress=True)
 
     random.shuffle(shuffled)
-    chunk_size = max(1, (len(shuffled) + workers - 1) // workers)
-    chunks = [shuffled[i:i + chunk_size] for i in range(0, len(shuffled), chunk_size)]
+    shuffle_global_done = True
+    chunks = [[] for _ in range(workers)]
+    by_algo = {}
+    for algo, params, tid in shuffled:
+        by_algo.setdefault(algo, []).append((algo, params, tid))
+    algo_keys = list(by_algo.keys())
+    done_algos = 0
+    for algo in algo_keys:
+        random.shuffle(by_algo[algo])
+        done_algos += 1
+        # progress intentionally omitted here to keep ordering clean
+    shuffle_by_algo_done = True
+    assign_idx = 0
+    for algo in algo_order:
+        cases = by_algo.get(algo, [])
+        for case in cases:
+            chunks[assign_idx % workers].append(case)
+            assign_idx += 1
+    remaining_algos = [a for a in by_algo.keys() if a not in algo_order]
+    for algo in remaining_algos:
+        for case in by_algo[algo]:
+            chunks[assign_idx % workers].append(case)
+            assign_idx += 1
+    # Create a tiny warmup chunk to advance progress quickly.
+    warmup_chunk = []
+    for chunk in chunks:
+        if chunk:
+            warmup_chunk.append(chunk.pop(0))
+    chunks = [chunk for chunk in chunks if chunk]
+    chunk_size = max(1, (len(shuffled) + max(1, len(chunks)) - 1) // max(1, len(chunks)))
     ordered = []
-
-    print(f"Coverage order: shuffled + {len(chunks)} chunks (workers={workers}, chunk_size={chunk_size})")
-    print(f"  shuffle [{format_progress_bar(0.0, width=20)}]   0%", end="", flush=True)
-    print(f"\r  shuffle [{format_progress_bar(100.0, width=20)}] 100%   ")
+    print(f"Coverage order: shuffled + stratified {len(chunks)} chunks (workers={workers}, chunk_size={chunk_size})")
+    if shuffle_global_done:
+        print(f"  shuffle global [{format_progress_bar(100.0, width=20)}] 100%   ")
+    if shuffle_by_algo_done:
+        print(f"  shuffle by algo [{format_progress_bar(100.0, width=20)}] 100%   ")
 
     done_chunks = 0
+    # Run warmup in the main process to advance progress quickly.
+    total_forced_hits = 0
+    if warmup_chunk:
+        warmup_ordered, warmup_forced = order_cases_coverage_roundrobin(
+            warmup_chunk, algo_order, show_progress=False, return_forced=True
+        )
+        ordered.extend(warmup_ordered)
+        done_chunks += 1
+        total_forced_hits += warmup_forced
+        total_chunks = len(chunks) + 1
+        pct = 100.0 * done_chunks / max(1, total_chunks)
+        bar = format_progress_bar(pct, width=20)
+        suffix = f" forced:{total_forced_hits}"
+        print(
+            f"\r  coverage chunks [{bar}] {done_chunks}/{total_chunks} ({pct:.0f}%){suffix}",
+            end="",
+            flush=True,
+        )
+
+    total_chunks = len(chunks) + (1 if warmup_chunk else 0)
     with ProcessPoolExecutor(max_workers=workers) as executor:
-        futures = [executor.submit(order_cases_coverage_roundrobin_worker, chunk, algo_order) for chunk in chunks]
+        futures = [
+            executor.submit(order_cases_coverage_roundrobin_worker, chunk, algo_order, idx + 1)
+            for idx, chunk in enumerate(chunks)
+        ]
         for future in as_completed(futures):
-            ordered.extend(future.result())
+            worker_id, chunk_ordered, forced_hits = future.result()
+            ordered.extend(chunk_ordered)
             done_chunks += 1
-            pct = 100.0 * done_chunks / len(chunks)
+            if forced_hits:
+                total_forced_hits += forced_hits
+            pct = 100.0 * done_chunks / max(1, total_chunks)
             bar = format_progress_bar(pct, width=20)
-            print(f"\r  coverage chunks [{bar}] {done_chunks}/{len(chunks)} ({pct:.0f}%)", end="", flush=True)
+            suffix = f" forced:{total_forced_hits}"
+            print(
+                f"\r  coverage chunks [{bar}] {done_chunks}/{total_chunks} ({pct:.0f}%){suffix}",
+                end="",
+                flush=True,
+            )
+    if total_chunks:
+        print()
     print()
     return ordered
 
@@ -695,7 +797,8 @@ def main():
     parser.add_argument("--quick", action="store_true", help="Run quick test with reduced parameter ranges")
     parser.add_argument("--resume", action="store_true", help="Resume from previous run (skip completed tests)")
     parser.add_argument("--order", default="coverage-round-robin",
-                        help="Execution order: 'coverage-round-robin' (round-robin per algo/coverage param pair), "
+                        help="Execution order: 'coverage-round-robin' (round-robin per algo/coverage param pair; "
+                             "stratified across chunks when using workers; includes a starvation guard), "
                              "'shuffle' (random across algos/params), or comma-separated algo list "
                              "(sequential params per algo)")
     parser.add_argument("--save-interval", type=int, default=10, help="Save results every N completed tests")
