@@ -68,12 +68,7 @@ Trajectory outputs:
 ## Typical workflow - algorithms benchmarking
 1) Run benchmarks (partial runs are supported):
 ```bash
-python3 benchmark_algorithms.py --quick
-```
-
-Example with SPST and coverage-round-robin:
-```bash
-python3 benchmark_algorithms.py --algo spst_realmove --order coverage-round-robin --workers 12
+python3 benchmark_algorithms.py --algo spst_realmove --order quota-window-coverage --workers 12
 ```
 
 2) Generate visualizations:
@@ -86,16 +81,17 @@ python3 visualize_algorithms.py --input benchmark_results.json --output-dir .
 - `--output` (`benchmark_results.csv`)
 - `--json-output` (`benchmark_results.json`)
 - `--workers` (`12`)
-- `--algo` (`all` or comma-separated: `mpc_simplemove,mpc_realmove,beam_realmove,spst_realmove`)
-- `--order` (`coverage-round-robin` = round-robin per algo/coverage param pair, `shuffle` = random across algos/params, or comma-separated algo list with sequential params per algo, e.g. `mpc_simplemove,mpc_realmove,beam_realmove,spst_realmove`)
-- `--quick` (reduced parameter ranges for fast runs)
+- `--algo` (`all` or comma-separated: `adp_realmove,beam_realmove,mpc_realmove,mpc_simplemove,spst_realmove`)
+- `--order` (`quota-window-coverage` = local greedy per algo + windowed merge with per-algo quotas and head gain selection; stratified across chunks when using workers, `global-coverage` = global greedy coverage ordering, `shuffle` = random across algos/params, or comma-separated algo list with sequential params per algo, e.g. `mpc_simplemove,mpc_realmove,beam_realmove,spst_realmove`)
 - `--resume` (continue from previous JSON results)
 - `--save-interval` (`10`)
+- `--verbose` (`0` = summary, `1` = details)
 
 - fixed params: `goal=20`, `start_index=600`, `tackangle=43`, `near_threshold=200`, `near_delay=10`, `far_delay=20`, `seed=42`
 - parameter ranges live in `PARAM_RANGES`:
-  `horizon` + `alpha` for `mpc_simplemove`/`mpc_realmove`,
+  `gamma`, `lr`, `goal_penalty`, `epsilon`, `epsilon_decay`, `epsilon_min`, `approx`, `hidden_size`, `l2`, `normalize_features` for `adp_realmove`,
   add `beam_width` for `beam_realmove`,
+  add `horizon` + `alpha` for `mpc_simplemove`/`mpc_realmove`,
   add `scenarios`, `dir_noise`, `speed_noise` for `spst_realmove`.
 
 `visualize_algorithms.py` uses:

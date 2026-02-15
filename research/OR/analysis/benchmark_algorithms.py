@@ -1122,7 +1122,7 @@ def load_existing_results(json_path):
         return [], set()
 
 
-DEFAULT_ALGO_ORDER = ["mpc_simplemove", "mpc_realmove", "adp_realmove", "beam_realmove", "spst_realmove"]
+DEFAULT_ALGO_ORDER = ["adp_realmove", "beam_realmove", "mpc_realmove", "mpc_simplemove", "spst_realmove"]
 
 
 def count_by_algorithm(results):
@@ -1328,7 +1328,7 @@ def main():
     # Filter by algorithm if specified
     if args.algo != "all":
         algo_list = [item.strip() for item in args.algo.split(",") if item.strip()]
-        valid_algos = {"beam_realmove", "mpc_realmove", "mpc_simplemove", "adp_realmove", "spst_realmove"}
+        valid_algos = {"adp_realmove", "beam_realmove", "mpc_realmove", "mpc_simplemove", "spst_realmove"}
         unknown_algos = [algo for algo in algo_list if algo not in valid_algos]
         if unknown_algos:
             print(f"Unknown algo(s) in --algo: {', '.join(unknown_algos)}")
