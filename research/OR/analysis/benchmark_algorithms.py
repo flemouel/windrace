@@ -21,13 +21,13 @@ Features:
 import csv
 import itertools
 import json
-import math
 import os
 import random
 import signal
 import subprocess
 import sys
 import time
+import heapq
 from concurrent.futures import ProcessPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from datetime import datetime
 from threading import Lock
@@ -230,7 +230,7 @@ def run_single_test(args):
     return algo_name, params, result, test_id
 
 
-def generate_test_cases():
+def generate_test_cases(verbose=0):
     """Generate all test cases for grid search."""
     test_cases = []
     test_id = 0
@@ -378,10 +378,11 @@ def generate_test_cases():
 
     print(f"\r  generation [{format_progress_bar(100.0, width=20)}] 100%   ", end="", flush=True)
     print()
-    for algo in ["mpc_realmove", "mpc_simplemove", "beam_realmove", "adp_realmove", "spst_realmove"]:
-        if algo in counts:
-            print(f"  {algo}: {counts[algo]}")
-    print(f"Generated {len(test_cases)} test cases.")
+    if verbose > 0:
+        for algo in ["mpc_realmove", "mpc_simplemove", "beam_realmove", "adp_realmove", "spst_realmove"]:
+            if algo in counts:
+                print(f"  {algo}: {counts[algo]}")
+        print(f"  generated {len(test_cases)} test cases")
 
     return test_cases
 
@@ -402,8 +403,203 @@ def algo_param_pairs(algo_name):
         return [(params[i], params[j]) for i in range(len(params)) for j in range(i + 1, len(params))]
     return []
 
+def algo_param_list(algo_name):
+    if algo_name in ("mpc_realmove", "mpc_simplemove"):
+        return ["horizon", "alpha"]
+    if algo_name == "beam_realmove":
+        return ["horizon", "alpha", "beam_width"]
+    if algo_name == "adp_realmove":
+        return [
+            "horizon", "alpha", "gamma", "lr", "goal_penalty", "epsilon",
+            "epsilon_decay", "epsilon_min", "approx", "hidden_size", "l2", "normalize_features"
+        ]
+    if algo_name == "spst_realmove":
+        return ["horizon", "alpha", "scenarios", "dir_noise", "speed_noise"]
+    return []
 
-def order_cases_coverage_roundrobin(test_cases, algo_order, show_progress=True, return_forced=False):
+
+def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True, label=None, verbose=0):
+    step_start = time.perf_counter()
+    progress_start = step_start
+    by_algo = {}
+    for algo, params, tid in test_cases:
+        by_algo.setdefault(algo, []).append((algo, params, tid))
+    if label:
+        step1_time = time.perf_counter() - step_start
+        print(f"  [{label}] step 1/4 group by algo ({step1_time:.2f}s)", flush=True)
+
+    pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order if algo in by_algo}
+    covered = {(algo, pair): set() for algo in pairs_by_algo for pair in pairs_by_algo[algo]}
+    case_pairs = {}
+    for algo, params, tid in test_cases:
+        pairs = {}
+        for pair in pairs_by_algo.get(algo, []):
+            pairs[pair] = (params.get(pair[0]), params.get(pair[1]))
+        case_pairs[tid] = pairs
+
+    total = sum(len(cases) for cases in by_algo.values())
+    ordered = []
+    last_pct = -1
+
+    # Step 2: per-algo local coverage ordering (dynamic within algo only)
+    ordered_by_algo = {}
+    step2_start = time.perf_counter()
+    for algo in algo_order:
+        cases = list(by_algo.get(algo, []))
+        if not cases:
+            continue
+        if label:
+            print(f"  [{label}] step 2/4 order local coverage ({algo})", flush=True)
+        algo_total = len(cases)
+        algo_done = 0
+        algo_last_pct = -1
+        local_covered = {pair: set() for pair in pairs_by_algo.get(algo, [])}
+        algo_ordered = []
+        while cases:
+            best_idx = None
+            best_score = -1
+            for i, (_, params, tid) in enumerate(cases):
+                score = 0
+                for p in pairs_by_algo.get(algo, []):
+                    combo = case_pairs[tid].get(p)
+                    if combo is not None and combo not in local_covered[p]:
+                        score += 1
+                if score > best_score:
+                    best_score = score
+                    best_idx = i
+            if best_idx is None:
+                algo_ordered.extend(cases)
+                break
+            tc = cases.pop(best_idx)
+            algo_ordered.append(tc)
+            for p in pairs_by_algo.get(algo, []):
+                combo = case_pairs[tc[2]].get(p)
+                if combo is not None:
+                    local_covered[p].add(combo)
+            algo_done += 1
+            if label:
+                pct = 100.0 * algo_done / algo_total if algo_total else 100.0
+                if int(pct) != algo_last_pct and int(pct) % 10 == 0:
+                    print(f"  [{label}]   {algo} local coverage {pct:.0f}%", flush=True)
+                    algo_last_pct = int(pct)
+        ordered_by_algo[algo] = algo_ordered
+    if label:
+        step2_time = time.perf_counter() - step2_start
+        print(f"  [{label}] step 2/4 order local coverage ({step2_time:.2f}s)", flush=True)
+
+    # Step 2: windowed quotas + per-window global coverage ordering
+    window_size = 500
+    remaining_counts = {algo: len(ordered_by_algo.get(algo, [])) for algo in algo_order}
+    total_remaining = sum(remaining_counts.values())
+    step3_start = time.perf_counter()
+    if label:
+        print(f"  [{label}] step 3/4 build windows W=500 + quotas", flush=True)
+    window_count = 0
+    total_windows = (total_remaining + window_size - 1) // window_size if window_size else 0
+    while len(ordered) < total and total_remaining > 0:
+        current_window = min(window_size, total_remaining)
+        quotas = {}
+        fractions = []
+        remaining_slots = current_window
+        for algo in algo_order:
+            count = remaining_counts.get(algo, 0)
+            if count <= 0:
+                continue
+            raw = current_window * (count / total_remaining)
+            q = int(raw)
+            quotas[algo] = q
+            remaining_slots -= q
+            fractions.append((raw - q, algo))
+        fractions.sort(reverse=True)
+        for _ in range(remaining_slots):
+            if not fractions:
+                break
+            placed = False
+            for _, algo in fractions:
+                if quotas.get(algo, 0) < remaining_counts.get(algo, 0):
+                    quotas[algo] += 1
+                    placed = True
+                    break
+            if not placed:
+                break
+
+        window_items = []
+        for algo in algo_order:
+            q = quotas.get(algo, 0)
+            if q <= 0:
+                continue
+            lst = ordered_by_algo.get(algo, [])
+            take = min(q, len(lst))
+            window_items.extend(lst[:take])
+            ordered_by_algo[algo] = lst[take:]
+            remaining_counts[algo] -= take
+
+        # Order window by global coverage gain
+        scored = []
+        for idx, (algo, params, tid) in enumerate(window_items):
+            score = 0
+            for p in pairs_by_algo.get(algo, []):
+                combo = case_pairs[tid].get(p)
+                if combo is not None and combo not in covered[(algo, p)]:
+                    score += 1
+            scored.append((score, idx, (algo, params, tid)))
+        scored.sort(key=lambda x: (-x[0], x[1]))
+        for score, _, tc in scored:
+            ordered.append(tc)
+            algo = tc[0]
+            for p in pairs_by_algo.get(algo, []):
+                combo = case_pairs[tc[2]].get(p)
+                if combo is not None:
+                    covered[(algo, p)].add(combo)
+
+            if show_progress:
+                pct = 100.0 * len(ordered) / total if total else 100.0
+                show_now = int(pct) != last_pct and int(pct) % 5 == 0
+                if show_now:
+                    bar = format_progress_bar(pct, width=20)
+                    elapsed = time.perf_counter() - progress_start
+                    print(f"\r  coverage order [{bar}] {pct:3.0f}% {elapsed:.1f}s", end="", flush=True)
+                    if int(pct) % 5 == 0:
+                        last_pct = int(pct)
+            if len(ordered) >= total:
+                break
+
+        total_remaining = sum(remaining_counts.values())
+        window_count += 1
+        if label and total_windows:
+            pct = 100.0 * window_count / total_windows
+            if int(pct) % 10 == 0:
+                print(f"  [{label}] window ordering {pct:.0f}%", flush=True)
+    if label:
+        step3_time = time.perf_counter() - step3_start
+        print(f"  [{label}] step 4/4 order windows by global coverage ({step3_time:.2f}s)", flush=True)
+
+    if total and show_progress:
+        elapsed = time.perf_counter() - progress_start
+        print(f"\r  coverage order [{format_progress_bar(100.0, width=20)}] 100% {elapsed:.1f}s", end="", flush=True)
+        print()
+        counts, max_gaps, max_runs, min_share, gain, uniq, param_run = compute_chunk_metrics(
+            ordered, algo_order, pairs_by_algo
+        )
+        parts = []
+        for algo in algo_order:
+            parts.append(
+                format_metric_parts(
+                    algo,
+                    max_gaps[algo],
+                    min_share[algo],
+                    max_runs[algo],
+                    gain[algo],
+                    uniq[algo],
+                    param_run.get(algo, (0, "")),
+                )
+            )
+        if verbose > 0:
+            print("  global distribution: " + " | ".join(parts), flush=True)
+    return ordered
+
+
+def order_cases_coverage_global(test_cases, algo_order, show_progress=True, label=None):
     by_algo = {}
     for algo, params, tid in test_cases:
         by_algo.setdefault(algo, []).append((algo, params, tid))
@@ -420,130 +616,313 @@ def order_cases_coverage_roundrobin(test_cases, algo_order, show_progress=True, 
     total = sum(len(cases) for cases in by_algo.values())
     ordered = []
     last_pct = -1
-    forced_hits = 0
+    progress_start = time.perf_counter()
+    label_start = time.perf_counter() if label else None
+    label_next_pct = 10
 
-    total_by_algo = {algo: len(cases) for algo, cases in by_algo.items()}
-    max_gap = {}
-    for algo, count in total_by_algo.items():
-        if count <= 0:
+    def score_case(algo, tid):
+        score = 0
+        for p in pairs_by_algo.get(algo, []):
+            combo = case_pairs[tid].get(p)
+            if combo is not None and combo not in covered[(algo, p)]:
+                score += 1
+        return score
+
+    # Lazy-greedy heaps per algo.
+    heaps = {}
+    selected = {algo: set() for algo in algo_order}
+    saturated = set()
+    for algo in algo_order:
+        cases = by_algo.get(algo, [])
+        if not cases:
             continue
-        gap = math.ceil((total - count) / count)
-        max_gap[algo] = max(1, gap)
-    last_seen = {algo: -1 for algo in total_by_algo}
-    step_idx = 0
-
-    def best_case_index(cases, algo):
-        best_idx = None
-        best_score = -1
-        for i, (_, params, tid) in enumerate(cases):
-            if tid not in case_pairs:
-                continue
-            score = 0
-            for p in pairs_by_algo.get(algo, []):
-                combo = case_pairs[tid].get(p)
-                if combo is not None and combo not in covered[(algo, p)]:
-                    score += 1
-            if score > best_score:
-                best_score = score
-                best_idx = i
-        return best_idx, best_score
+        heap = []
+        for idx, (_, _, tid) in enumerate(cases):
+            heapq.heappush(heap, (-score_case(algo, tid), idx, tid))
+        heaps[algo] = heap
 
     while len(ordered) < total:
         progress = False
-        starving_algos = [
-            algo
-            for algo in algo_order
-            if by_algo.get(algo)
-            and algo in max_gap
-            and (step_idx - last_seen.get(algo, -1)) >= max_gap[algo]
-        ]
-        forced_algo = None
-        if starving_algos:
-            forced_algo = max(starving_algos, key=lambda a: step_idx - last_seen.get(a, -1))
-        algo_iter = [forced_algo] if forced_algo else algo_order
-
-        for algo in algo_iter:
-            cases = by_algo.get(algo)
-            if not cases:
+        for algo in algo_order:
+            if algo in saturated:
                 continue
-            best_idx, best_score = best_case_index(cases, algo)
-            if best_idx is None or best_score <= 0:
+            heap = heaps.get(algo)
+            if not heap:
                 continue
-            tc = cases.pop(best_idx)
-            ordered.append(tc)
-            for p in pairs_by_algo.get(algo, []):
-                combo = case_pairs[tc[2]].get(p)
-                if combo is not None:
-                    covered[(algo, p)].add(combo)
-            progress = True
-            forced_flag = forced_algo is not None and algo == forced_algo
-            if forced_flag:
-                forced_hits += 1
-            last_seen[algo] = step_idx
-            step_idx += 1
-            if show_progress:
-                pct = 100.0 * len(ordered) / total if total else 100.0
-                show_now = forced_flag or (int(pct) != last_pct and int(pct) % 5 == 0)
-                if show_now:
-                    bar = format_progress_bar(pct, width=20)
-                    suffix = f" forced:{forced_hits}"
-                    print(f"\r  coverage order [{bar}] {pct:3.0f}%{suffix}", end="", flush=True)
-                    if int(pct) % 5 == 0:
-                        last_pct = int(pct)
-            if len(ordered) >= total:
-                break
+            while heap:
+                neg_score, idx, tid = heapq.heappop(heap)
+                if tid in selected[algo]:
+                    continue
+                current_score = score_case(algo, tid)
+                if current_score <= 0:
+                    saturated.add(algo)
+                    break
+                if -neg_score == current_score:
+                    tc = by_algo[algo][idx]
+                    ordered.append(tc)
+                    selected[algo].add(tid)
+                    for p in pairs_by_algo.get(algo, []):
+                        combo = case_pairs[tid].get(p)
+                        if combo is not None:
+                            covered[(algo, p)].add(combo)
+                    progress = True
+                    if show_progress:
+                        pct = 100.0 * len(ordered) / total if total else 100.0
+                        show_now = int(pct) != last_pct and int(pct) % 5 == 0
+                        if show_now:
+                            bar = format_progress_bar(pct, width=20)
+                            elapsed = time.perf_counter() - progress_start
+                            print(f"\r  coverage order [{bar}] {pct:3.0f}% {elapsed:.1f}s", end="", flush=True)
+                            if int(pct) % 5 == 0:
+                                last_pct = int(pct)
+                    elif label:
+                        pct = 100.0 * len(ordered) / total if total else 100.0
+                        if pct >= label_next_pct or pct >= 100.0:
+                            elapsed = time.perf_counter() - label_start if label_start else 0.0
+                            print(f"  [{label}] global coverage progress {pct:.0f}% ({elapsed:.1f}s)", flush=True)
+                            while label_next_pct <= pct:
+                                label_next_pct += 10
+                    break
+                heapq.heappush(heap, (-current_score, idx, tid))
             if len(ordered) >= total:
                 break
         if not progress:
+            # Coverage saturated: append remaining in algo order.
             for algo in algo_order:
-                ordered.extend(by_algo.get(algo, []))
+                cases = by_algo.get(algo, [])
+                if not cases:
+                    continue
+                for idx, tc in enumerate(cases):
+                    if tc[2] not in selected[algo]:
+                        ordered.append(tc)
                 by_algo[algo] = []
             break
 
     if total and show_progress:
-        print(f"\r  coverage order [{format_progress_bar(100.0, width=20)}] 100%   ", end="", flush=True)
+        elapsed = time.perf_counter() - progress_start
+        print(f"\r  coverage order [{format_progress_bar(100.0, width=20)}] 100% {elapsed:.1f}s", end="", flush=True)
         print()
-    if return_forced:
-        return ordered, forced_hits
     return ordered
 
 
-def order_cases_coverage_roundrobin_worker(chunk, algo_order, worker_id=None):
-    ordered, forced_hits = order_cases_coverage_roundrobin(
-        chunk, algo_order, show_progress=False, return_forced=True
+def order_cases_quota_window_coverage_worker(chunk, algo_order, worker_id=None):
+    # Per-chunk regrouping by algo, local greedy coverage per algo, then windowed merge by head gain.
+    buckets = {algo: [] for algo in algo_order}
+    for tc in chunk:
+        buckets.setdefault(tc[0], []).append(tc)
+
+    for algo in algo_order:
+        algo_cases = buckets.get(algo, [])
+        if algo_cases:
+            buckets[algo] = order_cases_coverage_global(algo_cases, [algo], show_progress=False)
+
+    pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order}
+    covered = {(algo, pair): set() for algo in pairs_by_algo for pair in pairs_by_algo[algo]}
+    case_pairs = {}
+    for algo in algo_order:
+        for _, params, tid in buckets.get(algo, []):
+            pairs = {}
+            for pair in pairs_by_algo.get(algo, []):
+                pairs[pair] = (params.get(pair[0]), params.get(pair[1]))
+            case_pairs[tid] = pairs
+
+    indices = {algo: 0 for algo in algo_order}
+    total_remaining = sum(len(buckets.get(algo, [])) for algo in algo_order)
+    window_size = 500
+    rebuilt = []
+    while total_remaining > 0:
+        current_window = min(window_size, total_remaining)
+        quotas = {}
+        fractions = []
+        remaining_slots = current_window
+        for algo in algo_order:
+            lst = buckets.get(algo, [])
+            count = len(lst) - indices.get(algo, 0)
+            if count <= 0:
+                continue
+            raw = current_window * (count / total_remaining)
+            q = int(raw)
+            quotas[algo] = q
+            remaining_slots -= q
+            fractions.append((raw - q, algo))
+        fractions.sort(reverse=True)
+        for _, algo in fractions:
+            if remaining_slots <= 0:
+                break
+            if quotas.get(algo, 0) < len(buckets.get(algo, [])):
+                quotas[algo] += 1
+                remaining_slots -= 1
+
+        window = []
+        used_any = True
+        while len(window) < current_window and used_any:
+            used_any = False
+            best_algo = None
+            best_gain = -1
+            best_tc = None
+            for algo in algo_order:
+                if quotas.get(algo, 0) <= 0:
+                    continue
+                lst = buckets.get(algo, [])
+                idx = indices.get(algo, 0)
+                if idx >= len(lst):
+                    continue
+                tc = lst[idx]
+                gain = 0
+                for p in pairs_by_algo.get(algo, []):
+                    combo = case_pairs[tc[2]].get(p)
+                    if combo is not None and combo not in covered[(algo, p)]:
+                        gain += 1
+                if gain > best_gain:
+                    best_gain = gain
+                    best_algo = algo
+                    best_tc = tc
+            if best_algo is not None:
+                indices[best_algo] = indices.get(best_algo, 0) + 1
+                quotas[best_algo] -= 1
+                window.append(best_tc)
+                for p in pairs_by_algo.get(best_algo, []):
+                    combo = case_pairs[best_tc[2]].get(p)
+                    if combo is not None:
+                        covered[(best_algo, p)].add(combo)
+                used_any = True
+
+        if len(window) < current_window:
+            for algo in algo_order:
+                lst = buckets.get(algo, [])
+                idx = indices.get(algo, 0)
+                while idx < len(lst) and len(window) < current_window:
+                    tc = lst[idx]
+                    idx += 1
+                    indices[algo] = idx
+                    window.append(tc)
+                    for p in pairs_by_algo.get(algo, []):
+                        combo = case_pairs[tc[2]].get(p)
+                        if combo is not None:
+                            covered[(algo, p)].add(combo)
+        rebuilt.extend(window)
+        total_remaining = sum(
+            len(buckets.get(algo, [])) - indices.get(algo, 0) for algo in algo_order
+        )
+
+    return worker_id, rebuilt
+
+
+def compute_chunk_metrics(chunk_ordered, algo_order, pairs_by_algo):
+    total = len(chunk_ordered)
+    counts = {algo: 0 for algo in algo_order}
+    for algo, _, _ in chunk_ordered:
+        if algo in counts:
+            counts[algo] += 1
+
+    max_runs = {algo: 0 for algo in algo_order}
+    run = 0
+    prev = None
+    for algo, _, _ in chunk_ordered:
+        if algo == prev:
+            run += 1
+        else:
+            run = 1
+            prev = algo
+        if algo in max_runs and run > max_runs[algo]:
+            max_runs[algo] = run
+
+    max_gaps = {algo: 0 for algo in algo_order}
+    gap = {algo: 0 for algo in algo_order}
+    for algo, _, _ in chunk_ordered:
+        for a in algo_order:
+            if a == algo:
+                max_gaps[a] = max(max_gaps[a], gap[a])
+                gap[a] = 0
+            else:
+                gap[a] += 1
+    for a in algo_order:
+        max_gaps[a] = max(max_gaps[a], gap[a])
+
+    min_share = {
+        algo: (counts[algo] / total if total else 0.0) for algo in algo_order
+    }
+    coverage_gain = {algo: 0.0 for algo in algo_order}
+    unique_ratio = {algo: 0.0 for algo in algo_order}
+    param_run = {}
+    for algo in algo_order:
+        pairs = pairs_by_algo.get(algo, [])
+        if not pairs or counts[algo] <= 0:
+            param_run[algo] = (0, "")
+            continue
+        unique_total = 0
+        combos_by_pair = {pair: set() for pair in pairs}
+        for a, params, _ in chunk_ordered:
+            if a != algo:
+                continue
+            for pair in pairs:
+                combos_by_pair[pair].add((params.get(pair[0]), params.get(pair[1])))
+        for pair in pairs:
+            unique_total += len(combos_by_pair[pair])
+        coverage_gain[algo] = unique_total / max(1, counts[algo])
+        unique_ratio[algo] = unique_total / max(1, counts[algo] * len(pairs))
+        # Max run per parameter within this algo's sequence
+        params_list = algo_param_list(algo)
+        algo_tests = [params for a, params, _ in chunk_ordered if a == algo]
+        best_run = 0
+        best_param = ""
+        for param in params_list:
+            run = 0
+            prev = object()
+            max_run = 0
+            for params in algo_tests:
+                val = params.get(param)
+                if val == prev:
+                    run += 1
+                else:
+                    run = 1
+                    prev = val
+                if run > max_run:
+                    max_run = run
+            if max_run > best_run:
+                best_run = max_run
+                best_param = param
+        param_run[algo] = (best_run, best_param)
+    return counts, max_gaps, max_runs, min_share, coverage_gain, unique_ratio, param_run
+
+
+def format_metric_parts(algo, max_gap, min_share, max_run, cov_gain, uniq, param_run):
+    label_map = {
+        "mpc_realmove": "mpc_r",
+        "mpc_simplemove": "mpc_s",
+        "adp_realmove": "adp",
+        "beam_realmove": "beam",
+        "spst_realmove": "spst",
+    }
+    label = label_map.get(algo, algo)
+    run_val, run_param = param_run
+    pr = f"{run_val}({run_param})" if run_param else f"{run_val}"
+    return (
+        f"{label}: g{max_gap} s{min_share*100:.1f}% r{max_run} "
+        f"cg{cov_gain:.2f} uq{uniq:.2f} pr{pr}"
     )
-    return worker_id, ordered, forced_hits
 
 
-def order_cases_coverage_roundrobin_chunked(test_cases, algo_order, workers):
+def order_cases_quota_window_coverage_chunked(test_cases, algo_order, workers, verbose=0):
     shuffled = list(test_cases)
     if workers <= 1:
-        return order_cases_coverage_roundrobin(shuffled, algo_order, show_progress=True)
+        return order_cases_quota_window_coverage(shuffled, algo_order, show_progress=True, verbose=verbose)
 
+    pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order}
     random.shuffle(shuffled)
     shuffle_global_done = True
+    # Announce early before heavy metric computations.
+    print(f"Ordering {len(shuffled)} cases with stratified {workers} chunks (workers={workers})...")
+    if shuffle_global_done:
+        print(f"  shuffle global [{format_progress_bar(100.0, width=20)}] 100%   ")
+    if verbose > 0:
+        global_counts, global_max_gaps, global_max_runs, global_min_share, global_gain, global_unique_ratio, global_param_run = compute_chunk_metrics(
+            shuffled, algo_order, pairs_by_algo
+        )
     chunks = [[] for _ in range(workers)]
-    by_algo = {}
-    for algo, params, tid in shuffled:
-        by_algo.setdefault(algo, []).append((algo, params, tid))
-    algo_keys = list(by_algo.keys())
-    done_algos = 0
-    for algo in algo_keys:
-        random.shuffle(by_algo[algo])
-        done_algos += 1
-        # progress intentionally omitted here to keep ordering clean
-    shuffle_by_algo_done = True
-    assign_idx = 0
-    for algo in algo_order:
-        cases = by_algo.get(algo, [])
-        for case in cases:
-            chunks[assign_idx % workers].append(case)
-            assign_idx += 1
-    remaining_algos = [a for a in by_algo.keys() if a not in algo_order]
-    for algo in remaining_algos:
-        for case in by_algo[algo]:
-            chunks[assign_idx % workers].append(case)
-            assign_idx += 1
+    for idx, case in enumerate(shuffled):
+        chunks[idx % workers].append(case)
+    shuffle_by_algo_done = False
     # Create a tiny warmup chunk to advance progress quickly.
     warmup_chunk = []
     for chunk in chunks:
@@ -552,28 +931,80 @@ def order_cases_coverage_roundrobin_chunked(test_cases, algo_order, workers):
     chunks = [chunk for chunk in chunks if chunk]
     chunk_size = max(1, (len(shuffled) + max(1, len(chunks)) - 1) // max(1, len(chunks)))
     ordered = []
-    print(f"Coverage order: shuffled + stratified {len(chunks)} chunks (workers={workers}, chunk_size={chunk_size})")
-    if shuffle_global_done:
-        print(f"  shuffle global [{format_progress_bar(100.0, width=20)}] 100%   ")
-    if shuffle_by_algo_done:
-        print(f"  shuffle by algo [{format_progress_bar(100.0, width=20)}] 100%   ")
+    if verbose > 0:
+        print(f"  chunk_size {chunk_size}, chunks {len(chunks)}")
+        if shuffle_global_done:
+            parts = []
+            for algo in algo_order:
+                if algo in global_counts:
+                    parts.append(
+                        format_metric_parts(
+                            algo,
+                            global_max_gaps[algo],
+                            global_min_share[algo],
+                            global_max_runs[algo],
+                            global_gain[algo],
+                            global_unique_ratio[algo],
+                            global_param_run.get(algo, (0, "")),
+                        )
+                    )
+            if parts:
+                print(f"  global distribution: " + " | ".join(parts))
+    print(f"  chunk dispatch [{format_progress_bar(100.0, width=20)}] 100%   ")
+    # Pre-coverage metrics (verbose only)
+    if verbose > 0:
+        pre_counts = {}
+        pre_max_gaps = {}
+        pre_max_runs = {}
+        pre_min_share = {}
+        pre_gain = {}
+        pre_unique_ratio = {}
+        pre_param_run = {}
+        for idx, chunk in enumerate(chunks):
+            counts, max_gaps, max_runs, min_share, gain, uniq, param_run = compute_chunk_metrics(
+                chunk, algo_order, pairs_by_algo
+            )
+            pre_counts[idx + 1] = counts
+            pre_max_gaps[idx + 1] = max_gaps
+            pre_max_runs[idx + 1] = max_runs
+            pre_min_share[idx + 1] = min_share
+            pre_gain[idx + 1] = gain
+            pre_unique_ratio[idx + 1] = uniq
+            pre_param_run[idx + 1] = param_run
+        for idx in sorted(pre_counts):
+            parts = []
+            for algo in algo_order:
+                parts.append(
+                    format_metric_parts(
+                        algo,
+                        pre_max_gaps[idx][algo],
+                        pre_min_share[idx][algo],
+                        pre_max_runs[idx][algo],
+                        pre_gain[idx][algo],
+                        pre_unique_ratio[idx][algo],
+                        pre_param_run[idx].get(algo, (0, "")),
+                    )
+                )
+            print(f"  pre-coverage chunk W{idx}: " + " | ".join(parts))
 
     done_chunks = 0
+    window_start = time.perf_counter()
     # Run warmup in the main process to advance progress quickly.
-    total_forced_hits = 0
+    chunk_metrics = {} if verbose > 0 else None
     if warmup_chunk:
-        warmup_ordered, warmup_forced = order_cases_coverage_roundrobin(
-            warmup_chunk, algo_order, show_progress=False, return_forced=True
+        warmup_ordered = order_cases_quota_window_coverage(
+            warmup_chunk, algo_order, show_progress=False, verbose=0
         )
         ordered.extend(warmup_ordered)
+        if verbose > 0:
+            chunk_metrics[0] = compute_chunk_metrics(warmup_ordered, algo_order, pairs_by_algo)
         done_chunks += 1
-        total_forced_hits += warmup_forced
         total_chunks = len(chunks) + 1
         pct = 100.0 * done_chunks / max(1, total_chunks)
         bar = format_progress_bar(pct, width=20)
-        suffix = f" forced:{total_forced_hits}"
+        elapsed = time.perf_counter() - window_start
         print(
-            f"\r  coverage chunks [{bar}] {done_chunks}/{total_chunks} ({pct:.0f}%){suffix}",
+            f"\r  window-based coverage chunks + warmup [{bar}] {done_chunks}/{total_chunks} ({pct:.0f}%) {elapsed:.1f}s",
             end="",
             flush=True,
         )
@@ -581,26 +1012,43 @@ def order_cases_coverage_roundrobin_chunked(test_cases, algo_order, workers):
     total_chunks = len(chunks) + (1 if warmup_chunk else 0)
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = [
-            executor.submit(order_cases_coverage_roundrobin_worker, chunk, algo_order, idx + 1)
+            executor.submit(order_cases_quota_window_coverage_worker, chunk, algo_order, idx + 1)
             for idx, chunk in enumerate(chunks)
         ]
         for future in as_completed(futures):
-            worker_id, chunk_ordered, forced_hits = future.result()
+            worker_id, chunk_ordered = future.result()
             ordered.extend(chunk_ordered)
+            if verbose > 0:
+                chunk_metrics[worker_id] = compute_chunk_metrics(chunk_ordered, algo_order, pairs_by_algo)
             done_chunks += 1
-            if forced_hits:
-                total_forced_hits += forced_hits
             pct = 100.0 * done_chunks / max(1, total_chunks)
             bar = format_progress_bar(pct, width=20)
-            suffix = f" forced:{total_forced_hits}"
+            elapsed = time.perf_counter() - window_start
             print(
-                f"\r  coverage chunks [{bar}] {done_chunks}/{total_chunks} ({pct:.0f}%){suffix}",
-                end="",
-                flush=True,
-            )
+            f"\r  window-based coverage chunks + warmup [{bar}] {done_chunks}/{total_chunks} ({pct:.0f}%) {elapsed:.1f}s",
+            end="",
+            flush=True,
+        )
     if total_chunks:
         print()
-    print()
+    if verbose > 0 and chunk_metrics:
+        for worker_id in sorted(chunk_metrics):
+            counts, max_gaps, max_runs, min_share, gain, uniq, param_run = chunk_metrics[worker_id]
+            parts = []
+            for algo in algo_order:
+                parts.append(
+                    format_metric_parts(
+                        algo,
+                        max_gaps[algo],
+                        min_share[algo],
+                        max_runs[algo],
+                        gain[algo],
+                        uniq[algo],
+                        param_run.get(algo, (0, "")),
+                    )
+                )
+            wid = "warmup" if worker_id == 0 else f"W{worker_id}"
+            print(f"  post-window chunk {wid}: " + " | ".join(parts))
     return ordered
 
 
@@ -714,7 +1162,7 @@ def print_progress_summary(results, algo_order, title="ÉTAT D'AVANCEMENT DES TE
     print("=" * 65 + "\n")
 
 
-def print_progress_line(results, elapsed_time, rate, algo_order):
+def print_progress_line(results, elapsed_time, rate, algo_order, coverage_gain=None):
     """Affiche une ligne compacte de progression mise à jour à chaque test."""
     counts = count_by_algorithm(results)
     total_done = sum(counts.get(algo, 0) for algo in algo_order)
@@ -742,11 +1190,56 @@ def print_progress_line(results, elapsed_time, rate, algo_order):
     for algo in algo_order:
         label = label_map.get(algo, algo)
         total = ALGO_TOTALS.get(algo, counts.get(algo, 0))
-        parts.append(f"{label}:{counts.get(algo, 0)}/{total}")
+        gain_str = ""
+        if coverage_gain and algo in coverage_gain:
+            gain_str = f" g{coverage_gain[algo]:.2f}"
+        parts.append(f"{label}:{counts.get(algo, 0)}/{total}{gain_str}")
     algo_status = " | ".join(parts)
 
     # Utiliser \r pour réécrire la ligne (sans retour à la ligne)
     print(f"\r[{bar}] {total_pct:5.1f}% | {algo_status} | ETA: {eta_str}    ", end="", flush=True)
+
+
+def init_coverage_tracker(algo_order):
+    tracker = {}
+    for algo in algo_order:
+        pairs = algo_param_pairs(algo)
+        tracker[algo] = {
+            "pairs": pairs,
+            "seen": {pair: set() for pair in pairs},
+            "total_new": 0,
+            "count": 0,
+        }
+    return tracker
+
+
+def update_coverage_tracker(tracker, algo, params):
+    if not tracker or algo not in tracker:
+        return
+    entry = tracker[algo]
+    pairs = entry["pairs"]
+    seen = entry["seen"]
+    new_count = 0
+    for pair in pairs:
+        combo = (params.get(pair[0]), params.get(pair[1]))
+        if combo not in seen[pair]:
+            seen[pair].add(combo)
+            new_count += 1
+    entry["total_new"] += new_count
+    entry["count"] += 1
+
+
+def coverage_gain_snapshot(tracker, algo_order):
+    gains = {}
+    if not tracker:
+        return gains
+    for algo in algo_order:
+        entry = tracker.get(algo)
+        if not entry or entry["count"] == 0:
+            gains[algo] = 0.0
+        else:
+            gains[algo] = entry["total_new"] / entry["count"]
+    return gains
 
 
 def save_results(results, csv_path, json_path, start_time, total_tests, interrupted=False):
@@ -794,14 +1287,15 @@ def main():
     parser.add_argument("--workers", type=int, default=12, help="Number of parallel workers")
     parser.add_argument("--algo", default="all",
                         help="Which algorithm(s) to benchmark (comma-separated or 'all')")
-    parser.add_argument("--quick", action="store_true", help="Run quick test with reduced parameter ranges")
     parser.add_argument("--resume", action="store_true", help="Resume from previous run (skip completed tests)")
-    parser.add_argument("--order", default="coverage-round-robin",
-                        help="Execution order: 'coverage-round-robin' (round-robin per algo/coverage param pair; "
-                             "stratified across chunks when using workers; includes a starvation guard), "
+    parser.add_argument("--order", default="quota-window-coverage",
+                        help="Execution order: 'quota-window-coverage' (local greedy per algo; windowed merge with "
+                             "per-algo quotas and head gain selection; stratified across chunks when using workers), "
+                             "'global-coverage' (global greedy coverage ordering), "
                              "'shuffle' (random across algos/params), or comma-separated algo list "
                              "(sequential params per algo)")
     parser.add_argument("--save-interval", type=int, default=10, help="Save results every N completed tests")
+    parser.add_argument("--verbose", type=int, default=0, help="Verbosity level (0=summary, 1=details)")
     args = parser.parse_args()
 
     # Setup paths
@@ -828,7 +1322,7 @@ def main():
             print_progress_summary(results, DEFAULT_ALGO_ORDER, "TESTS DÉJÀ EFFECTUÉS")
 
     # Generate test cases
-    all_test_cases = generate_test_cases()
+    all_test_cases = generate_test_cases(args.verbose)
     total_tests_original = len(all_test_cases)
 
     # Filter by algorithm if specified
@@ -842,35 +1336,6 @@ def main():
         algo_set = set(algo_list)
         all_test_cases = [tc for tc in all_test_cases if tc[0] in algo_set]
 
-    # Quick mode: reduce parameter ranges
-    if args.quick:
-        quick_horizons = [60, 300, 1200, 2400]
-        quick_tackangles = [FIXED_PARAMS["tackangle"]]
-        quick_alphas = [0.0, 0.5, 1.0]
-        quick_beam_widths = [50, 200, 400]
-        quick_scenarios = [5, 10]
-        quick_dir_noise = [0, 5, 10]
-        quick_speed_noise = [0.0, 0.1, 0.2]
-
-        filtered = []
-        for algo, params, tid in all_test_cases:
-            if params["horizon"] not in quick_horizons:
-                continue
-            if params["tackangle"] not in quick_tackangles:
-                continue
-            if params["alpha"] not in quick_alphas:
-                continue
-            if algo == "beam_realmove" and params["beam_width"] not in quick_beam_widths:
-                continue
-            if algo == "spst_realmove":
-                if params["scenarios"] not in quick_scenarios:
-                    continue
-                if params["dir_noise"] not in quick_dir_noise:
-                    continue
-                if params["speed_noise"] not in quick_speed_noise:
-                    continue
-            filtered.append((algo, params, tid))
-        all_test_cases = filtered
 
     # Filter out already completed tests
     if args.resume and completed_keys:
@@ -899,19 +1364,79 @@ def main():
         all_test_cases = remaining_tests
         if args.workers > 1 and len(all_test_cases) > args.workers:
             print()
-        print(f"  skipping {skipped} already completed tests")
+        if args.verbose > 0:
+            print(f"  skipping {skipped} already completed tests")
+            remaining_counts = {}
+            for algo, _, _ in all_test_cases:
+                remaining_counts[algo] = remaining_counts.get(algo, 0) + 1
+            if remaining_counts:
+                for algo in sorted(remaining_counts):
+                    print(f"  remaining {algo}: {remaining_counts[algo]}")
+            if args.order not in {"shuffle", "quota-window-coverage"}:
+                present_algos = {tc[0] for tc in all_test_cases}
+                algo_order_local = [algo for algo in DEFAULT_ALGO_ORDER if algo in present_algos]
+                algo_order_local.extend(sorted(present_algos - set(algo_order_local)))
+                pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order_local}
+                counts, max_gaps, max_runs, min_share, gain, uniq, param_run = compute_chunk_metrics(
+                    all_test_cases, algo_order_local, pairs_by_algo
+                )
+                parts = []
+                for algo in algo_order_local:
+                    parts.append(
+                        format_metric_parts(
+                            algo,
+                            max_gaps[algo],
+                            min_share[algo],
+                            max_runs[algo],
+                            gain[algo],
+                            uniq[algo],
+                            param_run.get(algo, (0, "")),
+                        )
+                    )
+                print("  global distribution: " + " | ".join(parts))
 
     if args.order == "shuffle":
+        print(f"Ordering {len(all_test_cases)} cases...")
         random.shuffle(all_test_cases)
-        print("Test cases shuffled for random execution order")
-    elif args.order == "coverage-round-robin":
+        print(f"  shuffle global [{format_progress_bar(100.0, width=20)}] 100%   ")
+    elif args.order == "quota-window-coverage":
         algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in {tc[0] for tc in all_test_cases}]
         if args.workers > 1 and len(all_test_cases) > args.workers:
-            all_test_cases = order_cases_coverage_roundrobin_chunked(all_test_cases, algo_order, args.workers)
-            print("Test cases ordered by: coverage-round-robin (chunked)")
+            all_test_cases = order_cases_quota_window_coverage_chunked(
+                all_test_cases, algo_order, args.workers, verbose=args.verbose
+            )
+            print("Test cases ordered by: quota-window-coverage (chunked)")
         else:
-            all_test_cases = order_cases_coverage_roundrobin(all_test_cases, algo_order, show_progress=True)
-            print("Test cases ordered by: coverage-round-robin")
+            print(f"Ordering {len(all_test_cases)} cases...")
+            all_test_cases = order_cases_quota_window_coverage(
+                all_test_cases, algo_order, show_progress=True, verbose=args.verbose
+            )
+            print("Test cases ordered by: quota-window-coverage")
+    elif args.order == "global-coverage":
+        algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in {tc[0] for tc in all_test_cases}]
+        algo_order.extend(sorted({tc[0] for tc in all_test_cases} - set(algo_order)))
+        print(f"Ordering {len(all_test_cases)} cases...")
+        all_test_cases = order_cases_coverage_global(all_test_cases, algo_order, show_progress=True)
+        if args.verbose > 0:
+            pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order}
+            counts, max_gaps, max_runs, min_share, gain, uniq, param_run = compute_chunk_metrics(
+                all_test_cases, algo_order, pairs_by_algo
+            )
+            parts = []
+            for algo in algo_order:
+                parts.append(
+                    format_metric_parts(
+                        algo,
+                        max_gaps[algo],
+                        min_share[algo],
+                        max_runs[algo],
+                        gain[algo],
+                        uniq[algo],
+                        param_run.get(algo, (0, "")),
+                    )
+                )
+            print("  global distribution: " + " | ".join(parts), flush=True)
+        print("Test cases ordered by: global-coverage")
     else:
         order_list = [item.strip() for item in args.order.split(",") if item.strip()]
         order_set = set(order_list)
@@ -919,10 +1444,26 @@ def main():
         if unknown:
             print(f"Unknown algo(s) in --order: {', '.join(sorted(unknown))}")
             return
+        print(f"Ordering {len(all_test_cases)} cases...")
         ordered = []
+        total_order = len(all_test_cases)
+        done_order = 0
+        last_pct = -1
         for algo in order_list:
-            ordered.extend([tc for tc in all_test_cases if tc[0] == algo])
-        ordered.extend([tc for tc in all_test_cases if tc[0] not in order_set])
+            chunk = [tc for tc in all_test_cases if tc[0] == algo]
+            ordered.extend(chunk)
+            done_order += len(chunk)
+            pct = 100.0 * done_order / total_order if total_order else 100.0
+            if int(pct) != last_pct and int(pct) % 5 == 0:
+                bar = format_progress_bar(pct, width=20)
+                print(f"\r  order by algo [{bar}] {pct:3.0f}%", end="", flush=True)
+                last_pct = int(pct)
+        tail = [tc for tc in all_test_cases if tc[0] not in order_set]
+        ordered.extend(tail)
+        done_order += len(tail)
+        if total_order:
+            print(f"\r  order by algo [{format_progress_bar(100.0, width=20)}] 100%   ", end="", flush=True)
+            print()
         all_test_cases = ordered
         print(f"Test cases ordered by: {', '.join(order_list)}")
 
@@ -930,7 +1471,10 @@ def main():
     if args.order == "shuffle":
         algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in present_algos]
         algo_order.extend(sorted(present_algos - set(algo_order)))
-    elif args.order == "coverage-round-robin":
+    elif args.order == "quota-window-coverage":
+        algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in present_algos]
+        algo_order.extend(sorted(present_algos - set(algo_order)))
+    elif args.order == "global-coverage":
         algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in present_algos]
         algo_order.extend(sorted(present_algos - set(algo_order)))
     else:
@@ -939,12 +1483,32 @@ def main():
 
     total_remaining = len(all_test_cases)
 
+    if args.order == "shuffle" and args.verbose > 0:
+        pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order}
+        counts, max_gaps, max_runs, min_share, gain, uniq, param_run = compute_chunk_metrics(
+            all_test_cases, algo_order, pairs_by_algo
+        )
+        parts = []
+        for algo in algo_order:
+            parts.append(
+                format_metric_parts(
+                    algo,
+                    max_gaps[algo],
+                    min_share[algo],
+                    max_runs[algo],
+                    gain[algo],
+                    uniq[algo],
+                    param_run.get(algo, (0, "")),
+                )
+            )
+        print("  global distribution: " + " | ".join(parts))
+
     if total_remaining == 0:
         print("All tests already completed!")
         return
 
     print(f"Running {total_remaining} test cases with {args.workers} workers...")
-    print(f"Total tests in benchmark: {total_tests_original}, already completed: {len(completed_keys)}")
+    print(f"Total tests in benchmark: {total_tests_original}, already completed: {len(completed_keys)}, remaining: {total_remaining}")
     print(f"Algorithms: {', '.join(algo_order)}")
     print(f"Results will be saved every {args.save_interval} tests")
     print("Press Ctrl+C to interrupt and save progress\n")
@@ -955,6 +1519,11 @@ def main():
     results_lock = Lock()
     interrupted = False
     last_save_count = 0
+    coverage_tracker = None
+    if args.order in {"quota-window-coverage", "global-coverage"}:
+        coverage_tracker = init_coverage_tracker(algo_order)
+        for r in results:
+            update_coverage_tracker(coverage_tracker, r["algorithm"], r)
 
     def handle_interrupt(signum, frame):
         nonlocal interrupted
@@ -1022,13 +1591,16 @@ def main():
 
                     with results_lock:
                         results.append(row)
+                        if coverage_tracker is not None:
+                            update_coverage_tracker(coverage_tracker, row["algorithm"], row)
 
                         # Periodic save
                         if completed_this_run - last_save_count >= args.save_interval:
                             save_results(results, csv_path, json_path, start_time, total_tests_original, interrupted=False)
 
                         # Update progress line after each test
-                        print_progress_line(results, elapsed, rate, algo_order)
+                        gains = coverage_gain_snapshot(coverage_tracker, algo_order)
+                        print_progress_line(results, elapsed, rate, algo_order, coverage_gain=gains)
 
             # Cancel remaining futures if interrupted
             if interrupted:
