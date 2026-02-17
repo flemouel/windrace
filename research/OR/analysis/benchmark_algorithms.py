@@ -28,6 +28,7 @@ import subprocess
 import sys
 import time
 import heapq
+from collections import deque
 from concurrent.futures import ProcessPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from datetime import datetime
 from threading import Lock
@@ -418,7 +419,7 @@ def algo_param_list(algo_name):
     return []
 
 
-def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True, label=None, verbose=0):
+def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True, label=None, verbose=0, window_size=500):
     step_start = time.perf_counter()
     progress_start = step_start
     by_algo = {}
@@ -488,7 +489,7 @@ def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True
         print(f"  [{label}] step 2/4 order local coverage ({step2_time:.2f}s)", flush=True)
 
     # Step 2: windowed quotas + per-window global coverage ordering
-    window_size = 500
+    window_size = max(1, int(window_size))
     remaining_counts = {algo: len(ordered_by_algo.get(algo, [])) for algo in algo_order}
     total_remaining = sum(remaining_counts.values())
     step3_start = time.perf_counter()
@@ -705,7 +706,7 @@ def order_cases_coverage_global(test_cases, algo_order, show_progress=True, labe
     return ordered
 
 
-def order_cases_quota_window_coverage_worker(chunk, algo_order, worker_id=None):
+def order_cases_quota_window_coverage_worker(chunk, algo_order, worker_id=None, window_size=500):
     # Per-chunk regrouping by algo, local greedy coverage per algo, then windowed merge by head gain.
     buckets = {algo: [] for algo in algo_order}
     for tc in chunk:
@@ -728,7 +729,7 @@ def order_cases_quota_window_coverage_worker(chunk, algo_order, worker_id=None):
 
     indices = {algo: 0 for algo in algo_order}
     total_remaining = sum(len(buckets.get(algo, [])) for algo in algo_order)
-    window_size = 500
+    window_size = max(1, int(window_size))
     rebuilt = []
     while total_remaining > 0:
         current_window = min(window_size, total_remaining)
@@ -903,10 +904,12 @@ def format_metric_parts(algo, max_gap, min_share, max_run, cov_gain, uniq, param
     )
 
 
-def order_cases_quota_window_coverage_chunked(test_cases, algo_order, workers, verbose=0):
+def order_cases_quota_window_coverage_chunked(test_cases, algo_order, workers, verbose=0, window_size=500):
     shuffled = list(test_cases)
     if workers <= 1:
-        return order_cases_quota_window_coverage(shuffled, algo_order, show_progress=True, verbose=verbose)
+        return order_cases_quota_window_coverage(
+            shuffled, algo_order, show_progress=True, verbose=verbose, window_size=window_size
+        )
 
     pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order}
     random.shuffle(shuffled)
@@ -993,7 +996,7 @@ def order_cases_quota_window_coverage_chunked(test_cases, algo_order, workers, v
     chunk_metrics = {} if verbose > 0 else None
     if warmup_chunk:
         warmup_ordered = order_cases_quota_window_coverage(
-            warmup_chunk, algo_order, show_progress=False, verbose=0
+            warmup_chunk, algo_order, show_progress=False, verbose=0, window_size=window_size
         )
         ordered.extend(warmup_ordered)
         if verbose > 0:
@@ -1012,7 +1015,7 @@ def order_cases_quota_window_coverage_chunked(test_cases, algo_order, workers, v
     total_chunks = len(chunks) + (1 if warmup_chunk else 0)
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = [
-            executor.submit(order_cases_quota_window_coverage_worker, chunk, algo_order, idx + 1)
+            executor.submit(order_cases_quota_window_coverage_worker, chunk, algo_order, idx + 1, window_size)
             for idx, chunk in enumerate(chunks)
         ]
         for future in as_completed(futures):
@@ -1123,6 +1126,7 @@ def load_existing_results(json_path):
 
 
 DEFAULT_ALGO_ORDER = ["adp_realmove", "beam_realmove", "mpc_realmove", "mpc_simplemove", "spst_realmove"]
+DEFAULT_WINDOW_SIZE = 500
 
 
 def count_by_algorithm(results):
@@ -1162,17 +1166,110 @@ def print_progress_summary(results, algo_order, title="ÉTAT D'AVANCEMENT DES TE
     print("=" * 65 + "\n")
 
 
-def print_progress_line(results, elapsed_time, rate, algo_order, coverage_gain=None):
+def _format_duration(seconds):
+    if seconds is None or seconds <= 0:
+        return "n/a"
+    if seconds > 3600:
+        return f"{seconds/3600:.1f}h"
+    if seconds > 60:
+        return f"{seconds/60:.1f}min"
+    return f"{seconds:.0f}s"
+
+
+def _percentile(values, p):
+    if not values:
+        return None
+    vs = sorted(values)
+    idx = int(p * (len(vs) - 1))
+    return vs[idx]
+
+
+def init_eta_tracker(algo_order, window=DEFAULT_WINDOW_SIZE):
+    alpha = 2.0 / (window + 1.0)
+    tracker = {}
+    for algo in algo_order:
+        tracker[algo] = {
+            "alpha": alpha,
+            "ewma_spt": None,  # seconds per test
+            "samples": deque(maxlen=window),
+        }
+    return tracker
+
+
+def update_eta_tracker(tracker, algo, elapsed_time):
+    if not tracker or algo not in tracker:
+        return
+    try:
+        t = float(elapsed_time)
+    except (TypeError, ValueError):
+        return
+    if t <= 0:
+        return
+    entry = tracker[algo]
+    if entry["ewma_spt"] is None:
+        entry["ewma_spt"] = t
+    else:
+        a = entry["alpha"]
+        entry["ewma_spt"] = (1.0 - a) * entry["ewma_spt"] + a * t
+    entry["samples"].append(t)
+
+
+def eta_snapshot(tracker, counts, algo_order, fallback_rate=0.0, workers=1):
+    if fallback_rate and fallback_rate > 0:
+        fallback_spt = 1.0 / fallback_rate
+    else:
+        fallback_spt = None
+
+    eta = 0.0
+    eta_p50 = 0.0
+    eta_p90 = 0.0
+    has_any = False
+    for algo in algo_order:
+        done = counts.get(algo, 0)
+        total = ALGO_TOTALS.get(algo, done)
+        remaining = max(0, total - done)
+        if remaining <= 0:
+            continue
+        entry = tracker.get(algo, {}) if tracker else {}
+        ewma_spt = entry.get("ewma_spt")
+        samples = list(entry.get("samples", [])) if entry else []
+        p50_spt = _percentile(samples, 0.50)
+        p90_spt = _percentile(samples, 0.90)
+        if ewma_spt is None:
+            ewma_spt = fallback_spt
+        if p50_spt is None:
+            p50_spt = ewma_spt
+        if p90_spt is None:
+            p90_spt = ewma_spt
+        if ewma_spt is None:
+            continue
+        eta += remaining * ewma_spt
+        eta_p50 += remaining * p50_spt
+        eta_p90 += remaining * p90_spt
+        has_any = True
+    if not has_any:
+        return None, None, None
+    w = max(1, int(workers))
+    return eta / w, eta_p50 / w, eta_p90 / w
+
+
+def print_progress_line(results, elapsed_time, rate, algo_order, coverage_gain=None, eta_tracker=None, workers=1):
     """Affiche une ligne compacte de progression mise à jour à chaque test."""
     counts = count_by_algorithm(results)
     total_done = sum(counts.get(algo, 0) for algo in algo_order)
     total_all = sum(ALGO_TOTALS.get(algo, counts.get(algo, 0)) for algo in algo_order)
     total_pct = 100.0 * total_done / total_all if total_all > 0 else 0
 
-    # Calculer ETA
-    remaining = total_all - total_done
-    eta = remaining / rate if rate > 0 else 0
-    eta_str = f"{eta/3600:.1f}h" if eta > 3600 else f"{eta/60:.1f}min" if eta > 60 else f"{eta:.0f}s"
+    # ETA via EWMA per algo + p50/p90 bounds (fallback to global rate if needed).
+    eta, eta_p50, eta_p90 = eta_snapshot(
+        eta_tracker, counts, algo_order, fallback_rate=rate, workers=workers
+    )
+    if eta is None:
+        remaining = total_all - total_done
+        eta = remaining / rate if rate > 0 else 0
+        eta_str = _format_duration(eta)
+    else:
+        eta_str = f"{_format_duration(eta)} (p50:{_format_duration(eta_p50)} p90:{_format_duration(eta_p90)})"
 
     # Barre compacte
     bar_filled = int(total_pct / 2)
@@ -1296,6 +1393,8 @@ def main():
                              "(sequential params per algo)")
     parser.add_argument("--save-interval", type=int, default=10, help="Save results every N completed tests")
     parser.add_argument("--verbose", type=int, default=0, help="Verbosity level (0=summary, 1=details)")
+    parser.add_argument("--window-size", type=int, default=DEFAULT_WINDOW_SIZE,
+                        help="Window size for quota-window-coverage and ETA EWMA alpha=2/(W+1)")
     args = parser.parse_args()
 
     # Setup paths
@@ -1403,13 +1502,13 @@ def main():
         algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in {tc[0] for tc in all_test_cases}]
         if args.workers > 1 and len(all_test_cases) > args.workers:
             all_test_cases = order_cases_quota_window_coverage_chunked(
-                all_test_cases, algo_order, args.workers, verbose=args.verbose
+                all_test_cases, algo_order, args.workers, verbose=args.verbose, window_size=args.window_size
             )
             print("Test cases ordered by: quota-window-coverage (chunked)")
         else:
             print(f"Ordering {len(all_test_cases)} cases...")
             all_test_cases = order_cases_quota_window_coverage(
-                all_test_cases, algo_order, show_progress=True, verbose=args.verbose
+                all_test_cases, algo_order, show_progress=True, verbose=args.verbose, window_size=args.window_size
             )
             print("Test cases ordered by: quota-window-coverage")
     elif args.order == "global-coverage":
@@ -1520,6 +1619,9 @@ def main():
     interrupted = False
     last_save_count = 0
     coverage_tracker = None
+    eta_tracker = init_eta_tracker(algo_order, window=args.window_size)
+    for r in results:
+        update_eta_tracker(eta_tracker, r.get("algorithm"), r.get("elapsed_time"))
     if args.order in {"quota-window-coverage", "global-coverage"}:
         coverage_tracker = init_coverage_tracker(algo_order)
         for r in results:
@@ -1591,6 +1693,7 @@ def main():
 
                     with results_lock:
                         results.append(row)
+                        update_eta_tracker(eta_tracker, row["algorithm"], row.get("elapsed_time"))
                         if coverage_tracker is not None:
                             update_coverage_tracker(coverage_tracker, row["algorithm"], row)
 
@@ -1600,7 +1703,15 @@ def main():
 
                         # Update progress line after each test
                         gains = coverage_gain_snapshot(coverage_tracker, algo_order)
-                        print_progress_line(results, elapsed, rate, algo_order, coverage_gain=gains)
+                        print_progress_line(
+                            results,
+                            elapsed,
+                            rate,
+                            algo_order,
+                            coverage_gain=gains,
+                            eta_tracker=eta_tracker,
+                            workers=args.workers,
+                        )
 
             # Cancel remaining futures if interrupted
             if interrupted:
