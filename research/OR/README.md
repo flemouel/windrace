@@ -35,9 +35,9 @@ that minimizes sailed distance while reaching the mark.
   - *Constraint Programming SAT (CP-SAT)*
 - Stochastic optimization (uncertainty-aware optimization)
   - Scenario Tree / Stochastic Programming (here: `spst_realmove.py`)
-  - *Robust Optimization (not used here)*
+  - *Robust Optimization (worst-case strategy not adapted here)*
   - *Chance-Constrained (not used here)*
-  - *SAA (not used here)*
+  - *Sample Average Approximation (SAA) (not used here)*
 - Heuristic search / meta-heuristics (approximate search)
   - *A* (not used here)*
   - *D* (not used here)*
