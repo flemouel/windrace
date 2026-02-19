@@ -3,7 +3,7 @@
 This folder contains scripts that analyze and visualize benchmark results produced by `benchmark_algorithms.py`.
 
 ## Files
-- `benchmark_algorithms.py`: Runs grid searches across algorithms and parameters, saving results to CSV/JSON.
+- `benchmark_algorithms.py`: Runs benchmark campaigns across algorithms and parameters (full grid or adaptive `space-search`), saving results to CSV/JSON.
 - `visualize_algorithms.py`: Generates heatmaps, comparisons, sensitivity plots, execution-time charts, unfinished-rate visuals, and coverage-dispersion summaries from JSON results.
 - `extract_trajectories.py`: Extracts planned/sailed trajectories from logs for comparison and visualization.
 - `compare_trajectories.py`: Compares planned vs sailed trajectories (if extracted trajectories are available).
@@ -68,7 +68,7 @@ Trajectory outputs:
 ## Typical workflow - algorithms benchmarking
 1) Run benchmarks (partial runs are supported):
 ```bash
-python3 benchmark_algorithms.py --algo spst_realmove --order quota-window-coverage --workers 12
+python3 benchmark_algorithms.py --algo spst_realmove --order quota-window-coverage --workers 12 --resume
 ```
 
 2) Generate visualizations:
@@ -82,10 +82,16 @@ python3 visualize_algorithms.py --input benchmark_results.json --output-dir .
 - `--json-output` (`benchmark_results.json`)
 - `--workers` (`12`)
 - `--algo` (`all` or comma-separated: `adp_realmove,beam_realmove,mpc_realmove,mpc_simplemove,spst_realmove`)
-- `--order` (`quota-window-coverage` = local greedy per algo + windowed merge with per-algo quotas and head gain selection; stratified across chunks when using workers, `global-coverage` = global greedy coverage ordering, `shuffle` = random across algos/params, or comma-separated algo list with sequential params per algo, e.g. `mpc_simplemove,mpc_realmove,beam_realmove,spst_realmove`)
+- `--order` (`quota-window-coverage` by default: local greedy per algo + windowed merge with per-algo quotas and head gain selection; stratified across chunks with workers, `global-coverage` = global greedy coverage ordering, `shuffle` = random across algos/params, or comma-separated algo list with sequential params per algo, e.g. `adp_realmove,spst_realmove`)
 - `--resume` (continue from previous JSON results)
 - `--save-interval` (`10`)
 - `--verbose` (`0` = summary, `1` = details)
+- `--window-size` (`500`): window size used by `quota-window-coverage` and ETA EWMA (`alpha = 2/(W+1)`)
+- `--search-mode` (`grid` or `space-search`)
+- `--space-coarse-step` (`4`)
+- `--space-refine-step` (`2`)
+- `--space-eta` (`3`)
+- `--space-early-stop-delta` (`0.0`)
 
 - fixed params: `goal=20`, `start_index=600`, `tackangle=43`, `near_threshold=200`, `near_delay=10`, `far_delay=20`, `seed=42`
 - parameter ranges live in `PARAM_RANGES`:
@@ -102,7 +108,14 @@ python3 visualize_algorithms.py --input benchmark_results.json --output-dir .
 ## Example output
 From `benchmark_algorithms.py`:
 ```
-[12/640] mpc_realmove h=300 ta=43 a=1.0 bw=- -> OK (ETA: 420s)
+Filtering completed tests from 1190540 cases...
+  filter progress [████████████████████] 16/16 chunks (100%)
+Ordering 1083456 cases with stratified 15 chunks (workers=15)...
+  shuffle global [████████████████████] 100%
+  chunk dispatch [████████████████████] 100%
+  window-based coverage chunks + warmup [████████████████████] 16/16 (100%) 9.5s
+Running 1083456 test cases with 15 workers...
+[██░░░░░░░░░░░░░░░░░░]  10.9% | adp:36417/583680 | spst:91874/597740 | ETA: 315.6h (p50:153.6h p90:1068.9h) | run [░░░░░░░░░░░░░░░░░░░░]   0.0% 46/395579 ETA:68.4h
 ```
 
 From `visualize_algorithms.py`:

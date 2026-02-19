@@ -24,6 +24,7 @@ import json
 import os
 import random
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -231,6 +232,14 @@ def run_single_test(args):
     return algo_name, params, result, test_id
 
 
+def _init_worker_ignore_sigint():
+    """Worker initializer: let main process handle Ctrl+C."""
+    try:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except Exception:
+        pass
+
+
 def generate_test_cases(verbose=0):
     """Generate all test cases for grid search."""
     test_cases = []
@@ -417,6 +426,157 @@ def algo_param_list(algo_name):
     if algo_name == "spst_realmove":
         return ["horizon", "alpha", "scenarios", "dir_noise", "speed_noise"]
     return []
+
+
+def _build_value_cost_model(results):
+    """Build a simple per-value cost model from finished historical runs (lower is better)."""
+    sums = {}
+    counts = {}
+    algo_global_sum = {}
+    algo_global_count = {}
+    for r in results:
+        algo = r.get("algorithm")
+        if not algo or not r.get("finished", False):
+            continue
+        sailed = r.get("total_sailed")
+        if sailed is None:
+            continue
+        try:
+            cost = float(sailed)
+        except (TypeError, ValueError):
+            continue
+        algo_global_sum[algo] = algo_global_sum.get(algo, 0.0) + cost
+        algo_global_count[algo] = algo_global_count.get(algo, 0) + 1
+        for p in algo_param_list(algo):
+            key = (algo, p, r.get(p))
+            sums[key] = sums.get(key, 0.0) + cost
+            counts[key] = counts.get(key, 0) + 1
+    means = {k: sums[k] / counts[k] for k in sums}
+    algo_means = {
+        algo: (algo_global_sum[algo] / algo_global_count[algo])
+        for algo in algo_global_sum
+        if algo_global_count.get(algo, 0) > 0
+    }
+    return means, algo_means
+
+
+def _estimate_case_cost(algo, params, value_means, algo_means):
+    parts = []
+    for p in algo_param_list(algo):
+        key = (algo, p, params.get(p))
+        v = value_means.get(key)
+        if v is not None:
+            parts.append(v)
+    if parts:
+        return sum(parts) / len(parts)
+    return algo_means.get(algo, float("inf"))
+
+
+def _is_sparse_point(algo, params, step, idx_maps):
+    """Return True if params lie on a sparse grid for this algo."""
+    if step <= 1:
+        return True
+    for p in algo_param_list(algo):
+        if p not in PARAM_RANGES:
+            continue
+        p_map = idx_maps.get(p, {})
+        val = params.get(p)
+        if val not in p_map:
+            continue
+        idx = p_map[val]
+        last = len(PARAM_RANGES[p]) - 1
+        if idx not in (0, last) and (idx % step) != 0:
+            return False
+    return True
+
+
+def build_space_search_plan(
+    test_cases,
+    results,
+    coarse_step=4,
+    refine_step=2,
+    eta=3,
+    early_stop_delta=0.0,
+):
+    """
+    Build deterministic 3-phase plan: coarse -> refine1 -> refine2.
+    Uses historical finished results as a lightweight value model for ranking.
+    """
+    eta = max(2, int(eta))
+    coarse_step = max(1, int(coarse_step))
+    refine_step = max(1, int(refine_step))
+    early_stop_delta = max(0.0, float(early_stop_delta))
+
+    idx_maps = {p: {v: i for i, v in enumerate(vals)} for p, vals in PARAM_RANGES.items()}
+    value_means, algo_means = _build_value_cost_model(results)
+
+    by_algo = {}
+    for tc in test_cases:
+        by_algo.setdefault(tc[0], []).append(tc)
+    for algo in by_algo:
+        by_algo[algo].sort(key=lambda x: make_test_key(x[0], x[1]))
+
+    phase_coarse = []
+    phase_refine1 = []
+    phase_refine2 = []
+    per_algo_counts = {}
+
+    for algo in sorted(by_algo):
+        cases = by_algo[algo]
+        coarse = [tc for tc in cases if _is_sparse_point(algo, tc[1], coarse_step, idx_maps)]
+        coarse_keys = {make_test_key(tc[0], tc[1]) for tc in coarse}
+        remaining = [tc for tc in cases if make_test_key(tc[0], tc[1]) not in coarse_keys]
+
+        # Favor finer sparse points for refine pool, then rank by estimated cost.
+        refine_pool = [tc for tc in remaining if _is_sparse_point(algo, tc[1], refine_step, idx_maps)]
+        refine_pool.sort(
+            key=lambda tc: (
+                _estimate_case_cost(tc[0], tc[1], value_means, algo_means),
+                make_test_key(tc[0], tc[1]),
+            )
+        )
+
+        n1 = max(0, len(refine_pool) // eta)
+        refine1 = refine_pool[:n1]
+        refine1_keys = {make_test_key(tc[0], tc[1]) for tc in refine1}
+
+        remaining_after_refine1 = [tc for tc in remaining if make_test_key(tc[0], tc[1]) not in refine1_keys]
+        remaining_after_refine1.sort(
+            key=lambda tc: (
+                _estimate_case_cost(tc[0], tc[1], value_means, algo_means),
+                make_test_key(tc[0], tc[1]),
+            )
+        )
+
+        best_coarse = float("inf")
+        if coarse:
+            best_coarse = min(_estimate_case_cost(tc[0], tc[1], value_means, algo_means) for tc in coarse)
+        best_refine1 = float("inf")
+        if refine1:
+            best_refine1 = min(_estimate_case_cost(tc[0], tc[1], value_means, algo_means) for tc in refine1)
+
+        keep_refine2 = True
+        if early_stop_delta > 0.0 and best_coarse < float("inf") and best_refine1 < float("inf"):
+            denom = abs(best_coarse) if abs(best_coarse) > 1e-9 else 1.0
+            improvement = (best_coarse - best_refine1) / denom
+            if improvement < early_stop_delta:
+                keep_refine2 = False
+
+        n2 = max(0, len(remaining_after_refine1) // eta) if keep_refine2 else 0
+        refine2 = remaining_after_refine1[:n2]
+
+        phase_coarse.extend(coarse)
+        phase_refine1.extend(refine1)
+        phase_refine2.extend(refine2)
+        per_algo_counts[algo] = (len(coarse), len(refine1), len(refine2), len(cases))
+
+    plan = {
+        "coarse": phase_coarse,
+        "refine1": phase_refine1,
+        "refine2": phase_refine2,
+        "per_algo_counts": per_algo_counts,
+    }
+    return plan
 
 
 def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True, label=None, verbose=0, window_size=500):
@@ -1214,7 +1374,7 @@ def update_eta_tracker(tracker, algo, elapsed_time):
     entry["samples"].append(t)
 
 
-def eta_snapshot(tracker, counts, algo_order, fallback_rate=0.0, workers=1):
+def eta_snapshot(tracker, counts, algo_order, fallback_rate=0.0, workers=1, totals=None):
     if fallback_rate and fallback_rate > 0:
         fallback_spt = 1.0 / fallback_rate
     else:
@@ -1226,7 +1386,10 @@ def eta_snapshot(tracker, counts, algo_order, fallback_rate=0.0, workers=1):
     has_any = False
     for algo in algo_order:
         done = counts.get(algo, 0)
-        total = ALGO_TOTALS.get(algo, done)
+        if totals is not None:
+            total = totals.get(algo, done)
+        else:
+            total = ALGO_TOTALS.get(algo, done)
         remaining = max(0, total - done)
         if remaining <= 0:
             continue
@@ -1253,7 +1416,21 @@ def eta_snapshot(tracker, counts, algo_order, fallback_rate=0.0, workers=1):
     return eta / w, eta_p50 / w, eta_p90 / w
 
 
-def print_progress_line(results, elapsed_time, rate, algo_order, coverage_gain=None, eta_tracker=None, workers=1):
+def print_progress_line(
+    results,
+    elapsed_time,
+    rate,
+    algo_order,
+    coverage_gain=None,
+    eta_tracker=None,
+    workers=1,
+    run_done=None,
+    run_total=None,
+    run_counts=None,
+    run_totals=None,
+):
+    if getattr(print_progress_line, "_suspend", False):
+        return
     """Affiche une ligne compacte de progression mise à jour à chaque test."""
     counts = count_by_algorithm(results)
     total_done = sum(counts.get(algo, 0) for algo in algo_order)
@@ -1271,9 +1448,10 @@ def print_progress_line(results, elapsed_time, rate, algo_order, coverage_gain=N
     else:
         eta_str = f"{_format_duration(eta)} (p50:{_format_duration(eta_p50)} p90:{_format_duration(eta_p90)})"
 
-    # Barre compacte
-    bar_filled = int(total_pct / 2)
-    bar = "█" * bar_filled + "░" * (50 - bar_filled)
+    # Barres compactes (plus courtes pour limiter le wrapping terminal).
+    bar_width = 20
+    bar_filled = int((total_pct / 100.0) * bar_width)
+    bar = "█" * bar_filled + "░" * (bar_width - bar_filled)
 
     # Affichage par algo compact
     label_map = {
@@ -1287,14 +1465,39 @@ def print_progress_line(results, elapsed_time, rate, algo_order, coverage_gain=N
     for algo in algo_order:
         label = label_map.get(algo, algo)
         total = ALGO_TOTALS.get(algo, counts.get(algo, 0))
-        gain_str = ""
-        if coverage_gain and algo in coverage_gain:
-            gain_str = f" g{coverage_gain[algo]:.2f}"
-        parts.append(f"{label}:{counts.get(algo, 0)}/{total}{gain_str}")
+        parts.append(f"{label}:{counts.get(algo, 0)}/{total}")
     algo_status = " | ".join(parts)
 
-    # Utiliser \r pour réécrire la ligne (sans retour à la ligne)
-    print(f"\r[{bar}] {total_pct:5.1f}% | {algo_status} | ETA: {eta_str}    ", end="", flush=True)
+    run_status = ""
+    if run_done is not None and run_total is not None and run_total > 0:
+        run_done_i = max(0, int(run_done))
+        run_total_i = max(1, int(run_total))
+        run_pct = 100.0 * run_done_i / run_total_i
+        run_filled = int((run_pct / 100.0) * bar_width)
+        run_bar = "█" * run_filled + "░" * (bar_width - run_filled)
+        run_eta, _, _ = eta_snapshot(
+            eta_tracker,
+            run_counts or {},
+            algo_order,
+            fallback_rate=rate,
+            workers=workers,
+            totals=run_totals,
+        )
+        run_status = (
+            f" | run [{run_bar}] {run_pct:5.1f}% "
+            f"{run_done_i}/{run_total_i} ETA:{_format_duration(run_eta)}"
+        )
+
+    line = f"[{bar}] {total_pct:5.1f}% | {algo_status} | ETA: {eta_str}{run_status}"
+    cols = shutil.get_terminal_size(fallback=(120, 24)).columns
+    if cols > 8 and len(line) >= cols:
+        line = line[: cols - 4] + "..."
+    print(f"\r\x1b[2K{line}", end="", flush=True)
+
+
+def clear_progress_lines():
+    """Clear active progress display (single line or 2-line space-run mode)."""
+    print("\r\x1b[2K", end="", flush=True)
 
 
 def init_coverage_tracker(algo_order):
@@ -1395,6 +1598,17 @@ def main():
     parser.add_argument("--verbose", type=int, default=0, help="Verbosity level (0=summary, 1=details)")
     parser.add_argument("--window-size", type=int, default=DEFAULT_WINDOW_SIZE,
                         help="Window size for quota-window-coverage and ETA EWMA alpha=2/(W+1)")
+    parser.add_argument("--search-mode", default="grid", choices=["grid", "space-search"],
+                        help="Case generation mode: 'grid' runs all remaining cases; "
+                             "'space-search' keeps a deterministic coarse/refine1/refine2 subset")
+    parser.add_argument("--space-coarse-step", type=int, default=4,
+                        help="Sparse-grid step for space-search coarse phase")
+    parser.add_argument("--space-refine-step", type=int, default=2,
+                        help="Sparse-grid step for space-search refine pool")
+    parser.add_argument("--space-eta", type=int, default=3,
+                        help="Successive-halving factor for space-search (keep ~1/eta per refine phase)")
+    parser.add_argument("--space-early-stop-delta", type=float, default=0.0,
+                        help="Optional relative min improvement for refine2 activation per algo")
     args = parser.parse_args()
 
     # Setup paths
@@ -1494,6 +1708,36 @@ def main():
                     )
                 print("  global distribution: " + " | ".join(parts))
 
+    # Optional adaptive subset selection (deterministic) before ordering.
+    if args.search_mode == "space-search":
+        planned_total_input = len(all_test_cases)
+        plan = build_space_search_plan(
+            all_test_cases,
+            results,
+            coarse_step=args.space_coarse_step,
+            refine_step=args.space_refine_step,
+            eta=args.space_eta,
+            early_stop_delta=args.space_early_stop_delta,
+        )
+        phase_sizes = {
+            "coarse": len(plan["coarse"]),
+            "refine1": len(plan["refine1"]),
+            "refine2": len(plan["refine2"]),
+        }
+        all_test_cases = plan["coarse"] + plan["refine1"] + plan["refine2"]
+        print(
+            f"Space-search planning: coarse={phase_sizes['coarse']}, "
+            f"refine1={phase_sizes['refine1']}, refine2={phase_sizes['refine2']} "
+            f"(selected {len(all_test_cases)}/{planned_total_input})"
+        )
+        if args.verbose > 0:
+            for algo in sorted(plan["per_algo_counts"]):
+                c0, c1, c2, tot = plan["per_algo_counts"][algo]
+                print(
+                    f"  {algo}: coarse={c0}, refine1={c1}, refine2={c2}, "
+                    f"selected={c0 + c1 + c2}/{tot}"
+                )
+
     if args.order == "shuffle":
         print(f"Ordering {len(all_test_cases)} cases...")
         random.shuffle(all_test_cases)
@@ -1581,6 +1825,9 @@ def main():
         algo_order.extend(sorted(present_algos - set(algo_order)))
 
     total_remaining = len(all_test_cases)
+    run_totals_by_algo = {}
+    for algo, _, _ in all_test_cases:
+        run_totals_by_algo[algo] = run_totals_by_algo.get(algo, 0) + 1
 
     if args.order == "shuffle" and args.verbose > 0:
         pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order}
@@ -1617,9 +1864,11 @@ def main():
     start_time = time.time()
     results_lock = Lock()
     interrupted = False
+    print_progress_line._suspend = False
     last_save_count = 0
     coverage_tracker = None
     eta_tracker = init_eta_tracker(algo_order, window=args.window_size)
+    run_done_by_algo = {algo: 0 for algo in algo_order}
     for r in results:
         update_eta_tracker(eta_tracker, r.get("algorithm"), r.get("elapsed_time"))
     if args.order in {"quota-window-coverage", "global-coverage"}:
@@ -1630,13 +1879,16 @@ def main():
     def handle_interrupt(signum, frame):
         nonlocal interrupted
         interrupted = True
-        print("\n\nInterrupted! Saving progress...")
+        print_progress_line._suspend = True
 
     # Register signal handler
     signal.signal(signal.SIGINT, handle_interrupt)
 
     try:
-        with ProcessPoolExecutor(max_workers=args.workers) as executor:
+        with ProcessPoolExecutor(
+            max_workers=args.workers,
+            initializer=_init_worker_ignore_sigint,
+        ) as executor:
             # Submit all tasks
             futures = {executor.submit(run_single_test, tc): tc for tc in all_test_cases}
             pending = set(futures.keys())
@@ -1656,6 +1908,7 @@ def main():
                         continue
 
                     completed_this_run += 1
+                    run_done_by_algo[algo_name] = run_done_by_algo.get(algo_name, 0) + 1
 
                     # Progress update
                     elapsed = time.time() - start_time
@@ -1711,10 +1964,16 @@ def main():
                             coverage_gain=gains,
                             eta_tracker=eta_tracker,
                             workers=args.workers,
+                            run_done=completed_this_run if args.search_mode == "space-search" else None,
+                            run_total=total_remaining if args.search_mode == "space-search" else None,
+                            run_counts=run_done_by_algo if args.search_mode == "space-search" else None,
+                            run_totals=run_totals_by_algo if args.search_mode == "space-search" else None,
                         )
 
             # Cancel remaining futures if interrupted
             if interrupted:
+                print()
+                print("Interrupted! Saving progress...")
                 for future in pending:
                     future.cancel()
 
@@ -1725,8 +1984,12 @@ def main():
     # Final save
     save_results(results, csv_path, json_path, start_time, total_tests_original, interrupted=interrupted)
 
-    # Saut de ligne après la barre de progression
-    print()
+    # Keep the last progress line visible on interruption; clear only on normal completion.
+    if interrupted:
+        print()
+    else:
+        clear_progress_lines()
+        print()
 
     # Final progress summary
     print_progress_summary(results, algo_order, "RÉSUMÉ FINAL")
