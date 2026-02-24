@@ -683,7 +683,6 @@ def build_topk_search_plan(
     test_cases,
     results,
     metric="additive-mean",
-    exploit_ratio=0.95,
     explore_ratio=0.05,
     eta=3,
     seed=42,
@@ -703,14 +702,8 @@ def build_topk_search_plan(
         }
 
     eta = max(2, int(eta))
-    exploit_ratio = max(0.0, min(1.0, float(exploit_ratio)))
     explore_ratio = max(0.0, min(1.0, float(explore_ratio)))
-    ratio_sum = exploit_ratio + explore_ratio
-    if ratio_sum <= 0.0:
-        exploit_ratio = 0.95
-        explore_ratio = 0.05
-        ratio_sum = 1.0
-    exploit_ratio /= ratio_sum
+    exploit_ratio = 1.0 - explore_ratio
 
     idx_maps = {p: {v: i for i, v in enumerate(vals)} for p, vals in PARAM_RANGES.items()}
     value_means, algo_means = _build_value_cost_model(results)
@@ -2008,16 +2001,14 @@ def main():
     parser.add_argument("--space-eta", type=int, default=3,
                         help="Successive-halving factor for space-search (keep ~1/eta per refine phase)")
     parser.add_argument("--space-early-stop-delta", type=float, default=0.0,
-                        help="Optional relative min improvement for refine2 activation per algo")
+                        help="Optional relative min improvement for refine2 activation per algo (fraction; 0.02=2%%)")
     parser.add_argument("--metric", default="additive-mean",
                         choices=["additive-mean", "additive-median", "partial-match", "knn"],
                         help="Scoring metric for space-search/coarse-to-fine candidate ranking")
     parser.add_argument("--topk-eta", type=int, default=3,
                         help="Top-k selection factor for topk-search (keep about 1/eta of remaining cases)")
-    parser.add_argument("--topk-exploit-ratio", type=float, default=0.95,
-                        help="Top-k exploit ratio (best estimated cases)")
     parser.add_argument("--topk-explore-ratio", type=float, default=0.05,
-                        help="Top-k explore ratio (random from non-top candidates)")
+                        help="Top-k explore ratio (random from non-top candidates); exploit is 1 - explore")
     parser.add_argument("--topk-seed", type=int, default=42,
                         help="Random seed for topk-search exploration picks")
     args = parser.parse_args()
@@ -2227,7 +2218,6 @@ def main():
                 all_test_cases,
                 results,
                 metric=args.metric,
-                exploit_ratio=args.topk_exploit_ratio,
                 explore_ratio=args.topk_explore_ratio,
                 eta=args.topk_eta,
                 seed=args.topk_seed,

@@ -91,18 +91,17 @@ python3 visualize_algorithms.py --input benchmark_results.json --output-dir .
 - `--space-coarse-step` (`4`)
 - `--space-refine-step` (`2`)
 - `--space-eta` (`3`)
-- `--space-early-stop-delta` (`0.0`)
+- `--space-early-stop-delta` (`0.0`): optional relative min improvement for `refine2` activation per algo (fraction, e.g. `0.02` = `2%`, default `0.0`)
 - `--metric` (`additive-mean` by default, alternatives: `additive-median`, `partial-match`, `knn`)
 - `--topk-eta` (`3`): keep about `1/eta` of remaining cases in `topk-search`
-- `--topk-exploit-ratio` (`0.95`)
-- `--topk-explore-ratio` (`0.05`)
+- `--topk-explore-ratio` (`0.05`): exploration share (exploit share is `1 - explore`)
 - `--topk-seed` (`42`)
 
 Search mode behavior:
 - `grid`: run all remaining test cases.
 - `space-search`: one-shot subset selection (`coarse + refine1 + refine2`) based on current history, then single execution batch.
 - `coarse-to-fine`: sequential phases with replanning between phases (`coarse -> refine1 -> refine2`), using updated results after each phase.
-- `topk-search`: select an estimated best subset with exploit/explore split (default `95%/5%`), then run once.
+- `topk-search`: select an estimated best subset with exploit/explore split (default `95%/5%` via `explore=0.05`), then run once.
 
 - fixed params: `goal=20`, `start_index=600`, `tackangle=43`, `near_threshold=200`, `near_delay=10`, `far_delay=20`, `seed=42`
 - parameter ranges live in `PARAM_RANGES`:
