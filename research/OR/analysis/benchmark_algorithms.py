@@ -686,10 +686,12 @@ def build_topk_search_plan(
     explore_ratio=0.05,
     eta=3,
     seed=42,
+    show_progress=True,
 ):
     """
     Build a top-k plan from historical score estimates.
-    Keep about 1/eta of remaining cases, with exploit/explore split.
+    Keep about 1/eta of remaining cases, with per-algo quotas proportional
+    to remaining tests and exploit/explore split inside each algo.
     """
     total = len(test_cases)
     if total == 0:
@@ -699,6 +701,11 @@ def build_topk_search_plan(
             "exploit_count": 0,
             "explore_count": 0,
             "candidate_total": 0,
+            "per_algo_quota": {},
+            "per_algo_selected": {},
+            "per_algo_exploit": {},
+            "per_algo_explore": {},
+            "per_algo_candidates": {},
         }
 
     eta = max(2, int(eta))
@@ -708,46 +715,98 @@ def build_topk_search_plan(
     idx_maps = {p: {v: i for i, v in enumerate(vals)} for p, vals in PARAM_RANGES.items()}
     value_means, algo_means = _build_value_cost_model(results)
 
-    scored = []
-    for tc in test_cases:
-        algo, params, _ = tc
-        score = _estimate_case_cost(algo, params, value_means, algo_means, metric=metric, idx_maps=idx_maps)
-        scored.append((score, make_test_key(algo, params), tc))
-    scored.sort(key=lambda x: (x[0], x[1]))
-
     k_total = max(1, total // eta)
-    n_exploit = min(k_total, int(round(k_total * exploit_ratio)))
-    n_explore = max(0, k_total - n_exploit)
+    by_algo = {}
+    for tc in test_cases:
+        by_algo.setdefault(tc[0], []).append(tc)
+    algo_order = [a for a in DEFAULT_ALGO_ORDER if a in by_algo]
+    algo_order.extend(sorted(set(by_algo) - set(algo_order)))
+    per_algo_candidates = {a: len(by_algo.get(a, [])) for a in algo_order}
 
+    # Quotas proportional to remaining tests per algo.
+    quota = {a: 0 for a in algo_order}
+    frac = []
+    used = 0
+    for a in algo_order:
+        count = per_algo_candidates[a]
+        raw = k_total * (count / total)
+        q = min(count, int(raw))
+        quota[a] = q
+        used += q
+        frac.append((raw - int(raw), a))
+    rem = k_total - used
+    frac.sort(reverse=True)
+    while rem > 0:
+        placed = False
+        for _, a in frac:
+            if quota[a] < per_algo_candidates[a]:
+                quota[a] += 1
+                rem -= 1
+                placed = True
+                if rem <= 0:
+                    break
+        if not placed:
+            break
+
+    # Score each algo locally, then take exploit/explore within each algo quota.
+    rng = random.Random(int(seed))
     selected = []
     selected_keys = set()
-
-    for _, key, tc in scored[:n_exploit]:
-        if key in selected_keys:
+    per_algo_selected = {a: 0 for a in algo_order}
+    per_algo_exploit = {a: 0 for a in algo_order}
+    per_algo_explore = {a: 0 for a in algo_order}
+    total_exploit = 0
+    total_explore = 0
+    for a in algo_order:
+        cases = by_algo.get(a, [])
+        if not cases or quota[a] <= 0:
             continue
-        selected.append(tc)
-        selected_keys.add(key)
+        scored = []
+        for tc in cases:
+            _, params, _ = tc
+            s = _estimate_case_cost(a, params, value_means, algo_means, metric=metric, idx_maps=idx_maps)
+            scored.append((s, make_test_key(a, params), tc))
+        scored.sort(key=lambda x: (x[0], x[1]))
 
-    rest = [(s, k, tc) for (s, k, tc) in scored[n_exploit:] if k not in selected_keys]
-    if n_explore > 0 and rest:
-        rng = random.Random(int(seed))
-        if n_explore >= len(rest):
-            explore_pick = rest
-        else:
-            idxs = rng.sample(range(len(rest)), n_explore)
-            explore_pick = [rest[i] for i in idxs]
-        for _, key, tc in explore_pick:
+        q = quota[a]
+        q_exploit = min(q, int(round(q * exploit_ratio)))
+        q_explore = q - q_exploit
+
+        for _, key, tc in scored[:q_exploit]:
             if key in selected_keys:
                 continue
             selected.append(tc)
             selected_keys.add(key)
+            per_algo_selected[a] += 1
+            per_algo_exploit[a] += 1
+            total_exploit += 1
 
+        pool = [x for x in scored[q_exploit:] if x[1] not in selected_keys]
+        if q_explore > 0 and pool:
+            if q_explore >= len(pool):
+                picks = pool
+            else:
+                idxs = rng.sample(range(len(pool)), q_explore)
+                picks = [pool[i] for i in idxs]
+            for _, key, tc in picks:
+                if key in selected_keys:
+                    continue
+                selected.append(tc)
+                selected_keys.add(key)
+                per_algo_selected[a] += 1
+                per_algo_explore[a] += 1
+                total_explore += 1
     return {
         "selected": selected,
         "selected_total": len(selected),
-        "exploit_count": min(len(selected), n_exploit),
-        "explore_count": max(0, len(selected) - min(len(selected), n_exploit)),
+        "exploit_count": total_exploit,
+        "explore_count": total_explore,
         "candidate_total": total,
+        "per_algo_quota": quota,
+        "per_algo_selected": per_algo_selected,
+        "per_algo_exploit": per_algo_exploit,
+        "per_algo_explore": per_algo_explore,
+        "per_algo_candidates": per_algo_candidates,
     }
 
 
@@ -2226,8 +2285,24 @@ def main():
             print(
                 f"Top-k planning: exploit={plan.get('exploit_count', 0)}, "
                 f"explore={plan.get('explore_count', 0)} "
-                f"(selected {plan.get('selected_total', 0)}/{planned_total_input})"
+                f"(selected {plan.get('selected_total', 0)}/{planned_total_input})",
+                flush=True,
             )
+            print(f"  top-k fusion [{format_progress_bar(100.0, width=20)}] 100%   ", flush=True)
+            quota = plan.get("per_algo_quota", {})
+            picked = plan.get("per_algo_selected", {})
+            exp = plan.get("per_algo_exploit", {})
+            rnd = plan.get("per_algo_explore", {})
+            cand = plan.get("per_algo_candidates", {})
+            for algo in sorted(quota):
+                print(
+                    f"  {algo}: candidates={cand.get(algo, 0)}, "
+                    f"quota={quota.get(algo, 0)}, "
+                    f"selected={picked.get(algo, 0)}, "
+                    f"exploit={exp.get(algo, 0)}, "
+                    f"explore={rnd.get(algo, 0)}",
+                    flush=True,
+                )
             all_test_cases = order_cases_by_mode(all_test_cases, args)
             if len(all_test_cases) == 0:
                 print("All tests already completed!")
