@@ -3,7 +3,7 @@
 This folder contains scripts that analyze and visualize benchmark results produced by `benchmark_algorithms.py`.
 
 ## Files
-- `benchmark_algorithms.py`: Runs benchmark campaigns across algorithms and parameters (full grid or adaptive `space-search`), saving results to CSV/JSON.
+- `benchmark_algorithms.py`: Runs benchmark campaigns across algorithms and parameters (`grid`, `space-search`, `coarse-to-fine`), saving results to CSV/JSON.
 - `visualize_algorithms.py`: Generates heatmaps, comparisons, sensitivity plots, execution-time charts, unfinished-rate visuals, and coverage-dispersion summaries from JSON results.
 - `extract_trajectories.py`: Extracts planned/sailed trajectories from logs for comparison and visualization.
 - `compare_trajectories.py`: Compares planned vs sailed trajectories (if extracted trajectories are available).
@@ -87,11 +87,16 @@ python3 visualize_algorithms.py --input benchmark_results.json --output-dir .
 - `--save-interval` (`10`)
 - `--verbose` (`0` = summary, `1` = details)
 - `--window-size` (`500`): window size used by `quota-window-coverage` and ETA EWMA (`alpha = 2/(W+1)`)
-- `--search-mode` (`grid` or `space-search`)
+- `--search-mode` (`grid`, `space-search`, or `coarse-to-fine`)
 - `--space-coarse-step` (`4`)
 - `--space-refine-step` (`2`)
 - `--space-eta` (`3`)
 - `--space-early-stop-delta` (`0.0`)
+
+Search mode behavior:
+- `grid`: run all remaining test cases.
+- `space-search`: one-shot subset selection (`coarse + refine1 + refine2`) based on current history, then single execution batch.
+- `coarse-to-fine`: sequential phases with replanning between phases (`coarse -> refine1 -> refine2`), using updated results after each phase.
 
 - fixed params: `goal=20`, `start_index=600`, `tackangle=43`, `near_threshold=200`, `near_delay=10`, `far_delay=20`, `seed=42`
 - parameter ranges live in `PARAM_RANGES`:

@@ -1575,6 +1575,224 @@ def save_results(results, csv_path, json_path, start_time, total_tests, interrup
         json.dump(output_data, f, indent=2)
 
 
+def order_cases_by_mode(test_cases, args):
+    """Apply the configured --order to a list of test cases."""
+    if args.order == "shuffle":
+        print(f"Ordering {len(test_cases)} cases...")
+        random.shuffle(test_cases)
+        print(f"  shuffle global [{format_progress_bar(100.0, width=20)}] 100%   ")
+        return test_cases
+
+    if args.order == "quota-window-coverage":
+        algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in {tc[0] for tc in test_cases}]
+        if args.workers > 1 and len(test_cases) > args.workers:
+            test_cases = order_cases_quota_window_coverage_chunked(
+                test_cases, algo_order, args.workers, verbose=args.verbose, window_size=args.window_size
+            )
+            print("Test cases ordered by: quota-window-coverage (chunked)")
+        else:
+            print(f"Ordering {len(test_cases)} cases...")
+            test_cases = order_cases_quota_window_coverage(
+                test_cases, algo_order, show_progress=True, verbose=args.verbose, window_size=args.window_size
+            )
+            print("Test cases ordered by: quota-window-coverage")
+        return test_cases
+
+    if args.order == "global-coverage":
+        algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in {tc[0] for tc in test_cases}]
+        algo_order.extend(sorted({tc[0] for tc in test_cases} - set(algo_order)))
+        print(f"Ordering {len(test_cases)} cases...")
+        test_cases = order_cases_coverage_global(test_cases, algo_order, show_progress=True)
+        if args.verbose > 0:
+            pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order}
+            counts, max_gaps, max_runs, min_share, gain, uniq, param_run = compute_chunk_metrics(
+                test_cases, algo_order, pairs_by_algo
+            )
+            parts = []
+            for algo in algo_order:
+                parts.append(
+                    format_metric_parts(
+                        algo,
+                        max_gaps[algo],
+                        min_share[algo],
+                        max_runs[algo],
+                        gain[algo],
+                        uniq[algo],
+                        param_run.get(algo, (0, "")),
+                    )
+                )
+            print("  global distribution: " + " | ".join(parts), flush=True)
+        print("Test cases ordered by: global-coverage")
+        return test_cases
+
+    order_list = [item.strip() for item in args.order.split(",") if item.strip()]
+    order_set = set(order_list)
+    unknown = order_set - {"mpc_simplemove", "mpc_realmove", "adp_realmove", "beam_realmove", "spst_realmove"}
+    if unknown:
+        raise ValueError(f"Unknown algo(s) in --order: {', '.join(sorted(unknown))}")
+    print(f"Ordering {len(test_cases)} cases...")
+    ordered = []
+    total_order = len(test_cases)
+    done_order = 0
+    last_pct = -1
+    for algo in order_list:
+        chunk = [tc for tc in test_cases if tc[0] == algo]
+        ordered.extend(chunk)
+        done_order += len(chunk)
+        pct = 100.0 * done_order / total_order if total_order else 100.0
+        if int(pct) != last_pct and int(pct) % 5 == 0:
+            bar = format_progress_bar(pct, width=20)
+            print(f"\r  order by algo [{bar}] {pct:3.0f}%", end="", flush=True)
+            last_pct = int(pct)
+    tail = [tc for tc in test_cases if tc[0] not in order_set]
+    ordered.extend(tail)
+    if total_order:
+        print(f"\r  order by algo [{format_progress_bar(100.0, width=20)}] 100%   ", end="", flush=True)
+        print()
+    print(f"Test cases ordered by: {', '.join(order_list)}")
+    return ordered
+
+
+def execute_batch(
+    test_cases,
+    args,
+    results,
+    completed_keys,
+    total_tests_original,
+    csv_path,
+    json_path,
+    interrupted_state,
+    phase_label=None,
+):
+    """Execute one batch of ordered test cases."""
+    if not test_cases:
+        return
+
+    present_algos = {tc[0] for tc in test_cases}
+    if args.order in {"shuffle", "quota-window-coverage", "global-coverage"}:
+        algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in present_algos]
+        algo_order.extend(sorted(present_algos - set(algo_order)))
+    else:
+        order_list = [item.strip() for item in args.order.split(",") if item.strip()]
+        algo_order = [algo for algo in order_list if algo in present_algos]
+        algo_order.extend(sorted(present_algos - set(algo_order)))
+
+    total_remaining = len(test_cases)
+    run_totals_by_algo = {}
+    for algo, _, _ in test_cases:
+        run_totals_by_algo[algo] = run_totals_by_algo.get(algo, 0) + 1
+
+    print(f"Running {total_remaining} test cases with {args.workers} workers...")
+    print(
+        f"Total tests in benchmark: {total_tests_original}, "
+        f"already completed: {len(completed_keys)}, remaining: {total_remaining}"
+    )
+    print(f"Algorithms: {', '.join(algo_order)}")
+    print(f"Results will be saved every {args.save_interval} tests")
+    print("Press Ctrl+C to interrupt and save progress\n")
+
+    completed_this_run = 0
+    start_time = time.time()
+    results_lock = Lock()
+    last_save_count = 0
+    coverage_tracker = None
+    eta_tracker = init_eta_tracker(algo_order, window=args.window_size)
+    run_done_by_algo = {algo: 0 for algo in algo_order}
+
+    for r in results:
+        update_eta_tracker(eta_tracker, r.get("algorithm"), r.get("elapsed_time"))
+    if args.order in {"quota-window-coverage", "global-coverage"}:
+        coverage_tracker = init_coverage_tracker(algo_order)
+        for r in results:
+            update_coverage_tracker(coverage_tracker, r["algorithm"], r)
+
+    with ProcessPoolExecutor(max_workers=args.workers, initializer=_init_worker_ignore_sigint) as executor:
+        futures = {executor.submit(run_single_test, tc): tc for tc in test_cases}
+        pending = set(futures.keys())
+
+        while pending and not interrupted_state["value"]:
+            done, pending = wait(pending, timeout=1.0, return_when=FIRST_COMPLETED)
+            for future in done:
+                if interrupted_state["value"]:
+                    break
+                try:
+                    algo_name, params, result, test_id = future.result()
+                except Exception as e:
+                    print(f"Error in test: {e}")
+                    continue
+
+                completed_this_run += 1
+                run_done_by_algo[algo_name] = run_done_by_algo.get(algo_name, 0) + 1
+                elapsed = time.time() - start_time
+                rate = completed_this_run / elapsed if elapsed > 0 else 0
+
+                row = {
+                    "algorithm": algo_name,
+                    "horizon": params["horizon"],
+                    "tackangle": params["tackangle"],
+                    "alpha": params["alpha"],
+                    "beam_width": params.get("beam_width"),
+                    "scenarios": params.get("scenarios"),
+                    "dir_noise": params.get("dir_noise"),
+                    "speed_noise": params.get("speed_noise"),
+                    "seed": FIXED_PARAMS["seed"],
+                    "gamma": params.get("gamma"),
+                    "lr": params.get("lr"),
+                    "goal_penalty": params.get("goal_penalty"),
+                    "epsilon": params.get("epsilon"),
+                    "epsilon_decay": params.get("epsilon_decay"),
+                    "epsilon_min": params.get("epsilon_min"),
+                    "approx": params.get("approx"),
+                    "hidden_size": params.get("hidden_size"),
+                    "l2": params.get("l2"),
+                    "normalize_features": params.get("normalize_features"),
+                    "total_sailed": result.get("total_sailed") if result else None,
+                    "nb_tacks": result.get("nb_tacks") if result else None,
+                    "steps": result.get("steps") if result else None,
+                    "distance_to_mark": result.get("distance_to_mark") if result else None,
+                    "elapsed_time": result.get("elapsed_time") if result else None,
+                    "finished": result.get("finished", False) if result else False,
+                    "success": result.get("success", False) if result else False,
+                }
+
+                with results_lock:
+                    results.append(row)
+                    completed_keys.add(make_test_key(algo_name, params))
+                    update_eta_tracker(eta_tracker, row["algorithm"], row.get("elapsed_time"))
+                    if coverage_tracker is not None:
+                        update_coverage_tracker(coverage_tracker, row["algorithm"], row)
+                    if completed_this_run - last_save_count >= args.save_interval:
+                        save_results(results, csv_path, json_path, start_time, total_tests_original, interrupted=False)
+                        last_save_count = completed_this_run
+
+                    gains = coverage_gain_snapshot(coverage_tracker, algo_order)
+                    print_progress_line(
+                        results,
+                        elapsed,
+                        rate,
+                        algo_order,
+                        coverage_gain=gains,
+                        eta_tracker=eta_tracker,
+                        workers=args.workers,
+                        run_done=completed_this_run,
+                        run_total=total_remaining,
+                        run_counts=run_done_by_algo,
+                        run_totals=run_totals_by_algo,
+                    )
+
+        if interrupted_state["value"]:
+            print()
+            print("Interrupted! Saving progress...")
+            for future in pending:
+                future.cancel()
+
+    if interrupted_state["value"]:
+        print()
+    else:
+        clear_progress_lines()
+        print()
+
+
 def main():
     import argparse
 
@@ -1598,9 +1816,10 @@ def main():
     parser.add_argument("--verbose", type=int, default=0, help="Verbosity level (0=summary, 1=details)")
     parser.add_argument("--window-size", type=int, default=DEFAULT_WINDOW_SIZE,
                         help="Window size for quota-window-coverage and ETA EWMA alpha=2/(W+1)")
-    parser.add_argument("--search-mode", default="grid", choices=["grid", "space-search"],
+    parser.add_argument("--search-mode", default="grid", choices=["grid", "space-search", "coarse-to-fine"],
                         help="Case generation mode: 'grid' runs all remaining cases; "
-                             "'space-search' keeps a deterministic coarse/refine1/refine2 subset")
+                             "'space-search' keeps a deterministic coarse/refine1/refine2 subset (one-shot); "
+                             "'coarse-to-fine' runs sequential phases with replanning between phases")
     parser.add_argument("--space-coarse-step", type=int, default=4,
                         help="Sparse-grid step for space-search coarse phase")
     parser.add_argument("--space-refine-step", type=int, default=2,
@@ -1708,293 +1927,148 @@ def main():
                     )
                 print("  global distribution: " + " | ".join(parts))
 
-    # Optional adaptive subset selection (deterministic) before ordering.
-    if args.search_mode == "space-search":
-        planned_total_input = len(all_test_cases)
-        plan = build_space_search_plan(
-            all_test_cases,
-            results,
-            coarse_step=args.space_coarse_step,
-            refine_step=args.space_refine_step,
-            eta=args.space_eta,
-            early_stop_delta=args.space_early_stop_delta,
-        )
-        phase_sizes = {
-            "coarse": len(plan["coarse"]),
-            "refine1": len(plan["refine1"]),
-            "refine2": len(plan["refine2"]),
-        }
-        all_test_cases = plan["coarse"] + plan["refine1"] + plan["refine2"]
-        print(
-            f"Space-search planning: coarse={phase_sizes['coarse']}, "
-            f"refine1={phase_sizes['refine1']}, refine2={phase_sizes['refine2']} "
-            f"(selected {len(all_test_cases)}/{planned_total_input})"
-        )
-        if args.verbose > 0:
-            for algo in sorted(plan["per_algo_counts"]):
-                c0, c1, c2, tot = plan["per_algo_counts"][algo]
-                print(
-                    f"  {algo}: coarse={c0}, refine1={c1}, refine2={c2}, "
-                    f"selected={c0 + c1 + c2}/{tot}"
-                )
-
-    if args.order == "shuffle":
-        print(f"Ordering {len(all_test_cases)} cases...")
-        random.shuffle(all_test_cases)
-        print(f"  shuffle global [{format_progress_bar(100.0, width=20)}] 100%   ")
-    elif args.order == "quota-window-coverage":
-        algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in {tc[0] for tc in all_test_cases}]
-        if args.workers > 1 and len(all_test_cases) > args.workers:
-            all_test_cases = order_cases_quota_window_coverage_chunked(
-                all_test_cases, algo_order, args.workers, verbose=args.verbose, window_size=args.window_size
-            )
-            print("Test cases ordered by: quota-window-coverage (chunked)")
-        else:
-            print(f"Ordering {len(all_test_cases)} cases...")
-            all_test_cases = order_cases_quota_window_coverage(
-                all_test_cases, algo_order, show_progress=True, verbose=args.verbose, window_size=args.window_size
-            )
-            print("Test cases ordered by: quota-window-coverage")
-    elif args.order == "global-coverage":
-        algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in {tc[0] for tc in all_test_cases}]
-        algo_order.extend(sorted({tc[0] for tc in all_test_cases} - set(algo_order)))
-        print(f"Ordering {len(all_test_cases)} cases...")
-        all_test_cases = order_cases_coverage_global(all_test_cases, algo_order, show_progress=True)
-        if args.verbose > 0:
-            pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order}
-            counts, max_gaps, max_runs, min_share, gain, uniq, param_run = compute_chunk_metrics(
-                all_test_cases, algo_order, pairs_by_algo
-            )
-            parts = []
-            for algo in algo_order:
-                parts.append(
-                    format_metric_parts(
-                        algo,
-                        max_gaps[algo],
-                        min_share[algo],
-                        max_runs[algo],
-                        gain[algo],
-                        uniq[algo],
-                        param_run.get(algo, (0, "")),
-                    )
-                )
-            print("  global distribution: " + " | ".join(parts), flush=True)
-        print("Test cases ordered by: global-coverage")
-    else:
-        order_list = [item.strip() for item in args.order.split(",") if item.strip()]
-        order_set = set(order_list)
-        unknown = order_set - {"mpc_simplemove", "mpc_realmove", "adp_realmove", "beam_realmove", "spst_realmove"}
-        if unknown:
-            print(f"Unknown algo(s) in --order: {', '.join(sorted(unknown))}")
-            return
-        print(f"Ordering {len(all_test_cases)} cases...")
-        ordered = []
-        total_order = len(all_test_cases)
-        done_order = 0
-        last_pct = -1
-        for algo in order_list:
-            chunk = [tc for tc in all_test_cases if tc[0] == algo]
-            ordered.extend(chunk)
-            done_order += len(chunk)
-            pct = 100.0 * done_order / total_order if total_order else 100.0
-            if int(pct) != last_pct and int(pct) % 5 == 0:
-                bar = format_progress_bar(pct, width=20)
-                print(f"\r  order by algo [{bar}] {pct:3.0f}%", end="", flush=True)
-                last_pct = int(pct)
-        tail = [tc for tc in all_test_cases if tc[0] not in order_set]
-        ordered.extend(tail)
-        done_order += len(tail)
-        if total_order:
-            print(f"\r  order by algo [{format_progress_bar(100.0, width=20)}] 100%   ", end="", flush=True)
-            print()
-        all_test_cases = ordered
-        print(f"Test cases ordered by: {', '.join(order_list)}")
-
-    present_algos = {tc[0] for tc in all_test_cases}
-    if args.order == "shuffle":
-        algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in present_algos]
-        algo_order.extend(sorted(present_algos - set(algo_order)))
-    elif args.order == "quota-window-coverage":
-        algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in present_algos]
-        algo_order.extend(sorted(present_algos - set(algo_order)))
-    elif args.order == "global-coverage":
-        algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in present_algos]
-        algo_order.extend(sorted(present_algos - set(algo_order)))
-    else:
-        algo_order = [algo for algo in order_list if algo in present_algos]
-        algo_order.extend(sorted(present_algos - set(algo_order)))
-
-    total_remaining = len(all_test_cases)
-    run_totals_by_algo = {}
-    for algo, _, _ in all_test_cases:
-        run_totals_by_algo[algo] = run_totals_by_algo.get(algo, 0) + 1
-
-    if args.order == "shuffle" and args.verbose > 0:
-        pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order}
-        counts, max_gaps, max_runs, min_share, gain, uniq, param_run = compute_chunk_metrics(
-            all_test_cases, algo_order, pairs_by_algo
-        )
-        parts = []
-        for algo in algo_order:
-            parts.append(
-                format_metric_parts(
-                    algo,
-                    max_gaps[algo],
-                    min_share[algo],
-                    max_runs[algo],
-                    gain[algo],
-                    uniq[algo],
-                    param_run.get(algo, (0, "")),
-                )
-            )
-        print("  global distribution: " + " | ".join(parts))
-
-    if total_remaining == 0:
-        print("All tests already completed!")
-        return
-
-    print(f"Running {total_remaining} test cases with {args.workers} workers...")
-    print(f"Total tests in benchmark: {total_tests_original}, already completed: {len(completed_keys)}, remaining: {total_remaining}")
-    print(f"Algorithms: {', '.join(algo_order)}")
-    print(f"Results will be saved every {args.save_interval} tests")
-    print("Press Ctrl+C to interrupt and save progress\n")
-
-    # Variables for tracking
-    completed_this_run = 0
-    start_time = time.time()
-    results_lock = Lock()
-    interrupted = False
+    interrupted_state = {"value": False}
     print_progress_line._suspend = False
-    last_save_count = 0
-    coverage_tracker = None
-    eta_tracker = init_eta_tracker(algo_order, window=args.window_size)
-    run_done_by_algo = {algo: 0 for algo in algo_order}
-    for r in results:
-        update_eta_tracker(eta_tracker, r.get("algorithm"), r.get("elapsed_time"))
-    if args.order in {"quota-window-coverage", "global-coverage"}:
-        coverage_tracker = init_coverage_tracker(algo_order)
-        for r in results:
-            update_coverage_tracker(coverage_tracker, r["algorithm"], r)
+    benchmark_start = time.time()
 
     def handle_interrupt(signum, frame):
-        nonlocal interrupted
-        interrupted = True
+        interrupted_state["value"] = True
         print_progress_line._suspend = True
 
-    # Register signal handler
     signal.signal(signal.SIGINT, handle_interrupt)
 
     try:
-        with ProcessPoolExecutor(
-            max_workers=args.workers,
-            initializer=_init_worker_ignore_sigint,
-        ) as executor:
-            # Submit all tasks
-            futures = {executor.submit(run_single_test, tc): tc for tc in all_test_cases}
-            pending = set(futures.keys())
+        if args.search_mode == "space-search":
+            planned_total_input = len(all_test_cases)
+            plan = build_space_search_plan(
+                all_test_cases,
+                results,
+                coarse_step=args.space_coarse_step,
+                refine_step=args.space_refine_step,
+                eta=args.space_eta,
+                early_stop_delta=args.space_early_stop_delta,
+            )
+            phase_sizes = {
+                "coarse": len(plan.get("coarse", [])),
+                "refine1": len(plan.get("refine1", [])),
+                "refine2": len(plan.get("refine2", [])),
+            }
+            all_test_cases = list(plan.get("coarse", [])) + list(plan.get("refine1", [])) + list(plan.get("refine2", []))
+            print(
+                f"Space-search planning: coarse={phase_sizes['coarse']}, "
+                f"refine1={phase_sizes['refine1']}, refine2={phase_sizes['refine2']} "
+                f"(selected {len(all_test_cases)}/{planned_total_input})"
+            )
+            if args.verbose > 0:
+                for algo in sorted(plan.get("per_algo_counts", {})):
+                    c0, c1, c2, tot = plan["per_algo_counts"][algo]
+                    print(
+                        f"  {algo}: coarse={c0}, refine1={c1}, refine2={c2}, "
+                        f"selected={c0 + c1 + c2}/{tot}"
+                    )
+            all_test_cases = order_cases_by_mode(all_test_cases, args)
+            if len(all_test_cases) == 0:
+                print("All tests already completed!")
+                return
+            execute_batch(
+                all_test_cases,
+                args,
+                results,
+                completed_keys,
+                total_tests_original,
+                csv_path,
+                json_path,
+                interrupted_state,
+                phase_label=None,
+            )
 
-            while pending and not interrupted:
-                # Wait for any future to complete (with timeout to check interrupt flag)
-                done, pending = wait(pending, timeout=1.0, return_when=FIRST_COMPLETED)
+        elif args.search_mode == "coarse-to-fine":
+            remaining_cases = list(all_test_cases)
+            initial_remaining = len(remaining_cases)
+            print(f"Coarse-to-fine sequential run on {initial_remaining} remaining cases")
+            for phase_name in ("coarse", "refine1", "refine2"):
+                if interrupted_state["value"]:
+                    break
+                if not remaining_cases:
+                    break
 
-                for future in done:
-                    if interrupted:
-                        break
+                phase_plan = build_space_search_plan(
+                    remaining_cases,
+                    results,
+                    coarse_step=args.space_coarse_step,
+                    refine_step=args.space_refine_step,
+                    eta=args.space_eta,
+                    early_stop_delta=args.space_early_stop_delta,
+                )
+                phase_cases = list(phase_plan.get(phase_name, []))
+                print(
+                    f"Space-search phase {phase_name}: selected {len(phase_cases)}/{len(remaining_cases)} "
+                    f"(coarse={len(phase_plan.get('coarse', []))}, "
+                    f"refine1={len(phase_plan.get('refine1', []))}, "
+                    f"refine2={len(phase_plan.get('refine2', []))})"
+                )
+                if not phase_cases:
+                    continue
 
-                    try:
-                        algo_name, params, result, test_id = future.result()
-                    except Exception as e:
-                        print(f"Error in test: {e}")
-                        continue
-
-                    completed_this_run += 1
-                    run_done_by_algo[algo_name] = run_done_by_algo.get(algo_name, 0) + 1
-
-                    # Progress update
-                    elapsed = time.time() - start_time
-                    rate = completed_this_run / elapsed if elapsed > 0 else 0
-
-                    # Store result
-                    row = {
-                        "algorithm": algo_name,
-                        "horizon": params["horizon"],
-                        "tackangle": params["tackangle"],
-                        "alpha": params["alpha"],
-                        "beam_width": params.get("beam_width"),
-                        "scenarios": params.get("scenarios"),
-                        "dir_noise": params.get("dir_noise"),
-                        "speed_noise": params.get("speed_noise"),
-                        "seed": FIXED_PARAMS["seed"],
-                        "gamma": params.get("gamma"),
-                        "lr": params.get("lr"),
-                        "goal_penalty": params.get("goal_penalty"),
-                        "epsilon": params.get("epsilon"),
-                        "epsilon_decay": params.get("epsilon_decay"),
-                        "epsilon_min": params.get("epsilon_min"),
-                        "approx": params.get("approx"),
-                        "hidden_size": params.get("hidden_size"),
-                        "l2": params.get("l2"),
-                        "normalize_features": params.get("normalize_features"),
-                        "total_sailed": result.get("total_sailed") if result else None,
-                        "nb_tacks": result.get("nb_tacks") if result else None,
-                        "steps": result.get("steps") if result else None,
-                        "distance_to_mark": result.get("distance_to_mark") if result else None,
-                        "elapsed_time": result.get("elapsed_time") if result else None,
-                        "finished": result.get("finished", False) if result else False,
-                        "success": result.get("success", False) if result else False,
-                    }
-
-                    with results_lock:
-                        results.append(row)
-                        update_eta_tracker(eta_tracker, row["algorithm"], row.get("elapsed_time"))
-                        if coverage_tracker is not None:
-                            update_coverage_tracker(coverage_tracker, row["algorithm"], row)
-
-                        # Periodic save
-                        if completed_this_run - last_save_count >= args.save_interval:
-                            save_results(results, csv_path, json_path, start_time, total_tests_original, interrupted=False)
-
-                        # Update progress line after each test
-                        gains = coverage_gain_snapshot(coverage_tracker, algo_order)
-                        print_progress_line(
-                            results,
-                            elapsed,
-                            rate,
-                            algo_order,
-                            coverage_gain=gains,
-                            eta_tracker=eta_tracker,
-                            workers=args.workers,
-                            run_done=completed_this_run if args.search_mode == "space-search" else None,
-                            run_total=total_remaining if args.search_mode == "space-search" else None,
-                            run_counts=run_done_by_algo if args.search_mode == "space-search" else None,
-                            run_totals=run_totals_by_algo if args.search_mode == "space-search" else None,
-                        )
-
-            # Cancel remaining futures if interrupted
-            if interrupted:
-                print()
-                print("Interrupted! Saving progress...")
-                for future in pending:
-                    future.cancel()
-
+                phase_cases = order_cases_by_mode(phase_cases, args)
+                execute_batch(
+                    phase_cases,
+                    args,
+                    results,
+                    completed_keys,
+                    total_tests_original,
+                    csv_path,
+                    json_path,
+                    interrupted_state,
+                    phase_label=phase_name,
+                )
+                # Recompute remaining from completed keys (keeps only not-yet-run cases).
+                remaining_cases = [
+                    tc for tc in remaining_cases
+                    if make_test_key(tc[0], tc[1]) not in completed_keys
+                ]
+        else:
+            all_test_cases = order_cases_by_mode(all_test_cases, args)
+            if len(all_test_cases) == 0:
+                print("All tests already completed!")
+                return
+            execute_batch(
+                all_test_cases,
+                args,
+                results,
+                completed_keys,
+                total_tests_original,
+                csv_path,
+                json_path,
+                interrupted_state,
+                phase_label=None,
+            )
+    except ValueError as e:
+        print(str(e))
+        return
     except Exception as e:
         print(f"Error during benchmark: {e}")
-        interrupted = True
+        interrupted_state["value"] = True
 
     # Final save
-    save_results(results, csv_path, json_path, start_time, total_tests_original, interrupted=interrupted)
+    save_results(results, csv_path, json_path, benchmark_start, total_tests_original, interrupted=interrupted_state["value"])
 
     # Keep the last progress line visible on interruption; clear only on normal completion.
-    if interrupted:
+    if interrupted_state["value"]:
         print()
     else:
         clear_progress_lines()
         print()
 
     # Final progress summary
-    print_progress_summary(results, algo_order, "RÉSUMÉ FINAL")
+    summary_present_algos = {r.get("algorithm") for r in results if r.get("algorithm")}
+    summary_algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in summary_present_algos]
+    summary_algo_order.extend(sorted(summary_present_algos - set(summary_algo_order)))
+    if not summary_algo_order:
+        summary_algo_order = list(DEFAULT_ALGO_ORDER)
+    print_progress_summary(results, summary_algo_order, "RÉSUMÉ FINAL")
 
-    if interrupted:
+    if interrupted_state["value"]:
         print(f"Benchmark interrupted!")
         print(f"Progress saved: {len(results)}/{total_tests_original} tests completed")
         print(f"Run with --resume to continue")
