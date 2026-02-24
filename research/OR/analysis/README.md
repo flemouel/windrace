@@ -82,6 +82,7 @@ python3 visualize_algorithms.py --input benchmark_results.json --output-dir .
 - `--json-output` (`benchmark_results.json`)
 - `--workers` (`12`)
 - `--algo` (`all` or comma-separated: `adp_realmove,beam_realmove,mpc_realmove,mpc_simplemove,spst_realmove`)
+- `--range` (repeatable): override a parameter range with `name=v1,v2,...` or `name=min:max` (values must be from base `PARAM_RANGES`)
 - `--order` (`quota-window-coverage` by default: local greedy per algo + windowed merge with per-algo quotas and head gain selection; stratified across chunks with workers, `global-coverage` = global greedy coverage ordering, `shuffle` = random across algos/params, or comma-separated algo list with sequential params per algo, e.g. `adp_realmove,spst_realmove`)
 - `--resume` (continue from previous JSON results)
 - `--save-interval` (`10`)

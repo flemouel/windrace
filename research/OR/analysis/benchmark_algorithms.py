@@ -70,22 +70,140 @@ PARAM_RANGES = {
     "l2": [0.0, 1e-5],
     "normalize_features": [False, True],
 }
+BASE_PARAM_RANGES = {k: list(v) for k, v in PARAM_RANGES.items()}
 
 # Total tests per algorithm (derived from PARAM_RANGES)
-def _range_len(name):
-    return len(PARAM_RANGES.get(name, []))
+def _range_len(name, ranges=None):
+    src = ranges if ranges is not None else PARAM_RANGES
+    return len(src.get(name, []))
 
 
-ALGO_TOTALS = {
-    "mpc_realmove": _range_len("horizon") * _range_len("alpha"),
-    "mpc_simplemove": _range_len("horizon") * _range_len("alpha"),
-    "beam_realmove": _range_len("horizon") * _range_len("alpha") * _range_len("beam_width"),
-    "adp_realmove": _range_len("horizon") * _range_len("alpha") * _range_len("gamma") * _range_len("lr")
-    * _range_len("goal_penalty") * _range_len("epsilon") * _range_len("epsilon_decay") * _range_len("epsilon_min")
-    * _range_len("approx") * _range_len("hidden_size") * _range_len("l2") * _range_len("normalize_features"),
-    "spst_realmove": _range_len("horizon") * _range_len("alpha") * _range_len("scenarios")
-    * _range_len("dir_noise") * _range_len("speed_noise"),
-}
+def compute_algo_totals(param_ranges=None):
+    src = param_ranges if param_ranges is not None else PARAM_RANGES
+    return {
+        "mpc_realmove": _range_len("horizon", src) * _range_len("alpha", src),
+        "mpc_simplemove": _range_len("horizon", src) * _range_len("alpha", src),
+        "beam_realmove": _range_len("horizon", src) * _range_len("alpha", src) * _range_len("beam_width", src),
+        "adp_realmove": _range_len("horizon", src) * _range_len("alpha", src) * _range_len("gamma", src) * _range_len("lr", src)
+        * _range_len("goal_penalty", src) * _range_len("epsilon", src) * _range_len("epsilon_decay", src) * _range_len("epsilon_min", src)
+        * _range_len("approx", src) * _range_len("hidden_size", src) * _range_len("l2", src) * _range_len("normalize_features", src),
+        "spst_realmove": _range_len("horizon", src) * _range_len("alpha", src) * _range_len("scenarios", src)
+        * _range_len("dir_noise", src) * _range_len("speed_noise", src),
+    }
+
+
+def _format_allowed_values(values):
+    return ", ".join(str(v) for v in values)
+
+
+def _parse_value_token(token, allowed_values, param_name):
+    t = token.strip()
+    if t == "":
+        raise ValueError(f"Empty value in --range for '{param_name}'")
+
+    if all(isinstance(v, bool) for v in allowed_values):
+        s = t.lower()
+        if s in {"true", "1", "yes"}:
+            val = True
+        elif s in {"false", "0", "no"}:
+            val = False
+        else:
+            raise ValueError(
+                f"Invalid boolean value '{token}' for '{param_name}'. Allowed: {_format_allowed_values(allowed_values)}"
+            )
+        if val not in allowed_values:
+            raise ValueError(
+                f"Value '{token}' not allowed for '{param_name}'. Allowed: {_format_allowed_values(allowed_values)}"
+            )
+        return val
+
+    if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in allowed_values):
+        try:
+            x = float(t)
+        except ValueError:
+            raise ValueError(
+                f"Invalid numeric value '{token}' for '{param_name}'. Allowed: {_format_allowed_values(allowed_values)}"
+            )
+        for v in allowed_values:
+            if abs(float(v) - x) <= 1e-12:
+                return v
+        raise ValueError(
+            f"Value '{token}' not in allowed values for '{param_name}'. Allowed: {_format_allowed_values(allowed_values)}"
+        )
+
+    for v in allowed_values:
+        if str(v) == t:
+            return v
+    raise ValueError(
+        f"Value '{token}' not in allowed values for '{param_name}'. Allowed: {_format_allowed_values(allowed_values)}"
+    )
+
+
+def apply_range_overrides(base_ranges, range_overrides):
+    effective = {k: list(v) for k, v in base_ranges.items()}
+    if not range_overrides:
+        return effective
+
+    for spec in range_overrides:
+        s = (spec or "").strip()
+        if "=" not in s:
+            raise ValueError(f"Invalid --range '{spec}'. Expected format: name=v1,v2 or name=min:max")
+        name, expr = s.split("=", 1)
+        name = name.strip()
+        expr = expr.strip()
+        if not name:
+            raise ValueError(f"Invalid --range '{spec}': missing parameter name")
+        if name not in base_ranges:
+            all_vars = ", ".join(base_ranges.keys())
+            raise ValueError(f"Unknown range variable '{name}'. Available variables: {all_vars}")
+        allowed = list(base_ranges[name])
+        if not expr:
+            raise ValueError(f"Empty range for '{name}'. Allowed values: {_format_allowed_values(allowed)}")
+
+        selected = []
+        if ":" in expr:
+            if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in allowed):
+                raise ValueError(
+                    f"Range interval '{name}={expr}' only supports numeric params. Allowed values: {_format_allowed_values(allowed)}"
+                )
+            lo_s, hi_s = expr.split(":", 1)
+            try:
+                lo = float(lo_s.strip())
+                hi = float(hi_s.strip())
+            except ValueError:
+                raise ValueError(
+                    f"Invalid numeric interval '{name}={expr}'. Allowed values: {_format_allowed_values(allowed)}"
+                )
+            if lo > hi:
+                lo, hi = hi, lo
+            selected = [v for v in allowed if lo <= float(v) <= hi]
+            if not selected:
+                raise ValueError(
+                    f"Interval '{name}={expr}' selects no value. Allowed values: {_format_allowed_values(allowed)}"
+                )
+        else:
+            tokens = [t.strip() for t in expr.split(",") if t.strip() != ""]
+            if not tokens:
+                raise ValueError(f"Invalid list for '{name}'. Allowed values: {_format_allowed_values(allowed)}")
+            seen = set()
+            for tok in tokens:
+                v = _parse_value_token(tok, allowed, name)
+                k = str(v)
+                if k in seen:
+                    continue
+                seen.add(k)
+                selected.append(v)
+            if not selected:
+                raise ValueError(
+                    f"List '{name}={expr}' selects no value. Allowed values: {_format_allowed_values(allowed)}"
+                )
+
+        effective[name] = selected
+
+    return effective
+
+
+ALGO_TOTALS = compute_algo_totals(PARAM_RANGES)
 
 # Base directory (where the algorithm scripts are located)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1459,6 +1577,31 @@ def make_test_key(algo_name, params):
     )
 
 
+def make_test_key_from_result_row(row):
+    return make_test_key(
+        row["algorithm"],
+        {
+            "horizon": row["horizon"],
+            "tackangle": row["tackangle"],
+            "alpha": row["alpha"],
+            "beam_width": row.get("beam_width"),
+            "scenarios": row.get("scenarios"),
+            "dir_noise": row.get("dir_noise"),
+            "speed_noise": row.get("speed_noise"),
+            "gamma": row.get("gamma"),
+            "lr": row.get("lr"),
+            "goal_penalty": row.get("goal_penalty"),
+            "epsilon": row.get("epsilon"),
+            "epsilon_decay": row.get("epsilon_decay"),
+            "epsilon_min": row.get("epsilon_min"),
+            "approx": row.get("approx"),
+            "hidden_size": row.get("hidden_size"),
+            "l2": row.get("l2"),
+            "normalize_features": row.get("normalize_features"),
+        },
+    )
+
+
 def filter_completed_chunk(chunk, completed_keys):
     remaining = []
     for algo, params, tid in chunk:
@@ -1486,28 +1629,7 @@ def load_existing_results(json_path):
         # Build set of completed test keys
         completed_keys = set()
         for r in results:
-            key = make_test_key(
-                r["algorithm"],
-                {
-                    "horizon": r["horizon"],
-                    "tackangle": r["tackangle"],
-                    "alpha": r["alpha"],
-                    "beam_width": r.get("beam_width"),
-                    "scenarios": r.get("scenarios"),
-                    "dir_noise": r.get("dir_noise"),
-                    "speed_noise": r.get("speed_noise"),
-                    "gamma": r.get("gamma"),
-                    "lr": r.get("lr"),
-                    "goal_penalty": r.get("goal_penalty"),
-                    "epsilon": r.get("epsilon"),
-                    "epsilon_decay": r.get("epsilon_decay"),
-                    "epsilon_min": r.get("epsilon_min"),
-                    "approx": r.get("approx"),
-                    "hidden_size": r.get("hidden_size"),
-                    "l2": r.get("l2"),
-                    "normalize_features": r.get("normalize_features"),
-                }
-            )
+            key = make_test_key_from_result_row(r)
             completed_keys.add(key)
 
         return results, completed_keys
@@ -1544,14 +1666,14 @@ def print_progress_summary(results, algo_order, title="ÉTAT D'AVANCEMENT DES TE
         done = counts[algo]
         total = ALGO_TOTALS.get(algo, done)
         pct = 100.0 * done / total if total > 0 else 0
-        bar_filled = int(pct / 5)
+        bar_filled = max(0, min(20, int(pct / 5)))
         bar = "█" * bar_filled + "░" * (20 - bar_filled)
         status = "✓ COMPLET" if done >= total else ""
         print(f"  {algo:18} [{bar}] {done:5}/{total:5} ({pct:5.1f}%) {status}")
 
     print("-" * 65)
     total_pct = 100.0 * total_done / total_all if total_all > 0 else 0
-    bar_filled = int(total_pct / 5)
+    bar_filled = max(0, min(20, int(total_pct / 5)))
     bar = "█" * bar_filled + "░" * (20 - bar_filled)
     print(f"  {'TOTAL':18} [{bar}] {total_done:5}/{total_all:5} ({total_pct:5.1f}%)")
     print("=" * 65 + "\n")
@@ -1681,7 +1803,7 @@ def print_progress_line(
 
     # Barres compactes (plus courtes pour limiter le wrapping terminal).
     bar_width = 20
-    bar_filled = int((total_pct / 100.0) * bar_width)
+    bar_filled = max(0, min(bar_width, int((total_pct / 100.0) * bar_width)))
     bar = "█" * bar_filled + "░" * (bar_width - bar_filled)
 
     # Affichage par algo compact
@@ -1704,7 +1826,7 @@ def print_progress_line(
         run_done_i = max(0, int(run_done))
         run_total_i = max(1, int(run_total))
         run_pct = 100.0 * run_done_i / run_total_i
-        run_filled = int((run_pct / 100.0) * bar_width)
+        run_filled = max(0, min(bar_width, int((run_pct / 100.0) * bar_width)))
         run_bar = "█" * run_filled + "░" * (bar_width - run_filled)
         run_eta, _, _ = eta_snapshot(
             eta_tracker,
@@ -1714,6 +1836,9 @@ def print_progress_line(
             workers=workers,
             totals=run_totals,
         )
+        if run_eta is None:
+            run_remaining = max(0, run_total_i - run_done_i)
+            run_eta = (run_remaining / rate) if rate > 0 else 0
         run_status = (
             f" | run [{run_bar}] {run_pct:5.1f}% "
             f"{run_done_i}/{run_total_i} ETA:{_format_duration(run_eta)}"
@@ -1894,10 +2019,19 @@ def execute_batch(
     json_path,
     interrupted_state,
     phase_label=None,
+    all_results=None,
+    all_completed_keys=None,
+    save_results_ref=None,
 ):
     """Execute one batch of ordered test cases."""
     if not test_cases:
         return
+    if all_results is None:
+        all_results = results
+    if all_completed_keys is None:
+        all_completed_keys = completed_keys
+    if save_results_ref is None:
+        save_results_ref = all_results
 
     present_algos = {tc[0] for tc in test_cases}
     if args.order in {"shuffle", "quota-window-coverage", "global-coverage"}:
@@ -1990,11 +2124,15 @@ def execute_batch(
                 with results_lock:
                     results.append(row)
                     completed_keys.add(make_test_key(algo_name, params))
+                    if all_results is not results:
+                        all_results.append(row)
+                    if all_completed_keys is not completed_keys:
+                        all_completed_keys.add(make_test_key(algo_name, params))
                     update_eta_tracker(eta_tracker, row["algorithm"], row.get("elapsed_time"))
                     if coverage_tracker is not None:
                         update_coverage_tracker(coverage_tracker, row["algorithm"], row)
                     if completed_this_run - last_save_count >= args.save_interval:
-                        save_results(results, csv_path, json_path, start_time, total_tests_original, interrupted=False)
+                        save_results(save_results_ref, csv_path, json_path, start_time, total_tests_original, interrupted=False)
                         last_save_count = completed_this_run
 
                     gains = coverage_gain_snapshot(coverage_tracker, algo_order)
@@ -2037,6 +2175,8 @@ def main():
     parser.add_argument("--workers", type=int, default=12, help="Number of parallel workers")
     parser.add_argument("--algo", default="all",
                         help="Which algorithm(s) to benchmark (comma-separated or 'all')")
+    parser.add_argument("--range", action="append", default=[],
+                        help="Override a parameter range (repeatable): name=v1,v2 or name=min:max")
     parser.add_argument("--resume", action="store_true", help="Resume from previous run (skip completed tests)")
     parser.add_argument("--order", default="quota-window-coverage",
                         help="Execution order: 'quota-window-coverage' (local greedy per algo; windowed merge with "
@@ -2071,6 +2211,16 @@ def main():
     parser.add_argument("--topk-seed", type=int, default=42,
                         help="Random seed for topk-search exploration picks")
     args = parser.parse_args()
+    global PARAM_RANGES, ALGO_TOTALS
+    try:
+        PARAM_RANGES = apply_range_overrides(BASE_PARAM_RANGES, args.range)
+    except ValueError as e:
+        print(str(e))
+        return
+    ALGO_TOTALS = compute_algo_totals(PARAM_RANGES)
+    print("Effective parameter ranges:")
+    for name, values in PARAM_RANGES.items():
+        print(f"  {name}: {_format_allowed_values(values)}")
 
     # Setup paths
     output_dir = os.path.dirname(os.path.abspath(__file__))
@@ -2087,13 +2237,12 @@ def main():
             return
 
     # Load existing results if resuming
+    results_all = []
+    completed_keys_all = set()
     results = []
     completed_keys = set()
     if args.resume:
-        results, completed_keys = load_existing_results(json_path)
-        if completed_keys:
-            print(f"Resuming: found {len(completed_keys)} completed tests")
-            print_progress_summary(results, DEFAULT_ALGO_ORDER, "TESTS DÉJÀ EFFECTUÉS")
+        results_all, completed_keys_all = load_existing_results(json_path)
 
     # Generate test cases
     all_test_cases = generate_test_cases(args.verbose)
@@ -2111,7 +2260,27 @@ def main():
         all_test_cases = [tc for tc in all_test_cases if tc[0] in algo_set]
 
 
-    # Filter out already completed tests
+    # Build active resume view for current effective ranges
+    if args.resume and completed_keys_all:
+        active_completed_keys = set()
+        for algo, params, _ in all_test_cases:
+            k = make_test_key(algo, params)
+            if k in completed_keys_all:
+                active_completed_keys.add(k)
+        results = [r for r in results_all if make_test_key_from_result_row(r) in active_completed_keys]
+        completed_keys = active_completed_keys
+        print(f"Resuming: found {len(completed_keys)} completed tests in active ranges")
+        print_progress_summary(results, DEFAULT_ALGO_ORDER, "TESTS DÉJÀ EFFECTUÉS")
+    elif args.resume:
+        results = []
+        completed_keys = set()
+    else:
+        results = []
+        completed_keys = set()
+        results_all = []
+        completed_keys_all = set()
+
+    # Filter out already completed tests (active scope)
     if args.resume and completed_keys:
         print(f"Filtering completed tests from {len(all_test_cases)} cases...")
         if args.workers > 1 and len(all_test_cases) > args.workers:
@@ -2223,6 +2392,9 @@ def main():
                 json_path,
                 interrupted_state,
                 phase_label=None,
+                all_results=results_all,
+                all_completed_keys=completed_keys_all,
+                save_results_ref=results_all,
             )
 
         elif args.search_mode == "coarse-to-fine":
@@ -2265,6 +2437,9 @@ def main():
                     json_path,
                     interrupted_state,
                     phase_label=phase_name,
+                    all_results=results_all,
+                    all_completed_keys=completed_keys_all,
+                    save_results_ref=results_all,
                 )
                 # Recompute remaining from completed keys (keeps only not-yet-run cases).
                 remaining_cases = [
@@ -2317,6 +2492,9 @@ def main():
                 json_path,
                 interrupted_state,
                 phase_label=None,
+                all_results=results_all,
+                all_completed_keys=completed_keys_all,
+                save_results_ref=results_all,
             )
         else:
             all_test_cases = order_cases_by_mode(all_test_cases, args)
@@ -2333,6 +2511,9 @@ def main():
                 json_path,
                 interrupted_state,
                 phase_label=None,
+                all_results=results_all,
+                all_completed_keys=completed_keys_all,
+                save_results_ref=results_all,
             )
     except ValueError as e:
         print(str(e))
@@ -2342,7 +2523,7 @@ def main():
         interrupted_state["value"] = True
 
     # Final save
-    save_results(results, csv_path, json_path, benchmark_start, total_tests_original, interrupted=interrupted_state["value"])
+    save_results(results_all, csv_path, json_path, benchmark_start, total_tests_original, interrupted=interrupted_state["value"])
 
     # Keep the last progress line visible on interruption; clear only on normal completion.
     if interrupted_state["value"]:
