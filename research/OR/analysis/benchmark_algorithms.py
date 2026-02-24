@@ -460,16 +460,109 @@ def _build_value_cost_model(results):
     return means, algo_means
 
 
-def _estimate_case_cost(algo, params, value_means, algo_means):
+def _param_is_numeric(name):
+    vals = PARAM_RANGES.get(name, [])
+    if not vals:
+        return False
+    return all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in vals)
+
+
+def _estimate_case_cost(
+    algo,
+    params,
+    value_means,
+    algo_means,
+    metric="additive-mean",
+    idx_maps=None,
+    knn_k=3,
+):
     parts = []
-    for p in algo_param_list(algo):
-        key = (algo, p, params.get(p))
-        v = value_means.get(key)
-        if v is not None:
-            parts.append(v)
-    if parts:
+    m = (metric or "additive-mean").strip().lower()
+    algo_fallback = algo_means.get(algo, float("inf"))
+    idx_maps = idx_maps or {}
+
+    if m in {"additive-mean", "additive-median"}:
+        for p in algo_param_list(algo):
+            key = (algo, p, params.get(p))
+            v = value_means.get(key)
+            if v is not None:
+                parts.append(v)
+        if not parts:
+            return algo_fallback
+        if m == "additive-median":
+            s = sorted(parts)
+            n = len(s)
+            mid = n // 2
+            if n % 2 == 1:
+                return s[mid]
+            return 0.5 * (s[mid - 1] + s[mid])
         return sum(parts) / len(parts)
-    return algo_means.get(algo, float("inf"))
+
+    if m == "partial-match":
+        for p in algo_param_list(algo):
+            v0 = params.get(p)
+            # Numeric params: exact + immediate neighbors in param index space.
+            if _param_is_numeric(p) and p in idx_maps:
+                vals = PARAM_RANGES[p]
+                i0 = idx_maps[p].get(v0)
+                if i0 is None:
+                    continue
+                local = []
+                for j in (i0 - 1, i0, i0 + 1):
+                    if 0 <= j < len(vals):
+                        key = (algo, p, vals[j])
+                        vv = value_means.get(key)
+                        if vv is not None:
+                            local.append(vv)
+                if local:
+                    parts.append(sum(local) / len(local))
+            else:
+                key = (algo, p, v0)
+                vv = value_means.get(key)
+                if vv is not None:
+                    parts.append(vv)
+        if not parts:
+            return algo_fallback
+        return sum(parts) / len(parts)
+
+    if m == "knn":
+        k = max(1, int(knn_k))
+        for p in algo_param_list(algo):
+            v0 = params.get(p)
+            # For categoricals/bools, exact-match only.
+            if not _param_is_numeric(p):
+                key = (algo, p, v0)
+                vv = value_means.get(key)
+                if vv is not None:
+                    parts.append(vv)
+                continue
+
+            vals = [v for v in PARAM_RANGES.get(p, []) if (algo, p, v) in value_means]
+            if not vals:
+                continue
+            vmin = min(vals)
+            vmax = max(vals)
+            span = (vmax - vmin) if (vmax - vmin) != 0 else 1.0
+            ranked = []
+            for v in vals:
+                d = abs(float(v) - float(v0)) / span
+                ranked.append((d, value_means[(algo, p, v)]))
+            ranked.sort(key=lambda x: x[0])
+            top = ranked[:k]
+            wsum = 0.0
+            ssum = 0.0
+            for d, vv in top:
+                w = 1.0 / (d + 1e-9)
+                wsum += w
+                ssum += w * vv
+            if wsum > 0:
+                parts.append(ssum / wsum)
+        if not parts:
+            return algo_fallback
+        return sum(parts) / len(parts)
+
+    # Unknown metric fallback.
+    return algo_fallback
 
 
 def _is_sparse_point(algo, params, step, idx_maps):
@@ -497,6 +590,7 @@ def build_space_search_plan(
     refine_step=2,
     eta=3,
     early_stop_delta=0.0,
+    metric="additive-mean",
 ):
     """
     Build deterministic 3-phase plan: coarse -> refine1 -> refine2.
@@ -531,7 +625,7 @@ def build_space_search_plan(
         refine_pool = [tc for tc in remaining if _is_sparse_point(algo, tc[1], refine_step, idx_maps)]
         refine_pool.sort(
             key=lambda tc: (
-                _estimate_case_cost(tc[0], tc[1], value_means, algo_means),
+                _estimate_case_cost(tc[0], tc[1], value_means, algo_means, metric=metric, idx_maps=idx_maps),
                 make_test_key(tc[0], tc[1]),
             )
         )
@@ -543,17 +637,23 @@ def build_space_search_plan(
         remaining_after_refine1 = [tc for tc in remaining if make_test_key(tc[0], tc[1]) not in refine1_keys]
         remaining_after_refine1.sort(
             key=lambda tc: (
-                _estimate_case_cost(tc[0], tc[1], value_means, algo_means),
+                _estimate_case_cost(tc[0], tc[1], value_means, algo_means, metric=metric, idx_maps=idx_maps),
                 make_test_key(tc[0], tc[1]),
             )
         )
 
         best_coarse = float("inf")
         if coarse:
-            best_coarse = min(_estimate_case_cost(tc[0], tc[1], value_means, algo_means) for tc in coarse)
+            best_coarse = min(
+                _estimate_case_cost(tc[0], tc[1], value_means, algo_means, metric=metric, idx_maps=idx_maps)
+                for tc in coarse
+            )
         best_refine1 = float("inf")
         if refine1:
-            best_refine1 = min(_estimate_case_cost(tc[0], tc[1], value_means, algo_means) for tc in refine1)
+            best_refine1 = min(
+                _estimate_case_cost(tc[0], tc[1], value_means, algo_means, metric=metric, idx_maps=idx_maps)
+                for tc in refine1
+            )
 
         keep_refine2 = True
         if early_stop_delta > 0.0 and best_coarse < float("inf") and best_refine1 < float("inf"):
@@ -577,6 +677,85 @@ def build_space_search_plan(
         "per_algo_counts": per_algo_counts,
     }
     return plan
+
+
+def build_topk_search_plan(
+    test_cases,
+    results,
+    metric="additive-mean",
+    exploit_ratio=0.95,
+    explore_ratio=0.05,
+    eta=3,
+    seed=42,
+):
+    """
+    Build a top-k plan from historical score estimates.
+    Keep about 1/eta of remaining cases, with exploit/explore split.
+    """
+    total = len(test_cases)
+    if total == 0:
+        return {
+            "selected": [],
+            "selected_total": 0,
+            "exploit_count": 0,
+            "explore_count": 0,
+            "candidate_total": 0,
+        }
+
+    eta = max(2, int(eta))
+    exploit_ratio = max(0.0, min(1.0, float(exploit_ratio)))
+    explore_ratio = max(0.0, min(1.0, float(explore_ratio)))
+    ratio_sum = exploit_ratio + explore_ratio
+    if ratio_sum <= 0.0:
+        exploit_ratio = 0.95
+        explore_ratio = 0.05
+        ratio_sum = 1.0
+    exploit_ratio /= ratio_sum
+
+    idx_maps = {p: {v: i for i, v in enumerate(vals)} for p, vals in PARAM_RANGES.items()}
+    value_means, algo_means = _build_value_cost_model(results)
+
+    scored = []
+    for tc in test_cases:
+        algo, params, _ = tc
+        score = _estimate_case_cost(algo, params, value_means, algo_means, metric=metric, idx_maps=idx_maps)
+        scored.append((score, make_test_key(algo, params), tc))
+    scored.sort(key=lambda x: (x[0], x[1]))
+
+    k_total = max(1, total // eta)
+    n_exploit = min(k_total, int(round(k_total * exploit_ratio)))
+    n_explore = max(0, k_total - n_exploit)
+
+    selected = []
+    selected_keys = set()
+
+    for _, key, tc in scored[:n_exploit]:
+        if key in selected_keys:
+            continue
+        selected.append(tc)
+        selected_keys.add(key)
+
+    rest = [(s, k, tc) for (s, k, tc) in scored[n_exploit:] if k not in selected_keys]
+    if n_explore > 0 and rest:
+        rng = random.Random(int(seed))
+        if n_explore >= len(rest):
+            explore_pick = rest
+        else:
+            idxs = rng.sample(range(len(rest)), n_explore)
+            explore_pick = [rest[i] for i in idxs]
+        for _, key, tc in explore_pick:
+            if key in selected_keys:
+                continue
+            selected.append(tc)
+            selected_keys.add(key)
+
+    return {
+        "selected": selected,
+        "selected_total": len(selected),
+        "exploit_count": min(len(selected), n_exploit),
+        "explore_count": max(0, len(selected) - min(len(selected), n_exploit)),
+        "candidate_total": total,
+    }
 
 
 def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True, label=None, verbose=0, window_size=500):
@@ -1688,6 +1867,7 @@ def execute_batch(
         f"already completed: {len(completed_keys)}, remaining: {total_remaining}"
     )
     print(f"Algorithms: {', '.join(algo_order)}")
+    print(f"Metric: {args.metric}")
     print(f"Results will be saved every {args.save_interval} tests")
     print("Press Ctrl+C to interrupt and save progress\n")
 
@@ -1816,10 +1996,11 @@ def main():
     parser.add_argument("--verbose", type=int, default=0, help="Verbosity level (0=summary, 1=details)")
     parser.add_argument("--window-size", type=int, default=DEFAULT_WINDOW_SIZE,
                         help="Window size for quota-window-coverage and ETA EWMA alpha=2/(W+1)")
-    parser.add_argument("--search-mode", default="grid", choices=["grid", "space-search", "coarse-to-fine"],
+    parser.add_argument("--search-mode", default="grid", choices=["grid", "space-search", "coarse-to-fine", "topk-search"],
                         help="Case generation mode: 'grid' runs all remaining cases; "
                              "'space-search' keeps a deterministic coarse/refine1/refine2 subset (one-shot); "
-                             "'coarse-to-fine' runs sequential phases with replanning between phases")
+                             "'coarse-to-fine' runs sequential phases with replanning between phases; "
+                             "'topk-search' keeps an estimated best subset with exploit/explore split")
     parser.add_argument("--space-coarse-step", type=int, default=4,
                         help="Sparse-grid step for space-search coarse phase")
     parser.add_argument("--space-refine-step", type=int, default=2,
@@ -1828,6 +2009,17 @@ def main():
                         help="Successive-halving factor for space-search (keep ~1/eta per refine phase)")
     parser.add_argument("--space-early-stop-delta", type=float, default=0.0,
                         help="Optional relative min improvement for refine2 activation per algo")
+    parser.add_argument("--metric", default="additive-mean",
+                        choices=["additive-mean", "additive-median", "partial-match", "knn"],
+                        help="Scoring metric for space-search/coarse-to-fine candidate ranking")
+    parser.add_argument("--topk-eta", type=int, default=3,
+                        help="Top-k selection factor for topk-search (keep about 1/eta of remaining cases)")
+    parser.add_argument("--topk-exploit-ratio", type=float, default=0.95,
+                        help="Top-k exploit ratio (best estimated cases)")
+    parser.add_argument("--topk-explore-ratio", type=float, default=0.05,
+                        help="Top-k explore ratio (random from non-top candidates)")
+    parser.add_argument("--topk-seed", type=int, default=42,
+                        help="Random seed for topk-search exploration picks")
     args = parser.parse_args()
 
     # Setup paths
@@ -1947,6 +2139,7 @@ def main():
                 refine_step=args.space_refine_step,
                 eta=args.space_eta,
                 early_stop_delta=args.space_early_stop_delta,
+                metric=args.metric,
             )
             phase_sizes = {
                 "coarse": len(plan.get("coarse", [])),
@@ -1999,6 +2192,7 @@ def main():
                     refine_step=args.space_refine_step,
                     eta=args.space_eta,
                     early_stop_delta=args.space_early_stop_delta,
+                    metric=args.metric,
                 )
                 phase_cases = list(phase_plan.get(phase_name, []))
                 print(
@@ -2027,6 +2221,38 @@ def main():
                     tc for tc in remaining_cases
                     if make_test_key(tc[0], tc[1]) not in completed_keys
                 ]
+        elif args.search_mode == "topk-search":
+            planned_total_input = len(all_test_cases)
+            plan = build_topk_search_plan(
+                all_test_cases,
+                results,
+                metric=args.metric,
+                exploit_ratio=args.topk_exploit_ratio,
+                explore_ratio=args.topk_explore_ratio,
+                eta=args.topk_eta,
+                seed=args.topk_seed,
+            )
+            all_test_cases = list(plan.get("selected", []))
+            print(
+                f"Top-k planning: exploit={plan.get('exploit_count', 0)}, "
+                f"explore={plan.get('explore_count', 0)} "
+                f"(selected {plan.get('selected_total', 0)}/{planned_total_input})"
+            )
+            all_test_cases = order_cases_by_mode(all_test_cases, args)
+            if len(all_test_cases) == 0:
+                print("All tests already completed!")
+                return
+            execute_batch(
+                all_test_cases,
+                args,
+                results,
+                completed_keys,
+                total_tests_original,
+                csv_path,
+                json_path,
+                interrupted_state,
+                phase_label=None,
+            )
         else:
             all_test_cases = order_cases_by_mode(all_test_cases, args)
             if len(all_test_cases) == 0:
