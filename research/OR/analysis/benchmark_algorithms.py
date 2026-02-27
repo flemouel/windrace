@@ -1689,6 +1689,13 @@ def _format_duration(seconds):
     return f"{seconds:.0f}s"
 
 
+def _format_signed_duration(seconds):
+    if seconds is None:
+        return "n/a"
+    sign = "+" if seconds >= 0 else "-"
+    return f"{sign}{_format_duration(abs(seconds))}"
+
+
 def _percentile(values, p):
     if not values:
         return None
@@ -1707,6 +1714,28 @@ def init_eta_tracker(algo_order, window=DEFAULT_WINDOW_SIZE):
             "samples": deque(maxlen=window),
         }
     return tracker
+
+
+def _eta_window_from_tracker(tracker):
+    if not tracker:
+        return max(1, DEFAULT_WINDOW_SIZE // 2)
+    for entry in tracker.values():
+        a = entry.get("alpha")
+        if a and a > 0:
+            w = int(round((2.0 / a) - 1.0))
+            return max(1, w)
+    return max(1, DEFAULT_WINDOW_SIZE // 2)
+
+
+def _blend_eta(eta_ewma, eta_wall, run_done, w_eta):
+    """Blend ETA with fixed weights (former steady-state): 0.7*EWMA + 0.3*wall."""
+    phase = "steady-state"
+    w_ewma, w_wall = 0.70, 0.30
+    if eta_ewma is None:
+        return eta_wall, phase, w_ewma, w_wall
+    if eta_wall is None:
+        return eta_ewma, phase, w_ewma, w_wall
+    return (w_ewma * eta_ewma) + (w_wall * eta_wall), phase, w_ewma, w_wall
 
 
 def update_eta_tracker(tracker, algo, elapsed_time):
@@ -1790,10 +1819,22 @@ def print_progress_line(
     total_all = sum(ALGO_TOTALS.get(algo, counts.get(algo, 0)) for algo in algo_order)
     total_pct = 100.0 * total_done / total_all if total_all > 0 else 0
 
-    # ETA via EWMA per algo + p50/p90 bounds (fallback to global rate if needed).
-    eta, eta_p50, eta_p90 = eta_snapshot(
+    # ETA via EWMA per algo + wallclock warmup/blend.
+    eta_ewma, eta_p50_ewma, eta_p90_ewma = eta_snapshot(
         eta_tracker, counts, algo_order, fallback_rate=rate, workers=workers
     )
+    run_done_i = max(0, int(run_done)) if run_done is not None else 0
+    run_total_i = max(1, int(run_total)) if run_total is not None and int(run_total) > 0 else 0
+    w_eta = _eta_window_from_tracker(eta_tracker)
+
+    wall_rate = (run_done_i / elapsed_time) if (elapsed_time and elapsed_time > 0 and run_done_i > 0) else None
+    global_remaining = max(0, total_all - total_done)
+    eta_wall = (global_remaining / wall_rate) if wall_rate else None
+    eta, eta_phase, w_ewma, w_wall = _blend_eta(eta_ewma, eta_wall, run_done_i, w_eta)
+
+    eta_p50, _, _, _ = _blend_eta(eta_p50_ewma, eta_wall, run_done_i, w_eta)
+    eta_p90, _, _, _ = _blend_eta(eta_p90_ewma, eta_wall, run_done_i, w_eta)
+
     if eta is None:
         remaining = total_all - total_done
         eta = remaining / rate if rate > 0 else 0
@@ -1822,13 +1863,17 @@ def print_progress_line(
     algo_status = " | ".join(parts)
 
     run_status = ""
+    run_eta = None
+    run_eta_ewma = None
+    run_eta_wall = None
+    run_phase = None
+    run_w_ewma = None
+    run_w_wall = None
     if run_done is not None and run_total is not None and run_total > 0:
-        run_done_i = max(0, int(run_done))
-        run_total_i = max(1, int(run_total))
         run_pct = 100.0 * run_done_i / run_total_i
         run_filled = max(0, min(bar_width, int((run_pct / 100.0) * bar_width)))
         run_bar = "█" * run_filled + "░" * (bar_width - run_filled)
-        run_eta, _, _ = eta_snapshot(
+        run_eta_ewma, _, _ = eta_snapshot(
             eta_tracker,
             run_counts or {},
             algo_order,
@@ -1836,9 +1881,12 @@ def print_progress_line(
             workers=workers,
             totals=run_totals,
         )
+        run_remaining = max(0, run_total_i - run_done_i)
+        run_eta_wall = (run_remaining / wall_rate) if wall_rate else None
+        run_eta, run_phase, run_w_ewma, run_w_wall = _blend_eta(run_eta_ewma, run_eta_wall, run_done_i, w_eta)
         if run_eta is None:
-            run_remaining = max(0, run_total_i - run_done_i)
             run_eta = (run_remaining / rate) if rate > 0 else 0
+
         run_status = (
             f" | run [{run_bar}] {run_pct:5.1f}% "
             f"{run_done_i}/{run_total_i} ETA:{_format_duration(run_eta)}"
@@ -1849,6 +1897,20 @@ def print_progress_line(
     if cols > 8 and len(line) >= cols:
         line = line[: cols - 4] + "..."
     print(f"\r\x1b[2K{line}", end="", flush=True)
+    return {
+        "global_eta": eta,
+        "global_eta_ewma": eta_ewma,
+        "global_eta_wall": eta_wall,
+        "global_phase": eta_phase,
+        "global_w_ewma": w_ewma,
+        "global_w_wall": w_wall,
+        "run_eta": run_eta if run_status else None,
+        "run_eta_ewma": run_eta_ewma if run_status else None,
+        "run_eta_wall": run_eta_wall if run_status else None,
+        "run_phase": run_phase if run_status else None,
+        "run_w_ewma": run_w_ewma if run_status else None,
+        "run_w_wall": run_w_wall if run_status else None,
+    }
 
 
 def clear_progress_lines():
@@ -1907,7 +1969,8 @@ def save_results(results, csv_path, json_path, start_time, total_tests, interrup
                       "gamma", "lr", "goal_penalty", "epsilon", "epsilon_decay", "epsilon_min",
                       "approx", "hidden_size", "l2", "normalize_features",
                       "total_sailed", "nb_tacks", "steps", "distance_to_mark",
-                      "elapsed_time", "finished", "success"]
+                      "elapsed_time", "worker_elapsed_time", "orchestrator_overhead_time", "effective_elapsed_time",
+                      "finished", "success"]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(results)
@@ -2022,10 +2085,12 @@ def execute_batch(
     all_results=None,
     all_completed_keys=None,
     save_results_ref=None,
+    eta_history=None,
+    run_start_time=None,
 ):
     """Execute one batch of ordered test cases."""
     if not test_cases:
-        return
+        return {"initial_run_eta_s": None, "batch_elapsed_s": 0.0}
     if all_results is None:
         all_results = results
     if all_completed_keys is None:
@@ -2062,11 +2127,31 @@ def execute_batch(
     results_lock = Lock()
     last_save_count = 0
     coverage_tracker = None
-    eta_tracker = init_eta_tracker(algo_order, window=args.window_size)
+    eta_tracker = init_eta_tracker(algo_order, window=max(1, args.window_size // 2))
     run_done_by_algo = {algo: 0 for algo in algo_order}
+    last_eta_display_value = None
 
     for r in results:
-        update_eta_tracker(eta_tracker, r.get("algorithm"), r.get("elapsed_time"))
+        update_eta_tracker(
+            eta_tracker,
+            r.get("algorithm"),
+            r.get("effective_elapsed_time", r.get("elapsed_time")),
+        )
+    initial_run_eta_s, _, _ = eta_snapshot(
+        eta_tracker,
+        {algo: 0 for algo in algo_order},
+        algo_order,
+        fallback_rate=0.0,
+        workers=args.workers,
+        totals=run_totals_by_algo,
+    )
+    if eta_history is not None and initial_run_eta_s is not None:
+        if run_start_time is not None:
+            initial_elapsed = max(0.0, time.time() - run_start_time)
+        else:
+            initial_elapsed = 0.0
+        eta_history.append((initial_elapsed, initial_run_eta_s, initial_run_eta_s, None, "steady-state", 0.7, 0.3))
+        last_eta_display_value = _format_duration(initial_run_eta_s)
     if args.order in {"quota-window-coverage", "global-coverage"}:
         coverage_tracker = init_coverage_tracker(algo_order)
         for r in results:
@@ -2087,6 +2172,7 @@ def execute_batch(
                     print(f"Error in test: {e}")
                     continue
 
+                orchestrator_start = time.time()
                 completed_this_run += 1
                 run_done_by_algo[algo_name] = run_done_by_algo.get(algo_name, 0) + 1
                 elapsed = time.time() - start_time
@@ -2117,6 +2203,9 @@ def execute_batch(
                     "steps": result.get("steps") if result else None,
                     "distance_to_mark": result.get("distance_to_mark") if result else None,
                     "elapsed_time": result.get("elapsed_time") if result else None,
+                    "worker_elapsed_time": result.get("elapsed_time") if result else None,
+                    "orchestrator_overhead_time": None,
+                    "effective_elapsed_time": result.get("elapsed_time") if result else None,
                     "finished": result.get("finished", False) if result else False,
                     "success": result.get("success", False) if result else False,
                 }
@@ -2128,7 +2217,20 @@ def execute_batch(
                         all_results.append(row)
                     if all_completed_keys is not completed_keys:
                         all_completed_keys.add(make_test_key(algo_name, params))
-                    update_eta_tracker(eta_tracker, row["algorithm"], row.get("elapsed_time"))
+                    orchestrator_overhead = max(0.0, time.time() - orchestrator_start)
+                    try:
+                        worker_elapsed = float(row.get("worker_elapsed_time"))
+                    except (TypeError, ValueError):
+                        worker_elapsed = None
+                    if worker_elapsed is None:
+                        effective_elapsed = orchestrator_overhead
+                    else:
+                        effective_elapsed = worker_elapsed + orchestrator_overhead
+                    row["orchestrator_overhead_time"] = orchestrator_overhead
+                    row["effective_elapsed_time"] = effective_elapsed
+                    row["elapsed_time"] = effective_elapsed
+
+                    update_eta_tracker(eta_tracker, row["algorithm"], row.get("effective_elapsed_time"))
                     if coverage_tracker is not None:
                         update_coverage_tracker(coverage_tracker, row["algorithm"], row)
                     if completed_this_run - last_save_count >= args.save_interval:
@@ -2136,7 +2238,7 @@ def execute_batch(
                         last_save_count = completed_this_run
 
                     gains = coverage_gain_snapshot(coverage_tracker, algo_order)
-                    print_progress_line(
+                    eta_info = print_progress_line(
                         results,
                         elapsed,
                         rate,
@@ -2149,6 +2251,39 @@ def execute_batch(
                         run_counts=run_done_by_algo,
                         run_totals=run_totals_by_algo,
                     )
+                    current_eta = None
+                    if isinstance(eta_info, dict):
+                        current_eta = eta_info.get("run_eta")
+                        if current_eta is None:
+                            current_eta = eta_info.get("global_eta")
+                    else:
+                        current_eta = eta_info
+                    if eta_history is not None and current_eta is not None:
+                        eta_display_value = _format_duration(current_eta)
+                        if eta_display_value != last_eta_display_value:
+                            if run_start_time is not None:
+                                eta_elapsed = max(0.0, time.time() - run_start_time)
+                            else:
+                                eta_elapsed = elapsed
+                            eta_ewma = None
+                            eta_wall = None
+                            eta_phase = None
+                            eta_w_ewma = None
+                            eta_w_wall = None
+                            if isinstance(eta_info, dict):
+                                eta_ewma = eta_info.get("run_eta_ewma")
+                                eta_wall = eta_info.get("run_eta_wall")
+                                eta_phase = eta_info.get("run_phase")
+                                eta_w_ewma = eta_info.get("run_w_ewma")
+                                eta_w_wall = eta_info.get("run_w_wall")
+                                if eta_ewma is None and eta_wall is None:
+                                    eta_ewma = eta_info.get("global_eta_ewma")
+                                    eta_wall = eta_info.get("global_eta_wall")
+                                    eta_phase = eta_info.get("global_phase")
+                                    eta_w_ewma = eta_info.get("global_w_ewma")
+                                    eta_w_wall = eta_info.get("global_w_wall")
+                            eta_history.append((eta_elapsed, current_eta, eta_ewma, eta_wall, eta_phase, eta_w_ewma, eta_w_wall))
+                            last_eta_display_value = eta_display_value
 
         if interrupted_state["value"]:
             print()
@@ -2161,6 +2296,10 @@ def execute_batch(
     else:
         clear_progress_lines()
         print()
+    return {
+        "initial_run_eta_s": initial_run_eta_s,
+        "batch_elapsed_s": time.time() - start_time,
+    }
 
 
 def main():
@@ -2187,7 +2326,7 @@ def main():
     parser.add_argument("--save-interval", type=int, default=10, help="Save results every N completed tests")
     parser.add_argument("--verbose", type=int, default=0, help="Verbosity level (0=summary, 1=details)")
     parser.add_argument("--window-size", type=int, default=DEFAULT_WINDOW_SIZE,
-                        help="Window size for quota-window-coverage and ETA EWMA alpha=2/(W+1)")
+                        help="Window size for quota-window-coverage; ETA uses W_eta=W/2 with EWMA alpha=2/(W_eta+1)")
     parser.add_argument("--search-mode", default="grid", choices=["grid", "space-search", "coarse-to-fine", "topk-search"],
                         help="Case generation mode: 'grid' runs all remaining cases; "
                              "'space-search' keeps a deterministic coarse/refine1/refine2 subset (one-shot); "
@@ -2341,6 +2480,8 @@ def main():
     interrupted_state = {"value": False}
     print_progress_line._suspend = False
     benchmark_start = time.time()
+    first_initial_eta_s = None
+    eta_history = []
 
     def handle_interrupt(signum, frame):
         interrupted_state["value"] = True
@@ -2382,7 +2523,7 @@ def main():
             if len(all_test_cases) == 0:
                 print("All tests already completed!")
                 return
-            execute_batch(
+            batch_stats = execute_batch(
                 all_test_cases,
                 args,
                 results,
@@ -2395,7 +2536,11 @@ def main():
                 all_results=results_all,
                 all_completed_keys=completed_keys_all,
                 save_results_ref=results_all,
+                eta_history=eta_history,
+                run_start_time=benchmark_start,
             )
+            if first_initial_eta_s is None and batch_stats:
+                first_initial_eta_s = batch_stats.get("initial_run_eta_s")
 
         elif args.search_mode == "coarse-to-fine":
             remaining_cases = list(all_test_cases)
@@ -2427,7 +2572,7 @@ def main():
                     continue
 
                 phase_cases = order_cases_by_mode(phase_cases, args)
-                execute_batch(
+                batch_stats = execute_batch(
                     phase_cases,
                     args,
                     results,
@@ -2440,7 +2585,11 @@ def main():
                     all_results=results_all,
                     all_completed_keys=completed_keys_all,
                     save_results_ref=results_all,
+                    eta_history=eta_history,
+                    run_start_time=benchmark_start,
                 )
+                if first_initial_eta_s is None and batch_stats:
+                    first_initial_eta_s = batch_stats.get("initial_run_eta_s")
                 # Recompute remaining from completed keys (keeps only not-yet-run cases).
                 remaining_cases = [
                     tc for tc in remaining_cases
@@ -2482,7 +2631,7 @@ def main():
             if len(all_test_cases) == 0:
                 print("All tests already completed!")
                 return
-            execute_batch(
+            batch_stats = execute_batch(
                 all_test_cases,
                 args,
                 results,
@@ -2495,13 +2644,17 @@ def main():
                 all_results=results_all,
                 all_completed_keys=completed_keys_all,
                 save_results_ref=results_all,
+                eta_history=eta_history,
+                run_start_time=benchmark_start,
             )
+            if first_initial_eta_s is None and batch_stats:
+                first_initial_eta_s = batch_stats.get("initial_run_eta_s")
         else:
             all_test_cases = order_cases_by_mode(all_test_cases, args)
             if len(all_test_cases) == 0:
                 print("All tests already completed!")
                 return
-            execute_batch(
+            batch_stats = execute_batch(
                 all_test_cases,
                 args,
                 results,
@@ -2514,7 +2667,11 @@ def main():
                 all_results=results_all,
                 all_completed_keys=completed_keys_all,
                 save_results_ref=results_all,
+                eta_history=eta_history,
+                run_start_time=benchmark_start,
             )
+            if first_initial_eta_s is None and batch_stats:
+                first_initial_eta_s = batch_stats.get("initial_run_eta_s")
     except ValueError as e:
         print(str(e))
         return
@@ -2546,7 +2703,111 @@ def main():
         print(f"Run with --resume to continue")
     else:
         print(f"Benchmark complete!")
+        print()
+        total_elapsed = time.time() - benchmark_start
+        pred_stats = None
+        if eta_history:
+            pred_totals = []
+            history_lines = []
+            for i, (elapsed_s, eta_s, eta_ewma_s, eta_wall_s, eta_phase, eta_w_ewma, eta_w_wall) in enumerate(eta_history, start=1):
+                eta_sum = (elapsed_s if elapsed_s is not None else 0.0) + (eta_s if eta_s is not None else 0.0)
+                pred_totals.append(eta_sum)
+                if eta_ewma_s is not None and eta_wall_s is not None:
+                    eta_expr = (
+                        f"{_format_duration(eta_s)}"
+                        f"({eta_w_ewma:.1f}*{_format_duration(eta_ewma_s)}+{eta_w_wall:.1f}*{_format_duration(eta_wall_s)})"
+                    )
+                elif eta_ewma_s is not None:
+                    we = eta_w_ewma if eta_w_ewma is not None else 1.0
+                    ww = eta_w_wall if eta_w_wall is not None else 0.0
+                    eta_expr = f"{_format_duration(eta_s)}({we:.1f}*{_format_duration(eta_ewma_s)}+{ww:.1f}*n/a)"
+                else:
+                    eta_expr = _format_duration(eta_s)
+                history_lines.append(
+                    f"  {i:>4d}. {_format_duration(elapsed_s)} + {eta_expr} = {_format_duration(eta_sum)}"
+                )
+            if pred_totals and total_elapsed > 0:
+                errors = [p - total_elapsed for p in pred_totals]
+                abs_errors = [abs(e) for e in errors]
+                rel_abs = [ae / total_elapsed for ae in abs_errors]
+                within10 = sum(1 for r in rel_abs if r <= 0.10)
+                pred_stats = {
+                    "bias_s": sum(errors) / len(errors),
+                    "mae_s": sum(abs_errors) / len(abs_errors),
+                    "mape": (sum(rel_abs) / len(rel_abs)) * 100.0,
+                    "hit10": (100.0 * within10 / len(rel_abs)),
+                }
+            if args.verbose > 0:
+                print("ETA history (elapsed + ETA (w_ewma*EWMA+w_wall*ETA_Wall)):")
+                n = len(history_lines)
+                if n <= 30:
+                    for line in history_lines:
+                        print(line)
+                else:
+                    first_n = 10
+                    middle_n = 10
+                    last_n = 10
 
+                    # Pick middle block from first sustained stabilization zone.
+                    mid_start_1based = None
+                    if pred_stats is not None and pred_totals:
+                        target = total_elapsed + pred_stats["bias_s"]
+                        tol = max(1.0, pred_stats["mae_s"])
+                        k = min(20, n)
+                        need = max(1, int(0.80 * k))
+                        consec = 0
+                        for s in range(0, n - k + 1):
+                            window = pred_totals[s:s + k]
+                            inside = sum(1 for v in window if abs(v - target) <= tol)
+                            if inside >= need:
+                                consec += 1
+                                if consec >= 3:
+                                    mid_start_1based = s + 1
+                                    break
+                            else:
+                                consec = 0
+
+                    if mid_start_1based is None:
+                        mid_start = max(first_n, (n - middle_n) // 2)
+                    else:
+                        mid_start = max(first_n, min(n - last_n - middle_n, mid_start_1based - 1))
+
+                    mid_end = min(n, mid_start + middle_n)
+                    if mid_end > n - last_n:
+                        mid_end = n - last_n
+                        mid_start = mid_end - middle_n
+                    sections = [
+                        (1, first_n),
+                        (mid_start + 1, mid_end),
+                        (n - last_n + 1, n),
+                    ]
+                    seen = set()
+                    for idx, (a, b) in enumerate(sections):
+                        if a > b:
+                            continue
+                        key = (a, b)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        print(f"  [{a}-{b}]")
+                        for j in range(a - 1, b):
+                            print(history_lines[j])
+                        if idx < len(sections) - 1:
+                            print("  ...")
+        else:
+            print(f"Initial ETA estimate: {_format_duration(first_initial_eta_s)}")
+        if pred_stats is not None:
+            print(
+                f"Real elapsed time: {_format_duration(total_elapsed)}"
+                f" | bias:{_format_signed_duration(pred_stats['bias_s'])}"
+                f" mae:{_format_duration(pred_stats['mae_s'])}"
+                f" mape:{pred_stats['mape']:.1f}%"
+                f" hit10%:{pred_stats['hit10']:.0f}%"
+            )
+        else:
+            print(f"Real elapsed time: {_format_duration(total_elapsed)}")
+
+    print()
     print(f"Results saved to:")
     print(f"  - {csv_path}")
     print(f"  - {json_path}")
