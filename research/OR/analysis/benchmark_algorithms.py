@@ -2323,7 +2323,7 @@ def main():
                              "'global-coverage' (global greedy coverage ordering), "
                              "'shuffle' (random across algos/params), or comma-separated algo list "
                              "(sequential params per algo)")
-    parser.add_argument("--save-interval", type=int, default=10, help="Save results every N completed tests")
+    parser.add_argument("--save-interval", type=int, default=100, help="Save results every N completed tests")
     parser.add_argument("--verbose", type=int, default=0, help="Verbosity level (0=summary, 1=details)")
     parser.add_argument("--window-size", type=int, default=DEFAULT_WINDOW_SIZE,
                         help="Window size for quota-window-coverage; ETA uses W_eta=W/2 with EWMA alpha=2/(W_eta+1)")
@@ -2697,104 +2697,141 @@ def main():
         summary_algo_order = list(DEFAULT_ALGO_ORDER)
     print_progress_summary(results, summary_algo_order, "RÉSUMÉ FINAL")
 
+    def _build_eta_history_lines(history):
+        pred_totals_local = []
+        lines_local = []
+        for i, (elapsed_s, eta_s, eta_ewma_s, eta_wall_s, _eta_phase, eta_w_ewma, eta_w_wall) in enumerate(history, start=1):
+            eta_sum = (elapsed_s if elapsed_s is not None else 0.0) + (eta_s if eta_s is not None else 0.0)
+            pred_totals_local.append(eta_sum)
+            if eta_ewma_s is not None and eta_wall_s is not None:
+                eta_expr = (
+                    f"{_format_duration(eta_s)}"
+                    f"({eta_w_ewma:.1f}*{_format_duration(eta_ewma_s)}+{eta_w_wall:.1f}*{_format_duration(eta_wall_s)})"
+                )
+            elif eta_ewma_s is not None:
+                we = eta_w_ewma if eta_w_ewma is not None else 1.0
+                ww = eta_w_wall if eta_w_wall is not None else 0.0
+                eta_expr = f"{_format_duration(eta_s)}({we:.1f}*{_format_duration(eta_ewma_s)}+{ww:.1f}*n/a)"
+            else:
+                eta_expr = _format_duration(eta_s)
+            lines_local.append(
+                f"  {i:>4d}. {_format_duration(elapsed_s)} + {eta_expr} = {_format_duration(eta_sum)}"
+            )
+        return pred_totals_local, lines_local
+
+    def _compute_stats(pred_totals_local, target):
+        if not pred_totals_local or target is None or target <= 0:
+            return None
+        errors = [p - target for p in pred_totals_local]
+        abs_errors = [abs(e) for e in errors]
+        rel_abs = [ae / target for ae in abs_errors]
+        within10 = sum(1 for r in rel_abs if r <= 0.10)
+        return {
+            "bias_s": sum(errors) / len(errors),
+            "mae_s": sum(abs_errors) / len(abs_errors),
+            "mape": (sum(rel_abs) / len(rel_abs)) * 100.0,
+            "hit10": (100.0 * within10 / len(rel_abs)),
+        }
+
+    def _print_eta_history_compact(lines_local, pred_totals_local, target, stats):
+        print("ETA history (elapsed + ETA (w_ewma*EWMA+w_wall*ETA_Wall)):")
+        n = len(lines_local)
+        if n <= 30:
+            for line in lines_local:
+                print(line)
+            return
+        first_n = 10
+        middle_n = 10
+        last_n = 10
+        mid_start_1based = None
+        if stats is not None and pred_totals_local:
+            target_zone = target + stats["bias_s"]
+            tol = max(1.0, stats["mae_s"])
+            k = min(20, n)
+            need = max(1, int(0.80 * k))
+            consec = 0
+            for s in range(0, n - k + 1):
+                window = pred_totals_local[s:s + k]
+                inside = sum(1 for v in window if abs(v - target_zone) <= tol)
+                if inside >= need:
+                    consec += 1
+                    if consec >= 3:
+                        mid_start_1based = s + 1
+                        break
+                else:
+                    consec = 0
+        if mid_start_1based is None:
+            mid_start = max(first_n, (n - middle_n) // 2)
+        else:
+            mid_start = max(first_n, min(n - last_n - middle_n, mid_start_1based - 1))
+        mid_end = min(n, mid_start + middle_n)
+        if mid_end > n - last_n:
+            mid_end = n - last_n
+            mid_start = mid_end - middle_n
+        sections = [
+            (1, first_n),
+            (mid_start + 1, mid_end),
+            (n - last_n + 1, n),
+        ]
+        seen = set()
+        for idx, (a, b) in enumerate(sections):
+            if a > b:
+                continue
+            key = (a, b)
+            if key in seen:
+                continue
+            seen.add(key)
+            print(f"  [{a}-{b}]")
+            for j in range(a - 1, b):
+                print(lines_local[j])
+            if idx < len(sections) - 1:
+                print("  ...")
+
+    total_elapsed = time.time() - benchmark_start
+    pred_totals = []
+    history_lines = []
+    if eta_history:
+        pred_totals, history_lines = _build_eta_history_lines(eta_history)
+
     if interrupted_state["value"]:
         print(f"Benchmark interrupted!")
         print(f"Progress saved: {len(results)}/{total_tests_original} tests completed")
         print(f"Run with --resume to continue")
+        last20_totals = pred_totals[-20:] if pred_totals else []
+        estimated_elapsed = _percentile(last20_totals, 0.5) if last20_totals else None
+        if args.verbose > 0 and history_lines:
+            partial_stats_for_view = _compute_stats(last20_totals, estimated_elapsed)
+            _print_eta_history_compact(history_lines, pred_totals, estimated_elapsed, partial_stats_for_view)
+        estimated_stats = _compute_stats(pred_totals, estimated_elapsed)
+        if estimated_stats is not None:
+            print(
+                f"Estimated elapsed time: {_format_duration(estimated_elapsed)}"
+                f" | bias:{_format_signed_duration(estimated_stats['bias_s'])}"
+                f" mae:{_format_duration(estimated_stats['mae_s'])}"
+                f" mape:{estimated_stats['mape']:.1f}%"
+                f" hit10%:{estimated_stats['hit10']:.0f}%"
+            )
+        else:
+            print(f"Estimated elapsed time: {_format_duration(estimated_elapsed)}")
+
+        partial_stats = _compute_stats(last20_totals, estimated_elapsed)
+        if partial_stats is not None and last20_totals:
+            print(
+                "Partial ETA diagnostics (interrupted, target=median last 20 predicted totals): "
+                f"bias:{_format_signed_duration(partial_stats['bias_s'])} "
+                f"mae:{_format_duration(partial_stats['mae_s'])} "
+                f"mape:{partial_stats['mape']:.1f}% "
+                f"hit10%:{partial_stats['hit10']:.0f}%"
+            )
+        else:
+            print("Partial ETA diagnostics (interrupted, target=median last 20 predicted totals): n/a")
     else:
         print(f"Benchmark complete!")
         print()
-        total_elapsed = time.time() - benchmark_start
-        pred_stats = None
-        if eta_history:
-            pred_totals = []
-            history_lines = []
-            for i, (elapsed_s, eta_s, eta_ewma_s, eta_wall_s, eta_phase, eta_w_ewma, eta_w_wall) in enumerate(eta_history, start=1):
-                eta_sum = (elapsed_s if elapsed_s is not None else 0.0) + (eta_s if eta_s is not None else 0.0)
-                pred_totals.append(eta_sum)
-                if eta_ewma_s is not None and eta_wall_s is not None:
-                    eta_expr = (
-                        f"{_format_duration(eta_s)}"
-                        f"({eta_w_ewma:.1f}*{_format_duration(eta_ewma_s)}+{eta_w_wall:.1f}*{_format_duration(eta_wall_s)})"
-                    )
-                elif eta_ewma_s is not None:
-                    we = eta_w_ewma if eta_w_ewma is not None else 1.0
-                    ww = eta_w_wall if eta_w_wall is not None else 0.0
-                    eta_expr = f"{_format_duration(eta_s)}({we:.1f}*{_format_duration(eta_ewma_s)}+{ww:.1f}*n/a)"
-                else:
-                    eta_expr = _format_duration(eta_s)
-                history_lines.append(
-                    f"  {i:>4d}. {_format_duration(elapsed_s)} + {eta_expr} = {_format_duration(eta_sum)}"
-                )
-            if pred_totals and total_elapsed > 0:
-                errors = [p - total_elapsed for p in pred_totals]
-                abs_errors = [abs(e) for e in errors]
-                rel_abs = [ae / total_elapsed for ae in abs_errors]
-                within10 = sum(1 for r in rel_abs if r <= 0.10)
-                pred_stats = {
-                    "bias_s": sum(errors) / len(errors),
-                    "mae_s": sum(abs_errors) / len(abs_errors),
-                    "mape": (sum(rel_abs) / len(rel_abs)) * 100.0,
-                    "hit10": (100.0 * within10 / len(rel_abs)),
-                }
-            if args.verbose > 0:
-                print("ETA history (elapsed + ETA (w_ewma*EWMA+w_wall*ETA_Wall)):")
-                n = len(history_lines)
-                if n <= 30:
-                    for line in history_lines:
-                        print(line)
-                else:
-                    first_n = 10
-                    middle_n = 10
-                    last_n = 10
-
-                    # Pick middle block from first sustained stabilization zone.
-                    mid_start_1based = None
-                    if pred_stats is not None and pred_totals:
-                        target = total_elapsed + pred_stats["bias_s"]
-                        tol = max(1.0, pred_stats["mae_s"])
-                        k = min(20, n)
-                        need = max(1, int(0.80 * k))
-                        consec = 0
-                        for s in range(0, n - k + 1):
-                            window = pred_totals[s:s + k]
-                            inside = sum(1 for v in window if abs(v - target) <= tol)
-                            if inside >= need:
-                                consec += 1
-                                if consec >= 3:
-                                    mid_start_1based = s + 1
-                                    break
-                            else:
-                                consec = 0
-
-                    if mid_start_1based is None:
-                        mid_start = max(first_n, (n - middle_n) // 2)
-                    else:
-                        mid_start = max(first_n, min(n - last_n - middle_n, mid_start_1based - 1))
-
-                    mid_end = min(n, mid_start + middle_n)
-                    if mid_end > n - last_n:
-                        mid_end = n - last_n
-                        mid_start = mid_end - middle_n
-                    sections = [
-                        (1, first_n),
-                        (mid_start + 1, mid_end),
-                        (n - last_n + 1, n),
-                    ]
-                    seen = set()
-                    for idx, (a, b) in enumerate(sections):
-                        if a > b:
-                            continue
-                        key = (a, b)
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        print(f"  [{a}-{b}]")
-                        for j in range(a - 1, b):
-                            print(history_lines[j])
-                        if idx < len(sections) - 1:
-                            print("  ...")
-        else:
+        pred_stats = _compute_stats(pred_totals, total_elapsed)
+        if args.verbose > 0 and history_lines:
+            _print_eta_history_compact(history_lines, pred_totals, total_elapsed, pred_stats)
+        elif not eta_history:
             print(f"Initial ETA estimate: {_format_duration(first_initial_eta_s)}")
         if pred_stats is not None:
             print(
