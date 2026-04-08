@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Extract trajectories from log files (MPC and Beam).
+Extract trajectories from log files.
 Automatically identifies and extracts the most recent trajectory sequence per method.
 """
 
@@ -92,24 +92,25 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description="Extract latest trajectories from logs")
-    parser.add_argument("--method", default="all", help="Method to extract: mpc, beam, or all")
+    ALL_METHODS = ["mpc", "beam", "adp", "spst", "sa"]
+    parser.add_argument("--method", default="all",
+                        help=f"Method to extract: {', '.join(ALL_METHODS)}, or all (default: all)")
     args = parser.parse_args()
 
     # Determine paths relative to script location
     script_dir = os.path.dirname(os.path.abspath(__file__))
     base_dir = os.path.abspath(os.path.join(script_dir, '..', '..', '..'))
-    
+
     server_log = os.path.join(base_dir, 'logs', 'server.log')
     frontend_log = os.path.join(base_dir, 'logs', 'frontend.log')
-    
-    methods = []
+
     if args.method == "all":
-        methods = ["mpc", "beam"]
+        methods = ALL_METHODS
     else:
         methods = [args.method]
-    
+
     print("=" * 80)
-    print("MPC TRAJECTORY EXTRACTION")
+    print("TRAJECTORY EXTRACTION")
     print("=" * 80)
     
     planned_infos = []

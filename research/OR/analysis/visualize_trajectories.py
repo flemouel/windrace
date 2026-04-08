@@ -201,21 +201,28 @@ def create_visualization(planned, sailed, method_label):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Visualize planned vs sailed trajectories")
-    parser.add_argument("--method", default="mpc", help="Method to visualize: mpc, beam, or all")
+    ALL_METHODS = ["mpc", "beam", "adp", "spst", "sa"]
+    parser.add_argument("--method", default="all",
+                        help=f"Method to visualize: {', '.join(ALL_METHODS)}, or all (default: all)")
     parser.add_argument("--display", action="store_true", help="Display figures after saving")
     args = parser.parse_args()
 
     method = args.method.lower()
-    if method not in {"mpc", "beam", "all"}:
-        raise SystemExit("Invalid --method. Use mpc, beam, or all.")
 
     print("Loading trajectories...")
-    methods = ["mpc", "beam"] if method == "all" else [method]
+    methods = ALL_METHODS if method == "all" else [method]
 
     for method_name in methods:
         method_label = method_name.upper()
-        planned = parse_trajectory(f'{method_name}_planned.txt', method_name)
-        sailed = parse_trajectory(f'{method_name}_sailed.txt', method_name)
+        try:
+            planned = parse_trajectory(f'{method_name}_planned.txt', method_name)
+            sailed = parse_trajectory(f'{method_name}_sailed.txt', method_name)
+        except FileNotFoundError:
+            print(f"Skipping {method_label}: trajectory files not found")
+            continue
+        if not planned or not sailed:
+            print(f"Skipping {method_label}: no trajectory data found")
+            continue
 
         print(f"{method_label} planned: {len(planned)} points")
         print(f"{method_label} sailed: {len(sailed)} points")

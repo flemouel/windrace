@@ -11,6 +11,7 @@ Algorithms tested:
 - mpc_simplemove.py
 - adp_realmove.py
 - spst_realmove.py
+- sa_realmove.py
 
 Features:
 - Incremental save: results saved after each test
@@ -53,7 +54,8 @@ FIXED_PARAMS = {
 
 # Parameter ranges for grid search
 PARAM_RANGES = {
-    "horizon": [10, 20, 30, 50, 75, 100, 125, 150, 175, 200, 250, 300, 350, 400, 600, 800, 1000, 1200, 1500, 2000],
+#    "horizon": [10, 20, 30, 50, 75, 100, 125, 150, 175, 200, 250, 300, 350, 400, 600, 800, 1000, 1200, 1500, 2000],
+    "horizon": [10, 20, 30, 50, 75, 100, 125, 150, 175, 200, 250, 300, 350, 400, 600, 800],
     "alpha": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5],
     "beam_width": [5, 10, 20, 30, 50, 75, 100, 150, 175, 200, 225, 250, 275, 300, 325, 350, 375, 400, 500, 600, 800, 1000],
     "scenarios": [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
@@ -69,6 +71,10 @@ PARAM_RANGES = {
     "hidden_size": [8, 16],
     "l2": [0.0, 1e-5],
     "normalize_features": [False, True],
+    "initial_temp": [10, 25, 50, 75, 100, 150, 200, 300, 500],
+    "cooling_rate": [0.98, 0.99, 0.993, 0.995, 0.997, 0.999, 0.9995],
+    "min_temp": [0.01, 0.05, 0.1, 0.5, 1.0],
+    "reheat_factor": [1.0, 1.5, 2.0],
 }
 BASE_PARAM_RANGES = {k: list(v) for k, v in PARAM_RANGES.items()}
 
@@ -89,6 +95,8 @@ def compute_algo_totals(param_ranges=None):
         * _range_len("approx", src) * _range_len("hidden_size", src) * _range_len("l2", src) * _range_len("normalize_features", src),
         "spst_realmove": _range_len("horizon", src) * _range_len("alpha", src) * _range_len("scenarios", src)
         * _range_len("dir_noise", src) * _range_len("speed_noise", src),
+        "sa_realmove": _range_len("horizon", src) * _range_len("alpha", src) * _range_len("initial_temp", src)
+        * _range_len("cooling_rate", src) * _range_len("min_temp", src) * _range_len("reheat_factor", src),
     }
 
 
@@ -222,6 +230,7 @@ def run_algorithm(algo_name, params, timeout=300):
         "mpc_simplemove": "mpc_simplemove.py",
         "adp_realmove": "adp_realmove.py",
         "spst_realmove": "spst_realmove.py",
+        "sa_realmove": "sa_realmove.py",
     }
 
     script_path = os.path.join(BASE_DIR, script_map[algo_name])
@@ -282,6 +291,17 @@ def run_algorithm(algo_name, params, timeout=300):
             "--scenarios", str(params["scenarios"]),
             "--dir-noise", str(params["dir_noise"]),
             "--speed-noise", str(params["speed_noise"]),
+            "--seed", str(FIXED_PARAMS["seed"]),
+        ])
+    elif algo_name == "sa_realmove":
+        cmd.extend([
+            "--near-threshold", str(FIXED_PARAMS["near_threshold"]),
+            "--near-delay", str(FIXED_PARAMS["near_delay"]),
+            "--far-delay", str(FIXED_PARAMS["far_delay"]),
+            "--initial-temp", str(params["initial_temp"]),
+            "--cooling-rate", str(params["cooling_rate"]),
+            "--min-temp", str(params["min_temp"]),
+            "--reheat-factor", str(params["reheat_factor"]),
             "--seed", str(FIXED_PARAMS["seed"]),
         ])
     # mpc_simplemove doesn't have near/far delay parameters
@@ -504,10 +524,39 @@ def generate_test_cases(verbose=0):
             last_pct = int(pct)
     counts["spst_realmove"] = test_id - start_count
 
+    # sa_realmove: horizon, alpha + SA-specific parameters
+    start_count = test_id
+    for horizon, alpha, initial_temp, cooling_rate, min_temp, reheat_factor in itertools.product(
+        PARAM_RANGES["horizon"],
+        PARAM_RANGES["alpha"],
+        PARAM_RANGES["initial_temp"],
+        PARAM_RANGES["cooling_rate"],
+        PARAM_RANGES["min_temp"],
+        PARAM_RANGES["reheat_factor"],
+    ):
+        params = {
+            "horizon": horizon,
+            "tackangle": FIXED_PARAMS["tackangle"],
+            "alpha": alpha,
+            "beam_width": None,
+            "initial_temp": initial_temp,
+            "cooling_rate": cooling_rate,
+            "min_temp": min_temp,
+            "reheat_factor": reheat_factor,
+        }
+        test_cases.append(("sa_realmove", params, test_id))
+        test_id += 1
+        pct = 100.0 * test_id / total_expected
+        if int(pct) != last_pct and int(pct) % 10 == 0:
+            bar = format_progress_bar(pct, width=20)
+            print(f"\r  generation [{bar}] {pct:3.0f}%", end="", flush=True)
+            last_pct = int(pct)
+    counts["sa_realmove"] = test_id - start_count
+
     print(f"\r  generation [{format_progress_bar(100.0, width=20)}] 100%   ", end="", flush=True)
     print()
     if verbose > 0:
-        for algo in ["mpc_realmove", "mpc_simplemove", "beam_realmove", "adp_realmove", "spst_realmove"]:
+        for algo in ["mpc_realmove", "mpc_simplemove", "beam_realmove", "adp_realmove", "spst_realmove", "sa_realmove"]:
             if algo in counts:
                 print(f"  {algo}: {counts[algo]}")
         print(f"  generated {len(test_cases)} test cases")
@@ -529,6 +578,9 @@ def algo_param_pairs(algo_name):
     if algo_name == "spst_realmove":
         params = ["horizon", "alpha", "scenarios", "dir_noise", "speed_noise"]
         return [(params[i], params[j]) for i in range(len(params)) for j in range(i + 1, len(params))]
+    if algo_name == "sa_realmove":
+        params = ["horizon", "alpha", "initial_temp", "cooling_rate", "min_temp", "reheat_factor"]
+        return [(params[i], params[j]) for i in range(len(params)) for j in range(i + 1, len(params))]
     return []
 
 def algo_param_list(algo_name):
@@ -543,6 +595,8 @@ def algo_param_list(algo_name):
         ]
     if algo_name == "spst_realmove":
         return ["horizon", "alpha", "scenarios", "dir_noise", "speed_noise"]
+    if algo_name == "sa_realmove":
+        return ["horizon", "alpha", "initial_temp", "cooling_rate", "min_temp", "reheat_factor"]
     return []
 
 
@@ -1403,6 +1457,7 @@ def format_metric_parts(algo, max_gap, min_share, max_run, cov_gain, uniq, param
         "adp_realmove": "adp",
         "beam_realmove": "beam",
         "spst_realmove": "spst",
+        "sa_realmove": "sa",
     }
     label = label_map.get(algo, algo)
     run_val, run_param = param_run
@@ -1574,6 +1629,8 @@ def make_test_key(algo_name, params):
         f"|e{params.get('epsilon', 'None')}|ed{params.get('epsilon_decay', 'None')}|emin{params.get('epsilon_min', 'None')}"
         f"|ap{params.get('approx', 'None')}|hs{params.get('hidden_size', 'None')}|l2{params.get('l2', 'None')}"
         f"|nf{params.get('normalize_features', 'None')}"
+        f"|it{params.get('initial_temp', 'None')}|cr{params.get('cooling_rate', 'None')}"
+        f"|mt{params.get('min_temp', 'None')}|rf{params.get('reheat_factor', 'None')}"
     )
 
 
@@ -1598,6 +1655,10 @@ def make_test_key_from_result_row(row):
             "hidden_size": row.get("hidden_size"),
             "l2": row.get("l2"),
             "normalize_features": row.get("normalize_features"),
+            "initial_temp": row.get("initial_temp"),
+            "cooling_rate": row.get("cooling_rate"),
+            "min_temp": row.get("min_temp"),
+            "reheat_factor": row.get("reheat_factor"),
         },
     )
 
@@ -1638,13 +1699,13 @@ def load_existing_results(json_path):
         return [], set()
 
 
-DEFAULT_ALGO_ORDER = ["adp_realmove", "beam_realmove", "mpc_realmove", "mpc_simplemove", "spst_realmove"]
+DEFAULT_ALGO_ORDER = ["adp_realmove", "beam_realmove", "mpc_realmove", "mpc_simplemove", "spst_realmove", "sa_realmove"]
 DEFAULT_WINDOW_SIZE = 500
 
 
 def count_by_algorithm(results):
     """Count completed tests per algorithm."""
-    counts = {"mpc_realmove": 0, "mpc_simplemove": 0, "adp_realmove": 0, "beam_realmove": 0, "spst_realmove": 0}
+    counts = {"mpc_realmove": 0, "mpc_simplemove": 0, "adp_realmove": 0, "beam_realmove": 0, "spst_realmove": 0, "sa_realmove": 0}
     for r in results:
         algo = r["algorithm"]
         if algo in counts:
@@ -1658,25 +1719,25 @@ def print_progress_summary(results, algo_order, title="ÉTAT D'AVANCEMENT DES TE
     total_done = sum(counts.get(algo, 0) for algo in algo_order)
     total_all = sum(ALGO_TOTALS.get(algo, counts.get(algo, 0)) for algo in algo_order)
 
-    print("\n" + "=" * 65)
+    print("\n" + "=" * 70)
     print(f"{title}")
-    print("=" * 65)
+    print("=" * 70)
 
     for algo in algo_order:
-        done = counts[algo]
+        done = counts.get(algo, 0)
         total = ALGO_TOTALS.get(algo, done)
         pct = 100.0 * done / total if total > 0 else 0
         bar_filled = max(0, min(20, int(pct / 5)))
         bar = "█" * bar_filled + "░" * (20 - bar_filled)
         status = "✓ COMPLET" if done >= total else ""
-        print(f"  {algo:18} [{bar}] {done:5}/{total:5} ({pct:5.1f}%) {status}")
+        print(f"  {algo:18} [{bar}] {done:6}/{total:6} ({pct:5.1f}%) {status}")
 
-    print("-" * 65)
+    print("-" * 70)
     total_pct = 100.0 * total_done / total_all if total_all > 0 else 0
     bar_filled = max(0, min(20, int(total_pct / 5)))
     bar = "█" * bar_filled + "░" * (20 - bar_filled)
-    print(f"  {'TOTAL':18} [{bar}] {total_done:5}/{total_all:5} ({total_pct:5.1f}%)")
-    print("=" * 65 + "\n")
+    print(f"  {'TOTAL':18} [{bar}] {total_done:6}/{total_all:6} ({total_pct:5.1f}%)")
+    print("=" * 70 + "\n")
 
 
 def _format_duration(seconds):
@@ -1728,9 +1789,9 @@ def _eta_window_from_tracker(tracker):
 
 
 def _blend_eta(eta_ewma, eta_wall, run_done, w_eta):
-    """Blend ETA with fixed weights (former steady-state): 0.7*EWMA + 0.3*wall."""
+    """Blend ETA with fixed weights: 0.65*EWMA + 0.35*wall."""
     phase = "steady-state"
-    w_ewma, w_wall = 0.70, 0.30
+    w_ewma, w_wall = 0.65, 0.35
     if eta_ewma is None:
         return eta_wall, phase, w_ewma, w_wall
     if eta_wall is None:
@@ -1854,6 +1915,7 @@ def print_progress_line(
         "adp_realmove": "adp",
         "beam_realmove": "beam",
         "spst_realmove": "spst",
+        "sa_realmove": "sa",
     }
     parts = []
     for algo in algo_order:
@@ -1888,15 +1950,29 @@ def print_progress_line(
             run_eta = (run_remaining / rate) if rate > 0 else 0
 
         run_status = (
-            f" | run [{run_bar}] {run_pct:5.1f}% "
-            f"{run_done_i}/{run_total_i} ETA:{_format_duration(run_eta)}"
+            f"[{run_bar}] {run_pct:5.1f}% | "
+            f"run {run_done_i}/{run_total_i} ETA:{_format_duration(run_eta)}"
         )
 
-    line = f"[{bar}] {total_pct:5.1f}% | {algo_status} | ETA: {eta_str}{run_status}"
+    line1 = f"[{bar}] {total_pct:5.1f}% | {algo_status}"
+    all_status = f"all {total_done}/{total_all}"
+    if run_status:
+        line2 = f"{run_status} | {all_status} ETA: {eta_str}"
+    else:
+        line2 = f"{all_status} ETA: {eta_str}"
     cols = shutil.get_terminal_size(fallback=(120, 24)).columns
-    if cols > 8 and len(line) >= cols:
-        line = line[: cols - 4] + "..."
-    print(f"\r\x1b[2K{line}", end="", flush=True)
+    if cols > 8:
+        if len(line1) >= cols:
+            line1 = line1[: cols - 4] + "..."
+        if len(line2) >= cols:
+            line2 = line2[: cols - 4] + "..."
+    # Cursor is on line2 (no trailing newline). Go up 1 to line1, clear both, rewrite.
+    if getattr(print_progress_line, "_has_printed", False):
+        print(f"\r\x1b[1A\r\x1b[2K", end="", flush=True)
+    else:
+        print(f"\r\x1b[2K", end="", flush=True)
+    print(f"{line1}\r\n\x1b[2K{line2}", end="", flush=True)
+    print_progress_line._has_printed = True
     return {
         "global_eta": eta,
         "global_eta_ewma": eta_ewma,
@@ -1911,11 +1987,6 @@ def print_progress_line(
         "run_w_ewma": run_w_ewma if run_status else None,
         "run_w_wall": run_w_wall if run_status else None,
     }
-
-
-def clear_progress_lines():
-    """Clear active progress display (single line or 2-line space-run mode)."""
-    print("\r\x1b[2K", end="", flush=True)
 
 
 def init_coverage_tracker(algo_order):
@@ -1968,6 +2039,7 @@ def save_results(results, csv_path, json_path, start_time, total_tests, interrup
                       "scenarios", "dir_noise", "speed_noise", "seed",
                       "gamma", "lr", "goal_penalty", "epsilon", "epsilon_decay", "epsilon_min",
                       "approx", "hidden_size", "l2", "normalize_features",
+                      "initial_temp", "cooling_rate", "min_temp", "reheat_factor",
                       "total_sailed", "nb_tacks", "steps", "distance_to_mark",
                       "elapsed_time", "worker_elapsed_time", "orchestrator_overhead_time", "effective_elapsed_time",
                       "finished", "success"]
@@ -2046,7 +2118,7 @@ def order_cases_by_mode(test_cases, args):
 
     order_list = [item.strip() for item in args.order.split(",") if item.strip()]
     order_set = set(order_list)
-    unknown = order_set - {"mpc_simplemove", "mpc_realmove", "adp_realmove", "beam_realmove", "spst_realmove"}
+    unknown = order_set - {"mpc_simplemove", "mpc_realmove", "adp_realmove", "beam_realmove", "spst_realmove", "sa_realmove"}
     if unknown:
         raise ValueError(f"Unknown algo(s) in --order: {', '.join(sorted(unknown))}")
     print(f"Ordering {len(test_cases)} cases...")
@@ -2150,7 +2222,7 @@ def execute_batch(
             initial_elapsed = max(0.0, time.time() - run_start_time)
         else:
             initial_elapsed = 0.0
-        eta_history.append((initial_elapsed, initial_run_eta_s, initial_run_eta_s, None, "steady-state", 0.7, 0.3))
+        eta_history.append((initial_elapsed, initial_run_eta_s, initial_run_eta_s, None, "steady-state", 0.65, 0.35))
         last_eta_display_value = _format_duration(initial_run_eta_s)
     if args.order in {"quota-window-coverage", "global-coverage"}:
         coverage_tracker = init_coverage_tracker(algo_order)
@@ -2198,6 +2270,10 @@ def execute_batch(
                     "hidden_size": params.get("hidden_size"),
                     "l2": params.get("l2"),
                     "normalize_features": params.get("normalize_features"),
+                    "initial_temp": params.get("initial_temp"),
+                    "cooling_rate": params.get("cooling_rate"),
+                    "min_temp": params.get("min_temp"),
+                    "reheat_factor": params.get("reheat_factor"),
                     "total_sailed": result.get("total_sailed") if result else None,
                     "nb_tacks": result.get("nb_tacks") if result else None,
                     "steps": result.get("steps") if result else None,
@@ -2291,11 +2367,8 @@ def execute_batch(
             for future in pending:
                 future.cancel()
 
-    if interrupted_state["value"]:
-        print()
-    else:
-        clear_progress_lines()
-        print()
+    # Leave progress bars visible, just move to next line
+    print()
     return {
         "initial_run_eta_s": initial_run_eta_s,
         "batch_elapsed_s": time.time() - start_time,
@@ -2350,12 +2423,25 @@ def main():
     parser.add_argument("--topk-seed", type=int, default=42,
                         help="Random seed for topk-search exploration picks")
     args = parser.parse_args()
+    valid_algos = {"adp_realmove", "beam_realmove", "mpc_realmove", "mpc_simplemove", "spst_realmove", "sa_realmove"}
+    valid_order_keywords = {"shuffle", "quota-window-coverage", "global-coverage"}
+    algo_set = None
+    if args.algo != "all":
+        algo_list = [item.strip() for item in args.algo.split(",") if item.strip()]
+        unknown_algos = [algo for algo in algo_list if algo not in valid_algos]
+        if unknown_algos:
+            parser.error(f"Unknown algo(s) in --algo: {', '.join(unknown_algos)}")
+        algo_set = set(algo_list)
+    if args.order not in valid_order_keywords:
+        order_list = [item.strip() for item in args.order.split(",") if item.strip()]
+        unknown_order_algos = [algo for algo in order_list if algo not in valid_algos]
+        if unknown_order_algos:
+            parser.error(f"Unknown algo(s) in --order: {', '.join(sorted(set(unknown_order_algos)))}")
     global PARAM_RANGES, ALGO_TOTALS
     try:
         PARAM_RANGES = apply_range_overrides(BASE_PARAM_RANGES, args.range)
     except ValueError as e:
-        print(str(e))
-        return
+        parser.error(str(e))
     ALGO_TOTALS = compute_algo_totals(PARAM_RANGES)
     print("Effective parameter ranges:")
     for name, values in PARAM_RANGES.items():
@@ -2388,14 +2474,7 @@ def main():
     total_tests_original = len(all_test_cases)
 
     # Filter by algorithm if specified
-    if args.algo != "all":
-        algo_list = [item.strip() for item in args.algo.split(",") if item.strip()]
-        valid_algos = {"adp_realmove", "beam_realmove", "mpc_realmove", "mpc_simplemove", "spst_realmove"}
-        unknown_algos = [algo for algo in algo_list if algo not in valid_algos]
-        if unknown_algos:
-            print(f"Unknown algo(s) in --algo: {', '.join(unknown_algos)}")
-            return
-        algo_set = set(algo_list)
+    if algo_set is not None:
         all_test_cases = [tc for tc in all_test_cases if tc[0] in algo_set]
 
 
@@ -2479,6 +2558,8 @@ def main():
 
     interrupted_state = {"value": False}
     print_progress_line._suspend = False
+    print_progress_line._has_printed = False
+    results_before_run = len(results)
     benchmark_start = time.time()
     first_initial_eta_s = None
     eta_history = []
@@ -2682,12 +2763,8 @@ def main():
     # Final save
     save_results(results_all, csv_path, json_path, benchmark_start, total_tests_original, interrupted=interrupted_state["value"])
 
-    # Keep the last progress line visible on interruption; clear only on normal completion.
-    if interrupted_state["value"]:
-        print()
-    else:
-        clear_progress_lines()
-        print()
+    # Leave progress bars visible, just move to next line
+    print()
 
     # Final progress summary
     summary_present_algos = {r.get("algorithm") for r in results if r.get("algorithm")}
@@ -2733,6 +2810,26 @@ def main():
             "hit10": (100.0 * within10 / len(rel_abs)),
         }
 
+    def _find_stabilization_start(pred_totals_local, target, tolerance, window_size=20, inside_ratio=0.80, consecutive_windows=3):
+        if not pred_totals_local or target is None or tolerance is None:
+            return None
+        n = len(pred_totals_local)
+        if n == 0:
+            return None
+        k = min(window_size, n)
+        need = max(1, int(inside_ratio * k))
+        consec = 0
+        for start in range(0, n - k + 1):
+            window = pred_totals_local[start:start + k]
+            inside = sum(1 for value in window if abs(value - target) <= tolerance)
+            if inside >= need:
+                consec += 1
+                if consec >= consecutive_windows:
+                    return start
+            else:
+                consec = 0
+        return None
+
     def _print_eta_history_compact(lines_local, pred_totals_local, target, stats):
         print("ETA history (elapsed + ETA (w_ewma*EWMA+w_wall*ETA_Wall)):")
         n = len(lines_local)
@@ -2747,19 +2844,9 @@ def main():
         if stats is not None and pred_totals_local:
             target_zone = target + stats["bias_s"]
             tol = max(1.0, stats["mae_s"])
-            k = min(20, n)
-            need = max(1, int(0.80 * k))
-            consec = 0
-            for s in range(0, n - k + 1):
-                window = pred_totals_local[s:s + k]
-                inside = sum(1 for v in window if abs(v - target_zone) <= tol)
-                if inside >= need:
-                    consec += 1
-                    if consec >= 3:
-                        mid_start_1based = s + 1
-                        break
-                else:
-                    consec = 0
+            stable_idx = _find_stabilization_start(pred_totals_local, target_zone, tol)
+            if stable_idx is not None:
+                mid_start_1based = stable_idx + 1
         if mid_start_1based is None:
             mid_start = max(first_n, (n - middle_n) // 2)
         else:
@@ -2787,22 +2874,114 @@ def main():
             if idx < len(sections) - 1:
                 print("  ...")
 
+    def _compute_total_compute_time(rows):
+        total = 0.0
+        found = False
+        for row in rows:
+            try:
+                value = float(row.get("effective_elapsed_time", row.get("elapsed_time")))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            total += value
+            found = True
+        return total if found else None
+
+    def _format_eta_slope(slope):
+        if slope is None:
+            return "n/a"
+        sign = "+" if slope >= 0 else "-"
+        return f"{sign}{abs(slope):.1f}h/h"
+
+    def _compute_eta_trend(history, pred_totals_local):
+        if not history or not pred_totals_local:
+            return None
+        elapsed_values = [float(item[0] or 0.0) for item in history]
+        start = pred_totals_local[0]
+        last20 = pred_totals_local[-20:]
+        end = _percentile(last20, 0.5)
+        if start is None or start <= 0 or end is None or end <= 0:
+            return None
+
+        delta = end - start
+        delta_pct = 100.0 * delta / start
+
+        slope = None
+        if len(last20) >= 2:
+            last20_elapsed = elapsed_values[-len(last20):]
+            mean_x = sum(last20_elapsed) / len(last20_elapsed)
+            mean_y = sum(last20) / len(last20)
+            denom = sum((x - mean_x) ** 2 for x in last20_elapsed)
+            if denom > 0:
+                slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(last20_elapsed, last20)) / denom
+
+        last20_errors = [abs(p - end) for p in last20]
+        last20_mae = sum(last20_errors) / len(last20_errors) if last20_errors else None
+        volatility = None
+        if last20:
+            deviations = [abs(p - end) for p in last20]
+            mad = _percentile(deviations, 0.5)
+            if mad is not None and end > 0:
+                volatility = 100.0 * mad / end
+
+        stabilized_after = None
+        n = len(pred_totals_local)
+        if last20_mae is not None and n >= 3:
+            tol = max(last20_mae, 0.10 * end, 1.0)
+            stable_idx = _find_stabilization_start(pred_totals_local, end, tol)
+            if stable_idx is not None:
+                stabilized_after = elapsed_values[stable_idx]
+
+        return {
+            "start_s": start,
+            "end_s": end,
+            "delta_s": delta,
+            "delta_pct": delta_pct,
+            "slope_last20": slope,
+            "volatility_last20": volatility,
+            "stabilized_after_s": stabilized_after,
+        }
+
+    def _format_eta_trend(trend):
+        if trend is None:
+            return "ETA trend: n/a"
+        volatility = trend.get("volatility_last20")
+        volatility_s = f"{volatility:.1f}%" if volatility is not None else "n/a"
+        return (
+            f"ETA trend: start={_format_duration(trend['start_s'])} "
+            f"end={_format_duration(trend['end_s'])} "
+            f"delta={_format_signed_duration(trend['delta_s'])} ({trend['delta_pct']:+.1f}%) "
+            f"slope_last20={_format_eta_slope(trend.get('slope_last20'))} "
+            f"volatility_last20={volatility_s} "
+            f"stabilized_after={_format_duration(trend.get('stabilized_after_s'))}"
+        )
+
     total_elapsed = time.time() - benchmark_start
     pred_totals = []
     history_lines = []
     if eta_history:
         pred_totals, history_lines = _build_eta_history_lines(eta_history)
+    eta_trend = _compute_eta_trend(eta_history, pred_totals)
+    run_rows = results[results_before_run:]
+    run_compute_time = _compute_total_compute_time(run_rows)
+    cumulative_compute_time = _compute_total_compute_time(results_all)
+    had_previous_results = results_before_run > 0
 
     if interrupted_state["value"]:
-        print(f"Benchmark interrupted!")
+        run_completed = len(results) - results_before_run
+        print(f"\nBenchmark interrupted! ({run_completed} tests in this run)")
         print(f"Progress saved: {len(results)}/{total_tests_original} tests completed")
-        print(f"Run with --resume to continue")
+        print(f"Run with --resume to continue\n")
         last20_totals = pred_totals[-20:] if pred_totals else []
         estimated_elapsed = _percentile(last20_totals, 0.5) if last20_totals else None
         if args.verbose > 0 and history_lines:
             partial_stats_for_view = _compute_stats(last20_totals, estimated_elapsed)
             _print_eta_history_compact(history_lines, pred_totals, estimated_elapsed, partial_stats_for_view)
         estimated_stats = _compute_stats(pred_totals, estimated_elapsed)
+        if run_compute_time is not None:
+            print(f"Aggregate multi-processor compute time: {_format_duration(run_compute_time)}")
+        if args.resume and had_previous_results and cumulative_compute_time is not None:
+            print(f"Cumulative aggregate multi-processor compute time: {_format_duration(cumulative_compute_time)}")
+        print(_format_eta_trend(eta_trend))
         if estimated_stats is not None:
             print(
                 f"Estimated elapsed time: {_format_duration(estimated_elapsed)}"
@@ -2826,13 +3005,19 @@ def main():
         else:
             print("Partial ETA diagnostics (interrupted, target=median last 20 predicted totals): n/a")
     else:
-        print(f"Benchmark complete!")
+        run_completed = len(results) - results_before_run
+        print(f"Benchmark complete! ({run_completed} tests in this run)")
         print()
         pred_stats = _compute_stats(pred_totals, total_elapsed)
         if args.verbose > 0 and history_lines:
             _print_eta_history_compact(history_lines, pred_totals, total_elapsed, pred_stats)
         elif not eta_history:
             print(f"Initial ETA estimate: {_format_duration(first_initial_eta_s)}")
+        if run_compute_time is not None:
+            print(f"Aggregate multi-processor compute time: {_format_duration(run_compute_time)}")
+        if args.resume and had_previous_results and cumulative_compute_time is not None:
+            print(f"Cumulative aggregate multi-processor compute time: {_format_duration(cumulative_compute_time)}")
+        print(_format_eta_trend(eta_trend))
         if pred_stats is not None:
             print(
                 f"Real elapsed time: {_format_duration(total_elapsed)}"
@@ -2854,7 +3039,7 @@ def main():
     finished_races = [r for r in results if r.get("finished", False)]
     print(f"\nSummary: {len(successful)}/{total_tests_original} tests ran, {len(finished_races)} finished the race")
 
-    for algo in ["beam_realmove", "mpc_realmove", "mpc_simplemove", "adp_realmove", "spst_realmove"]:
+    for algo in ["beam_realmove", "mpc_realmove", "mpc_simplemove", "adp_realmove", "spst_realmove", "sa_realmove"]:
         algo_results = [r for r in finished_races if r["algorithm"] == algo]
         if algo_results:
             sailed = [r["total_sailed"] for r in algo_results if r["total_sailed"]]

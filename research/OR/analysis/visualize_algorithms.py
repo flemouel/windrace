@@ -87,6 +87,7 @@ ALGO_PARAMS = {
         "l2",
         "normalize_features",
     ],
+    "sa_realmove": ["horizon", "alpha", "initial_temp", "cooling_rate", "min_temp", "reheat_factor"],
 }
 
 
@@ -318,6 +319,7 @@ def create_algorithm_comparison(df, output_dir, prefix=""):
         "mpc_simplemove": "#2ecc71",
         "spst_realmove": "#9b59b6",
         "adp_realmove": "#f39c12",
+        "sa_realmove": "#1abc9c",
     }
     bar_colors = [colors.get(algo, "#95a5a6") for algo in stats.index]
 
@@ -412,6 +414,11 @@ def create_algorithm_comparison(df, output_dir, prefix=""):
                     f"ap={row.get('approx')}, hs={row.get('hidden_size')}, l2={row.get('l2')}, "
                     f"nf={row.get('normalize_features')}"
                 )
+            elif row["algorithm"] == "sa_realmove":
+                params += (
+                    f", it={row.get('initial_temp')}, cr={row.get('cooling_rate')}, "
+                    f"mt={row.get('min_temp')}, rf={row.get('reheat_factor')}"
+                )
             wrapped = textwrap.fill(params, width=18)
             ax.text(
                 i,
@@ -447,6 +454,7 @@ def create_parameter_sensitivity(df, output_dir, prefix="", skip_params=None):
         "mpc_simplemove": "#2ecc71",
         "spst_realmove": "#9b59b6",
         "adp_realmove": "#f39c12",
+        "sa_realmove": "#1abc9c",
     }
 
     params = [param for param in params if param not in skip_params]
@@ -581,6 +589,7 @@ def create_execution_time_analysis(df, output_dir, prefix="", skip_heatmaps=None
         "mpc_simplemove": "#2ecc71",
         "spst_realmove": "#9b59b6",
         "adp_realmove": "#f39c12",
+        "sa_realmove": "#1abc9c",
     }
 
     skip_heatmaps = skip_heatmaps or set()
@@ -912,7 +921,7 @@ def create_summary_table(df, df_all, output_dir, prefix=""):
         return f"{median:.{decimals}f} ± {iqr:.{decimals}f}"
     summary_data = []
 
-    preferred_order = ["mpc_simplemove", "mpc_realmove", "adp_realmove", "spst_realmove", "beam_realmove"]
+    preferred_order = ["mpc_simplemove", "mpc_realmove", "adp_realmove", "spst_realmove", "beam_realmove", "sa_realmove"]
     algos = preferred_order + [algo for algo in df_all["algorithm"].unique() if algo not in preferred_order]
     for algo in algos:
         algo_df = df[df["algorithm"] == algo]
@@ -929,10 +938,16 @@ def create_summary_table(df, df_all, output_dir, prefix=""):
 
         best_elapsed = best_sailed["elapsed_time"] if best_sailed is not None else np.nan
         best_distance = best_sailed["total_sailed"] if best_sailed is not None else np.nan
-        best_params = (
-            f"h={best_sailed['horizon']}, a={best_sailed['alpha']}" +
-            (f", bw={best_sailed['beam_width']}" if algo == "beam_realmove" else "")
-        ) if best_sailed is not None else "n/a"
+        if best_sailed is not None:
+            best_params = f"h={best_sailed['horizon']}, a={best_sailed['alpha']}"
+            if algo == "beam_realmove":
+                best_params += f", bw={best_sailed['beam_width']}"
+            elif algo == "spst_realmove":
+                best_params += f", sc={best_sailed.get('scenarios')}, dn={best_sailed.get('dir_noise')}, sn={best_sailed.get('speed_noise')}"
+            elif algo == "sa_realmove":
+                best_params += f", it={best_sailed.get('initial_temp')}, cr={best_sailed.get('cooling_rate')}, mt={best_sailed.get('min_temp')}, rf={best_sailed.get('reheat_factor')}"
+        else:
+            best_params = "n/a"
 
         finished_count = len(algo_df)
         total_count = len(algo_all)
@@ -1664,9 +1679,9 @@ def create_coverage_dispersion_plot(df_all, metadata, algo, output_dir, prefix="
 
 def main():
     parser = argparse.ArgumentParser(description="Visualize benchmark results")
-    parser.add_argument("--input", default="benchmark_results.json", help="Input JSON file")
-    parser.add_argument("--output-dir", default=".", help="Output directory for images")
-    parser.add_argument("--display", action="store_true", help="Display figures after saving")
+    parser.add_argument("--input", default="benchmark_results.json", help="Input JSON file (default: benchmark_results.json)")
+    parser.add_argument("--output-dir", default=".", help="Output directory for images (default: .)")
+    parser.add_argument("--display", action="store_true", help="Display figures after saving (default: off)")
     args = parser.parse_args()
     global DISPLAY
     DISPLAY = args.display

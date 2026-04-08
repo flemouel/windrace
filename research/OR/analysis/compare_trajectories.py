@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-Compare MPC planned vs sailed trajectories.
+Compare planned vs sailed trajectories.
 """
 
+import argparse
 import re
 import math
 
-def parse_trajectory(filename):
+def parse_trajectory(filename, method):
     """Parse trajectory file and return dict keyed by step."""
-    pattern = r'DEBUG route mpc trajectory \((?:planned|sailed)\) (\d+) (\w+) ([\d.]+) ([\d.-]+)'
+    pattern = rf'DEBUG route {re.escape(method)} trajectory \((?:planned|sailed)\) (\d+) (\w+) ([\d.]+) ([\d.-]+)'
     entries = {}
-    
+
     with open(filename, 'r') as f:
         for line in f:
             match = re.search(pattern, line)
@@ -20,7 +21,7 @@ def parse_trajectory(filename):
                 lat = float(match.group(3))
                 lng = float(match.group(4))
                 entries[step] = {'decision': decision, 'lat': lat, 'lng': lng}
-    
+
     return entries
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -33,11 +34,11 @@ def haversine(lat1, lon1, lat2, lon2):
     a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
     return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
-def analyze_trajectories(planned, sailed):
+def analyze_trajectories(planned, sailed, method_label):
     """Analyze and compare trajectories with temporal alignment."""
 
     print("=" * 80)
-    print("MPC TRAJECTORY COMPARISON ANALYSIS (TIME-ALIGNED)")
+    print(f"{method_label} TRAJECTORY COMPARISON ANALYSIS (TIME-ALIGNED)")
     print("=" * 80)
     print()
 
@@ -71,7 +72,7 @@ def analyze_trajectories(planned, sailed):
     if common_elapsed:
         print(f"  Range: t={min(common_elapsed)} to t={max(common_elapsed)}")
     print()
-    
+
     # Decisions analysis
     print("3. DECISION ANALYSIS")
     print("-" * 80)
@@ -138,30 +139,30 @@ def analyze_trajectories(planned, sailed):
             dec_match = "✓" if p['decision'] == s['decision'] else "✗"
             print(f"  {i:2d}. t={t:4d}: {dist:7.2f} m  [{p['decision']} vs {s['decision']} {dec_match}]")
         print()
-    
+
     # Geographic bounds
     print("5. GEOGRAPHIC BOUNDS")
     print("-" * 80)
-    
+
     p_lats = [d['lat'] for d in planned.values()]
     p_lngs = [d['lng'] for d in planned.values()]
     s_lats = [d['lat'] for d in sailed.values()]
     s_lngs = [d['lng'] for d in sailed.values()]
-    
+
     print("Planned trajectory:")
     print(f"  Latitude:  {min(p_lats):.6f} to {max(p_lats):.6f}")
     print(f"  Longitude: {min(p_lngs):.6f} to {max(p_lngs):.6f}")
-    
+
     print()
     print("Sailed trajectory:")
     print(f"  Latitude:  {min(s_lats):.6f} to {max(s_lats):.6f}")
     print(f"  Longitude: {min(s_lngs):.6f} to {max(s_lngs):.6f}")
     print()
-    
+
     # Calculate total distance
     print("6. TOTAL DISTANCE SAILED")
     print("-" * 80)
-    
+
     def calc_total_distance(traj):
         steps = sorted(traj.keys())
         total = 0
@@ -170,18 +171,39 @@ def analyze_trajectories(planned, sailed):
             s2 = traj[steps[i+1]]
             total += haversine(s1['lat'], s1['lng'], s2['lat'], s2['lng'])
         return total
-    
+
     planned_dist = calc_total_distance(planned)
     sailed_dist = calc_total_distance(sailed)
-    
+
     print(f"Planned trajectory: {planned_dist:.2f} m")
     print(f"Sailed trajectory:  {sailed_dist:.2f} m")
     print(f"Difference:         {abs(planned_dist - sailed_dist):.2f} m ({((sailed_dist/planned_dist - 1)*100):.1f}%)")
     print()
-    
+
     print("=" * 80)
 
 if __name__ == '__main__':
-    planned = parse_trajectory('mpc_planned.txt')
-    sailed = parse_trajectory('mpc_sailed.txt')
-    analyze_trajectories(planned, sailed)
+    ALL_METHODS = ["mpc", "beam", "adp", "spst", "sa"]
+    parser = argparse.ArgumentParser(description="Compare planned vs sailed trajectories")
+    parser.add_argument("--method", default="all",
+                        help=f"Method to compare: {', '.join(ALL_METHODS)}, or all (default: all)")
+    args = parser.parse_args()
+
+    if args.method == "all":
+        methods = ALL_METHODS
+    else:
+        methods = [args.method]
+
+    for method in methods:
+        planned_file = f'{method}_planned.txt'
+        sailed_file = f'{method}_sailed.txt'
+        try:
+            planned = parse_trajectory(planned_file, method)
+            sailed = parse_trajectory(sailed_file, method)
+        except FileNotFoundError:
+            print(f"Skipping {method}: trajectory files not found")
+            continue
+        if not planned or not sailed:
+            print(f"Skipping {method}: no trajectory data found")
+            continue
+        analyze_trajectories(planned, sailed, method.upper())
