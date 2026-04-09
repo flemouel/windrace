@@ -2533,6 +2533,185 @@ def print_final_report(
                 print(f"  total_sailed: min={min(sailed):.1f}, max={max(sailed):.1f}, avg={sum(sailed)/len(sailed):.1f}")
 
 
+def run_ordered_batch(
+    test_cases,
+    args,
+    results,
+    completed_keys,
+    total_tests_original,
+    csv_path,
+    json_path,
+    interrupted_state,
+    all_results,
+    all_completed_keys,
+    eta_history,
+    benchmark_start,
+    phase_label=None,
+):
+    ordered_cases = order_cases_by_mode(test_cases, args)
+    if len(ordered_cases) == 0:
+        print("All tests already completed!")
+        return None
+    return execute_batch(
+        ordered_cases,
+        args,
+        results,
+        completed_keys,
+        total_tests_original,
+        csv_path,
+        json_path,
+        interrupted_state,
+        phase_label=phase_label,
+        all_results=all_results,
+        all_completed_keys=all_completed_keys,
+        save_results_ref=all_results,
+        eta_history=eta_history,
+        run_start_time=benchmark_start,
+    )
+
+
+def run_selected_search_mode(
+    all_test_cases,
+    args,
+    results,
+    completed_keys,
+    total_tests_original,
+    csv_path,
+    json_path,
+    interrupted_state,
+    results_all,
+    completed_keys_all,
+    eta_history,
+    benchmark_start,
+):
+    first_initial_eta_s = None
+
+    if args.search_mode == "space-search":
+        planned_total_input = len(all_test_cases)
+        plan = build_space_search_plan(
+            all_test_cases,
+            results,
+            coarse_step=args.space_coarse_step,
+            refine_step=args.space_refine_step,
+            eta=args.space_eta,
+            early_stop_delta=args.space_early_stop_delta,
+            metric=args.metric,
+        )
+        phase_sizes = {
+            "coarse": len(plan.get("coarse", [])),
+            "refine1": len(plan.get("refine1", [])),
+            "refine2": len(plan.get("refine2", [])),
+        }
+        selected_cases = list(plan.get("coarse", [])) + list(plan.get("refine1", [])) + list(plan.get("refine2", []))
+        print(
+            f"Space-search planning: coarse={phase_sizes['coarse']}, "
+            f"refine1={phase_sizes['refine1']}, refine2={phase_sizes['refine2']} "
+            f"(selected {len(selected_cases)}/{planned_total_input})"
+        )
+        if args.verbose > 0:
+            for algo in sorted(plan.get("per_algo_counts", {})):
+                c0, c1, c2, tot = plan["per_algo_counts"][algo]
+                print(
+                    f"  {algo}: coarse={c0}, refine1={c1}, refine2={c2}, "
+                    f"selected={c0 + c1 + c2}/{tot}"
+                )
+        batch_stats = run_ordered_batch(
+            selected_cases, args, results, completed_keys, total_tests_original, csv_path, json_path,
+            interrupted_state, results_all, completed_keys_all, eta_history, benchmark_start,
+        )
+        if batch_stats:
+            first_initial_eta_s = batch_stats.get("initial_run_eta_s")
+        return first_initial_eta_s
+
+    if args.search_mode == "coarse-to-fine":
+        remaining_cases = list(all_test_cases)
+        initial_remaining = len(remaining_cases)
+        print(f"Coarse-to-fine sequential run on {initial_remaining} remaining cases")
+        for phase_name in ("coarse", "refine1", "refine2"):
+            if interrupted_state["value"] or not remaining_cases:
+                break
+
+            phase_plan = build_space_search_plan(
+                remaining_cases,
+                results,
+                coarse_step=args.space_coarse_step,
+                refine_step=args.space_refine_step,
+                eta=args.space_eta,
+                early_stop_delta=args.space_early_stop_delta,
+                metric=args.metric,
+            )
+            phase_cases = list(phase_plan.get(phase_name, []))
+            print(
+                f"Space-search phase {phase_name}: selected {len(phase_cases)}/{len(remaining_cases)} "
+                f"(coarse={len(phase_plan.get('coarse', []))}, "
+                f"refine1={len(phase_plan.get('refine1', []))}, "
+                f"refine2={len(phase_plan.get('refine2', []))})"
+            )
+            if not phase_cases:
+                continue
+
+            batch_stats = run_ordered_batch(
+                phase_cases, args, results, completed_keys, total_tests_original, csv_path, json_path,
+                interrupted_state, results_all, completed_keys_all, eta_history, benchmark_start,
+                phase_label=phase_name,
+            )
+            if first_initial_eta_s is None and batch_stats:
+                first_initial_eta_s = batch_stats.get("initial_run_eta_s")
+            remaining_cases = [
+                tc for tc in remaining_cases
+                if make_test_key(tc[0], tc[1]) not in completed_keys
+            ]
+        return first_initial_eta_s
+
+    if args.search_mode == "topk-search":
+        planned_total_input = len(all_test_cases)
+        plan = build_topk_search_plan(
+            all_test_cases,
+            results,
+            metric=args.metric,
+            explore_ratio=args.topk_explore_ratio,
+            eta=args.topk_eta,
+            seed=args.topk_seed,
+        )
+        selected_cases = list(plan.get("selected", []))
+        print(
+            f"Top-k planning: exploit={plan.get('exploit_count', 0)}, "
+            f"explore={plan.get('explore_count', 0)} "
+            f"(selected {plan.get('selected_total', 0)}/{planned_total_input})",
+            flush=True,
+        )
+        print(f"  top-k fusion [{format_progress_bar(100.0, width=20)}] 100%   ", flush=True)
+        quota = plan.get("per_algo_quota", {})
+        picked = plan.get("per_algo_selected", {})
+        exp = plan.get("per_algo_exploit", {})
+        rnd = plan.get("per_algo_explore", {})
+        cand = plan.get("per_algo_candidates", {})
+        for algo in sorted(quota):
+            print(
+                f"  {algo}: candidates={cand.get(algo, 0)}, "
+                f"quota={quota.get(algo, 0)}, "
+                f"selected={picked.get(algo, 0)}, "
+                f"exploit={exp.get(algo, 0)}, "
+                f"explore={rnd.get(algo, 0)}",
+                flush=True,
+            )
+        batch_stats = run_ordered_batch(
+            selected_cases, args, results, completed_keys, total_tests_original, csv_path, json_path,
+            interrupted_state, results_all, completed_keys_all, eta_history, benchmark_start,
+        )
+        if batch_stats:
+            first_initial_eta_s = batch_stats.get("initial_run_eta_s")
+        return first_initial_eta_s
+
+    batch_stats = run_ordered_batch(
+        all_test_cases, args, results, completed_keys, total_tests_original, csv_path, json_path,
+        interrupted_state, results_all, completed_keys_all, eta_history, benchmark_start,
+    )
+    if batch_stats:
+        first_initial_eta_s = batch_stats.get("initial_run_eta_s")
+    return first_initial_eta_s
+
+
 def main():
     import argparse
 
@@ -2729,188 +2908,20 @@ def main():
     signal.signal(signal.SIGINT, handle_interrupt)
 
     try:
-        if args.search_mode == "space-search":
-            planned_total_input = len(all_test_cases)
-            plan = build_space_search_plan(
-                all_test_cases,
-                results,
-                coarse_step=args.space_coarse_step,
-                refine_step=args.space_refine_step,
-                eta=args.space_eta,
-                early_stop_delta=args.space_early_stop_delta,
-                metric=args.metric,
-            )
-            phase_sizes = {
-                "coarse": len(plan.get("coarse", [])),
-                "refine1": len(plan.get("refine1", [])),
-                "refine2": len(plan.get("refine2", [])),
-            }
-            all_test_cases = list(plan.get("coarse", [])) + list(plan.get("refine1", [])) + list(plan.get("refine2", []))
-            print(
-                f"Space-search planning: coarse={phase_sizes['coarse']}, "
-                f"refine1={phase_sizes['refine1']}, refine2={phase_sizes['refine2']} "
-                f"(selected {len(all_test_cases)}/{planned_total_input})"
-            )
-            if args.verbose > 0:
-                for algo in sorted(plan.get("per_algo_counts", {})):
-                    c0, c1, c2, tot = plan["per_algo_counts"][algo]
-                    print(
-                        f"  {algo}: coarse={c0}, refine1={c1}, refine2={c2}, "
-                        f"selected={c0 + c1 + c2}/{tot}"
-                    )
-            all_test_cases = order_cases_by_mode(all_test_cases, args)
-            if len(all_test_cases) == 0:
-                print("All tests already completed!")
-                return
-            batch_stats = execute_batch(
-                all_test_cases,
-                args,
-                results,
-                completed_keys,
-                total_tests_original,
-                csv_path,
-                json_path,
-                interrupted_state,
-                phase_label=None,
-                all_results=results_all,
-                all_completed_keys=completed_keys_all,
-                save_results_ref=results_all,
-                eta_history=eta_history,
-                run_start_time=benchmark_start,
-            )
-            if first_initial_eta_s is None and batch_stats:
-                first_initial_eta_s = batch_stats.get("initial_run_eta_s")
-
-        elif args.search_mode == "coarse-to-fine":
-            remaining_cases = list(all_test_cases)
-            initial_remaining = len(remaining_cases)
-            print(f"Coarse-to-fine sequential run on {initial_remaining} remaining cases")
-            for phase_name in ("coarse", "refine1", "refine2"):
-                if interrupted_state["value"]:
-                    break
-                if not remaining_cases:
-                    break
-
-                phase_plan = build_space_search_plan(
-                    remaining_cases,
-                    results,
-                    coarse_step=args.space_coarse_step,
-                    refine_step=args.space_refine_step,
-                    eta=args.space_eta,
-                    early_stop_delta=args.space_early_stop_delta,
-                    metric=args.metric,
-                )
-                phase_cases = list(phase_plan.get(phase_name, []))
-                print(
-                    f"Space-search phase {phase_name}: selected {len(phase_cases)}/{len(remaining_cases)} "
-                    f"(coarse={len(phase_plan.get('coarse', []))}, "
-                    f"refine1={len(phase_plan.get('refine1', []))}, "
-                    f"refine2={len(phase_plan.get('refine2', []))})"
-                )
-                if not phase_cases:
-                    continue
-
-                phase_cases = order_cases_by_mode(phase_cases, args)
-                batch_stats = execute_batch(
-                    phase_cases,
-                    args,
-                    results,
-                    completed_keys,
-                    total_tests_original,
-                    csv_path,
-                    json_path,
-                    interrupted_state,
-                    phase_label=phase_name,
-                    all_results=results_all,
-                    all_completed_keys=completed_keys_all,
-                    save_results_ref=results_all,
-                    eta_history=eta_history,
-                    run_start_time=benchmark_start,
-                )
-                if first_initial_eta_s is None and batch_stats:
-                    first_initial_eta_s = batch_stats.get("initial_run_eta_s")
-                # Recompute remaining from completed keys (keeps only not-yet-run cases).
-                remaining_cases = [
-                    tc for tc in remaining_cases
-                    if make_test_key(tc[0], tc[1]) not in completed_keys
-                ]
-        elif args.search_mode == "topk-search":
-            planned_total_input = len(all_test_cases)
-            plan = build_topk_search_plan(
-                all_test_cases,
-                results,
-                metric=args.metric,
-                explore_ratio=args.topk_explore_ratio,
-                eta=args.topk_eta,
-                seed=args.topk_seed,
-            )
-            all_test_cases = list(plan.get("selected", []))
-            print(
-                f"Top-k planning: exploit={plan.get('exploit_count', 0)}, "
-                f"explore={plan.get('explore_count', 0)} "
-                f"(selected {plan.get('selected_total', 0)}/{planned_total_input})",
-                flush=True,
-            )
-            print(f"  top-k fusion [{format_progress_bar(100.0, width=20)}] 100%   ", flush=True)
-            quota = plan.get("per_algo_quota", {})
-            picked = plan.get("per_algo_selected", {})
-            exp = plan.get("per_algo_exploit", {})
-            rnd = plan.get("per_algo_explore", {})
-            cand = plan.get("per_algo_candidates", {})
-            for algo in sorted(quota):
-                print(
-                    f"  {algo}: candidates={cand.get(algo, 0)}, "
-                    f"quota={quota.get(algo, 0)}, "
-                    f"selected={picked.get(algo, 0)}, "
-                    f"exploit={exp.get(algo, 0)}, "
-                    f"explore={rnd.get(algo, 0)}",
-                    flush=True,
-                )
-            all_test_cases = order_cases_by_mode(all_test_cases, args)
-            if len(all_test_cases) == 0:
-                print("All tests already completed!")
-                return
-            batch_stats = execute_batch(
-                all_test_cases,
-                args,
-                results,
-                completed_keys,
-                total_tests_original,
-                csv_path,
-                json_path,
-                interrupted_state,
-                phase_label=None,
-                all_results=results_all,
-                all_completed_keys=completed_keys_all,
-                save_results_ref=results_all,
-                eta_history=eta_history,
-                run_start_time=benchmark_start,
-            )
-            if first_initial_eta_s is None and batch_stats:
-                first_initial_eta_s = batch_stats.get("initial_run_eta_s")
-        else:
-            all_test_cases = order_cases_by_mode(all_test_cases, args)
-            if len(all_test_cases) == 0:
-                print("All tests already completed!")
-                return
-            batch_stats = execute_batch(
-                all_test_cases,
-                args,
-                results,
-                completed_keys,
-                total_tests_original,
-                csv_path,
-                json_path,
-                interrupted_state,
-                phase_label=None,
-                all_results=results_all,
-                all_completed_keys=completed_keys_all,
-                save_results_ref=results_all,
-                eta_history=eta_history,
-                run_start_time=benchmark_start,
-            )
-            if first_initial_eta_s is None and batch_stats:
-                first_initial_eta_s = batch_stats.get("initial_run_eta_s")
+        first_initial_eta_s = run_selected_search_mode(
+            all_test_cases=all_test_cases,
+            args=args,
+            results=results,
+            completed_keys=completed_keys,
+            total_tests_original=total_tests_original,
+            csv_path=csv_path,
+            json_path=json_path,
+            interrupted_state=interrupted_state,
+            results_all=results_all,
+            completed_keys_all=completed_keys_all,
+            eta_history=eta_history,
+            benchmark_start=benchmark_start,
+        )
     except ValueError as e:
         print(str(e))
         return
