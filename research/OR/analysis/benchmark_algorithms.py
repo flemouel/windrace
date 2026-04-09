@@ -1071,13 +1071,15 @@ def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True
 
             if show_progress:
                 pct = 100.0 * len(ordered) / total if total else 100.0
-                show_now = int(pct) != last_pct and int(pct) % 5 == 0
-                if show_now:
-                    bar = format_progress_bar(pct, width=20)
-                    elapsed = time.perf_counter() - progress_start
-                    print(f"\r  coverage order [{bar}] {pct:3.0f}% {elapsed:.1f}s", end="", flush=True)
-                    if int(pct) % 5 == 0:
-                        last_pct = int(pct)
+                elapsed = time.perf_counter() - progress_start
+                last_pct = maybe_print_progress(
+                    "coverage order",
+                    pct,
+                    last_pct,
+                    suffix=f" {elapsed:.1f}s",
+                    step=5,
+                    width=20,
+                )
             if len(ordered) >= total:
                 break
 
@@ -1093,7 +1095,7 @@ def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True
 
     if total and show_progress:
         elapsed = time.perf_counter() - progress_start
-        print(f"\r  coverage order [{format_progress_bar(100.0, width=20)}] 100% {elapsed:.1f}s", end="", flush=True)
+        print(render_progress_line("coverage order", 100.0, suffix=f" {elapsed:.1f}s", width=20), end="", flush=True)
         print()
         counts, max_gaps, max_runs, min_share, gain, uniq, param_run = compute_chunk_metrics(
             ordered, algo_order, pairs_by_algo
@@ -1167,13 +1169,15 @@ def order_cases_coverage_global(test_cases, algo_order, show_progress=True, labe
                     progress = True
                     if show_progress:
                         pct = 100.0 * len(ordered) / total if total else 100.0
-                        show_now = int(pct) != last_pct and int(pct) % 5 == 0
-                        if show_now:
-                            bar = format_progress_bar(pct, width=20)
-                            elapsed = time.perf_counter() - progress_start
-                            print(f"\r  coverage order [{bar}] {pct:3.0f}% {elapsed:.1f}s", end="", flush=True)
-                            if int(pct) % 5 == 0:
-                                last_pct = int(pct)
+                        elapsed = time.perf_counter() - progress_start
+                        last_pct = maybe_print_progress(
+                            "coverage order",
+                            pct,
+                            last_pct,
+                            suffix=f" {elapsed:.1f}s",
+                            step=5,
+                            width=20,
+                        )
                     elif label:
                         pct = 100.0 * len(ordered) / total if total else 100.0
                         if pct >= label_next_pct or pct >= 100.0:
@@ -1199,7 +1203,7 @@ def order_cases_coverage_global(test_cases, algo_order, show_progress=True, labe
 
     if total and show_progress:
         elapsed = time.perf_counter() - progress_start
-        print(f"\r  coverage order [{format_progress_bar(100.0, width=20)}] 100% {elapsed:.1f}s", end="", flush=True)
+        print(render_progress_line("coverage order", 100.0, suffix=f" {elapsed:.1f}s", width=20), end="", flush=True)
         print()
     return ordered
 
@@ -1574,6 +1578,19 @@ def format_progress_bar(pct, width=20):
     return "█" * filled + "░" * (width - filled)
 
 
+def render_progress_line(label, pct, suffix="", width=20):
+    bar = format_progress_bar(pct, width=width)
+    return f"\r  {label} [{bar}] {pct:3.0f}%{suffix}"
+
+
+def maybe_print_progress(label, pct, last_pct, suffix="", step=5, width=20):
+    pct_int = int(pct)
+    if pct_int != last_pct and pct_int % step == 0:
+        print(render_progress_line(label, pct, suffix=suffix, width=width), end="", flush=True)
+        return pct_int
+    return last_pct
+
+
 def load_existing_results(json_path):
     """Load existing results from JSON file for resume."""
     if not os.path.exists(json_path):
@@ -1624,15 +1641,13 @@ def print_progress_summary(results, algo_order, title="ÉTAT D'AVANCEMENT DES TE
         done = counts.get(algo, 0)
         total = ALGO_TOTALS.get(algo, done)
         pct = 100.0 * done / total if total > 0 else 0
-        bar_filled = max(0, min(20, int(pct / 5)))
-        bar = "█" * bar_filled + "░" * (20 - bar_filled)
+        bar = format_progress_bar(pct, width=20)
         status = "✓ COMPLET" if done >= total else ""
         print(f"  {algo:18} [{bar}] {done:6}/{total:6} ({pct:5.1f}%) {status}")
 
     print("-" * 70)
     total_pct = 100.0 * total_done / total_all if total_all > 0 else 0
-    bar_filled = max(0, min(20, int(total_pct / 5)))
-    bar = "█" * bar_filled + "░" * (20 - bar_filled)
+    bar = format_progress_bar(total_pct, width=20)
     print(f"  {'TOTAL':18} [{bar}] {total_done:6}/{total_all:6} ({total_pct:5.1f}%)")
     print("=" * 70 + "\n")
 
