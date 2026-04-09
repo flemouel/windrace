@@ -2417,14 +2417,16 @@ def format_eta_slope(slope):
     return f"{sign}{abs(slope):.1f}h/h"
 
 
-def compute_eta_trend(history, pred_totals_local):
+def compute_eta_trend(history, pred_totals_local, window_size):
     if not history or not pred_totals_local:
         return None
     elapsed_values = [float(item[0] or 0.0) for item in history]
-    first20 = pred_totals_local[:20]
-    last20 = pred_totals_local[-20:]
-    start = _percentile(first20, 0.5)
-    end = _percentile(last20, 0.5)
+    w_eta = max(1, int(window_size))
+    k = min(len(pred_totals_local), max(20, w_eta))
+    first_window = pred_totals_local[:k]
+    last_window = pred_totals_local[-k:]
+    start = _percentile(first_window, 0.5)
+    end = _percentile(last_window, 0.5)
     if start is None or start <= 0 or end is None or end <= 0:
         return None
 
@@ -2432,27 +2434,27 @@ def compute_eta_trend(history, pred_totals_local):
     delta_pct = 100.0 * delta / start
 
     slope = None
-    if len(last20) >= 2:
-        last20_elapsed = elapsed_values[-len(last20):]
-        mean_x = sum(last20_elapsed) / len(last20_elapsed)
-        mean_y = sum(last20) / len(last20)
-        denom = sum((x - mean_x) ** 2 for x in last20_elapsed)
+    if len(last_window) >= 2:
+        last_window_elapsed = elapsed_values[-len(last_window):]
+        mean_x = sum(last_window_elapsed) / len(last_window_elapsed)
+        mean_y = sum(last_window) / len(last_window)
+        denom = sum((x - mean_x) ** 2 for x in last_window_elapsed)
         if denom > 0:
-            slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(last20_elapsed, last20)) / denom
+            slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(last_window_elapsed, last_window)) / denom
 
-    last20_errors = [abs(p - end) for p in last20]
-    last20_mae = sum(last20_errors) / len(last20_errors) if last20_errors else None
+    last_window_errors = [abs(p - end) for p in last_window]
+    last_window_mae = sum(last_window_errors) / len(last_window_errors) if last_window_errors else None
     volatility = None
-    if last20:
-        deviations = [abs(p - end) for p in last20]
+    if last_window:
+        deviations = [abs(p - end) for p in last_window]
         mad = _percentile(deviations, 0.5)
         if mad is not None and end > 0:
             volatility = 100.0 * mad / end
 
     stabilized_after = None
     n = len(pred_totals_local)
-    if last20_mae is not None and n >= 3:
-        tol = max(last20_mae, 0.10 * end, 1.0)
+    if last_window_mae is not None and n >= 3:
+        tol = max(last_window_mae, 0.10 * end, 1.0)
         stable_idx = find_stabilization_start(pred_totals_local, end, tol)
         if stable_idx is not None:
             stabilized_after = elapsed_values[stable_idx]
@@ -2474,8 +2476,8 @@ def format_eta_trend(trend):
     volatility = trend.get("volatility_last20")
     volatility_s = f"{volatility:.1f}%" if volatility is not None else "n/a"
     return (
-        f"ETA trend: start_first20={_format_duration(trend['start_s'])} "
-        f"end_last20={_format_duration(trend['end_s'])} "
+        f"ETA trend: start_firstW={_format_duration(trend['start_s'])} "
+        f"end_lastW={_format_duration(trend['end_s'])} "
         f"delta={_format_signed_duration(trend['delta_s'])} ({trend['delta_pct']:+.1f}%) "
         f"slope_last20={format_eta_slope(trend.get('slope_last20'))} "
         f"volatility_last20={volatility_s} "
@@ -2509,7 +2511,7 @@ def print_final_report(
     history_lines = []
     if eta_history:
         pred_totals, history_lines = build_eta_history_lines(eta_history)
-    eta_trend = compute_eta_trend(eta_history, pred_totals)
+    eta_trend = compute_eta_trend(eta_history, pred_totals, args.window_size)
     run_rows = results[results_before_run:]
     run_compute_time = compute_total_compute_time(run_rows)
     cumulative_compute_time = compute_total_compute_time(results_all)
