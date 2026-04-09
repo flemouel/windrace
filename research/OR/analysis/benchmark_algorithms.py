@@ -116,6 +116,19 @@ ALGO_SPECS = {
 DEFAULT_ALGO_ORDER = list(ALGO_SPECS.keys())
 VALID_ALGOS = set(ALGO_SPECS.keys())
 
+PARAM_RESULT_FIELDS = [
+    "horizon", "tackangle", "alpha", "beam_width", "scenarios", "dir_noise", "speed_noise", "seed",
+    "gamma", "lr", "goal_penalty", "epsilon", "epsilon_decay", "epsilon_min",
+    "approx", "hidden_size", "l2", "normalize_features",
+    "initial_temp", "cooling_rate", "min_temp", "reheat_factor",
+]
+METRIC_RESULT_FIELDS = [
+    "total_sailed", "nb_tacks", "steps", "distance_to_mark",
+    "elapsed_time", "worker_elapsed_time", "orchestrator_overhead_time", "effective_elapsed_time",
+    "finished", "success",
+]
+RESULT_FIELDNAMES = ["algorithm", *PARAM_RESULT_FIELDS, *METRIC_RESULT_FIELDS]
+
 # Total tests per algorithm (derived from PARAM_RANGES)
 def _range_len(name, ranges=None):
     src = ranges if ranges is not None else PARAM_RANGES
@@ -456,6 +469,60 @@ def algo_label(algo_name):
     if spec is None:
         return algo_name
     return spec["label"]
+
+
+def build_result_row(algo_name, params, result):
+    row = {
+        "algorithm": algo_name,
+        "horizon": params["horizon"],
+        "tackangle": params["tackangle"],
+        "alpha": params["alpha"],
+        "beam_width": params.get("beam_width"),
+        "scenarios": params.get("scenarios"),
+        "dir_noise": params.get("dir_noise"),
+        "speed_noise": params.get("speed_noise"),
+        "seed": FIXED_PARAMS["seed"],
+        "gamma": params.get("gamma"),
+        "lr": params.get("lr"),
+        "goal_penalty": params.get("goal_penalty"),
+        "epsilon": params.get("epsilon"),
+        "epsilon_decay": params.get("epsilon_decay"),
+        "epsilon_min": params.get("epsilon_min"),
+        "approx": params.get("approx"),
+        "hidden_size": params.get("hidden_size"),
+        "l2": params.get("l2"),
+        "normalize_features": params.get("normalize_features"),
+        "initial_temp": params.get("initial_temp"),
+        "cooling_rate": params.get("cooling_rate"),
+        "min_temp": params.get("min_temp"),
+        "reheat_factor": params.get("reheat_factor"),
+        "total_sailed": result.get("total_sailed") if result else None,
+        "nb_tacks": result.get("nb_tacks") if result else None,
+        "steps": result.get("steps") if result else None,
+        "distance_to_mark": result.get("distance_to_mark") if result else None,
+        "elapsed_time": result.get("elapsed_time") if result else None,
+        "worker_elapsed_time": result.get("elapsed_time") if result else None,
+        "orchestrator_overhead_time": None,
+        "effective_elapsed_time": result.get("elapsed_time") if result else None,
+        "finished": result.get("finished", False) if result else False,
+        "success": result.get("success", False) if result else False,
+    }
+    return row
+
+
+def finalize_result_row_timing(row, orchestrator_overhead):
+    try:
+        worker_elapsed = float(row.get("worker_elapsed_time"))
+    except (TypeError, ValueError):
+        worker_elapsed = None
+    if worker_elapsed is None:
+        effective_elapsed = orchestrator_overhead
+    else:
+        effective_elapsed = worker_elapsed + orchestrator_overhead
+    row["orchestrator_overhead_time"] = orchestrator_overhead
+    row["effective_elapsed_time"] = effective_elapsed
+    row["elapsed_time"] = effective_elapsed
+    return effective_elapsed
 
 
 def _build_value_cost_model(results):
@@ -1877,15 +1944,7 @@ def save_results(results, csv_path, json_path, start_time, total_tests, interrup
     """Save results to CSV and JSON files."""
     # CSV output
     with open(csv_path, "w", newline="") as f:
-        fieldnames = ["algorithm", "horizon", "tackangle", "alpha", "beam_width",
-                      "scenarios", "dir_noise", "speed_noise", "seed",
-                      "gamma", "lr", "goal_penalty", "epsilon", "epsilon_decay", "epsilon_min",
-                      "approx", "hidden_size", "l2", "normalize_features",
-                      "initial_temp", "cooling_rate", "min_temp", "reheat_factor",
-                      "total_sailed", "nb_tacks", "steps", "distance_to_mark",
-                      "elapsed_time", "worker_elapsed_time", "orchestrator_overhead_time", "effective_elapsed_time",
-                      "finished", "success"]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=RESULT_FIELDNAMES)
         writer.writeheader()
         writer.writerows(results)
 
@@ -2092,41 +2151,7 @@ def execute_batch(
                 elapsed = time.time() - start_time
                 rate = completed_this_run / elapsed if elapsed > 0 else 0
 
-                row = {
-                    "algorithm": algo_name,
-                    "horizon": params["horizon"],
-                    "tackangle": params["tackangle"],
-                    "alpha": params["alpha"],
-                    "beam_width": params.get("beam_width"),
-                    "scenarios": params.get("scenarios"),
-                    "dir_noise": params.get("dir_noise"),
-                    "speed_noise": params.get("speed_noise"),
-                    "seed": FIXED_PARAMS["seed"],
-                    "gamma": params.get("gamma"),
-                    "lr": params.get("lr"),
-                    "goal_penalty": params.get("goal_penalty"),
-                    "epsilon": params.get("epsilon"),
-                    "epsilon_decay": params.get("epsilon_decay"),
-                    "epsilon_min": params.get("epsilon_min"),
-                    "approx": params.get("approx"),
-                    "hidden_size": params.get("hidden_size"),
-                    "l2": params.get("l2"),
-                    "normalize_features": params.get("normalize_features"),
-                    "initial_temp": params.get("initial_temp"),
-                    "cooling_rate": params.get("cooling_rate"),
-                    "min_temp": params.get("min_temp"),
-                    "reheat_factor": params.get("reheat_factor"),
-                    "total_sailed": result.get("total_sailed") if result else None,
-                    "nb_tacks": result.get("nb_tacks") if result else None,
-                    "steps": result.get("steps") if result else None,
-                    "distance_to_mark": result.get("distance_to_mark") if result else None,
-                    "elapsed_time": result.get("elapsed_time") if result else None,
-                    "worker_elapsed_time": result.get("elapsed_time") if result else None,
-                    "orchestrator_overhead_time": None,
-                    "effective_elapsed_time": result.get("elapsed_time") if result else None,
-                    "finished": result.get("finished", False) if result else False,
-                    "success": result.get("success", False) if result else False,
-                }
+                row = build_result_row(algo_name, params, result)
 
                 with results_lock:
                     results.append(row)
@@ -2136,17 +2161,7 @@ def execute_batch(
                     if all_completed_keys is not completed_keys:
                         all_completed_keys.add(make_test_key(algo_name, params))
                     orchestrator_overhead = max(0.0, time.time() - orchestrator_start)
-                    try:
-                        worker_elapsed = float(row.get("worker_elapsed_time"))
-                    except (TypeError, ValueError):
-                        worker_elapsed = None
-                    if worker_elapsed is None:
-                        effective_elapsed = orchestrator_overhead
-                    else:
-                        effective_elapsed = worker_elapsed + orchestrator_overhead
-                    row["orchestrator_overhead_time"] = orchestrator_overhead
-                    row["effective_elapsed_time"] = effective_elapsed
-                    row["elapsed_time"] = effective_elapsed
+                    effective_elapsed = finalize_result_row_timing(row, orchestrator_overhead)
 
                     update_eta_tracker(eta_tracker, row["algorithm"], row.get("effective_elapsed_time"))
                     if coverage_tracker is not None:
