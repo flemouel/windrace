@@ -2712,93 +2712,7 @@ def run_selected_search_mode(
     return first_initial_eta_s
 
 
-def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Benchmark trajectory planning algorithms",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument("--output", default="benchmark_results.csv", help="Output CSV file")
-    parser.add_argument("--json-output", default="benchmark_results.json", help="Output JSON file")
-    parser.add_argument("--workers", type=int, default=12, help="Number of parallel workers")
-    parser.add_argument("--algo", default="all",
-                        help="Which algorithm(s) to benchmark (comma-separated or 'all')")
-    parser.add_argument("--range", action="append", default=[],
-                        help="Override a parameter range (repeatable): name=v1,v2 or name=min:max")
-    parser.add_argument("--resume", action="store_true", help="Resume from previous run (skip completed tests)")
-    parser.add_argument("--order", default="quota-window-coverage",
-                        help="Execution order: 'quota-window-coverage' (local greedy per algo; windowed merge with "
-                             "per-algo quotas and head gain selection; stratified across chunks when using workers), "
-                             "'global-coverage' (global greedy coverage ordering), "
-                             "'shuffle' (random across algos/params), or comma-separated algo list "
-                             "(sequential params per algo)")
-    parser.add_argument("--save-interval", type=int, default=100, help="Save results every N completed tests")
-    parser.add_argument("--verbose", type=int, default=0, help="Verbosity level (0=summary, 1=details)")
-    parser.add_argument("--window-size", type=int, default=DEFAULT_WINDOW_SIZE,
-                        help="Window size for quota-window-coverage; ETA uses W_eta=W/2 with EWMA alpha=2/(W_eta+1)")
-    parser.add_argument("--search-mode", default="grid", choices=["grid", "space-search", "coarse-to-fine", "topk-search"],
-                        help="Case generation mode: 'grid' runs all remaining cases; "
-                             "'space-search' keeps a deterministic coarse/refine1/refine2 subset (one-shot); "
-                             "'coarse-to-fine' runs sequential phases with replanning between phases; "
-                             "'topk-search' keeps an estimated best subset with exploit/explore split")
-    parser.add_argument("--space-coarse-step", type=int, default=4,
-                        help="Sparse-grid step for space-search coarse phase")
-    parser.add_argument("--space-refine-step", type=int, default=2,
-                        help="Sparse-grid step for space-search refine pool")
-    parser.add_argument("--space-eta", type=int, default=3,
-                        help="Successive-halving factor for space-search (keep ~1/eta per refine phase)")
-    parser.add_argument("--space-early-stop-delta", type=float, default=0.0,
-                        help="Optional relative min improvement for refine2 activation per algo (fraction; 0.02=2%%)")
-    parser.add_argument("--metric", default="additive-mean",
-                        choices=["additive-mean", "additive-median", "partial-match", "knn"],
-                        help="Scoring metric for space-search/coarse-to-fine candidate ranking")
-    parser.add_argument("--topk-eta", type=int, default=3,
-                        help="Top-k selection factor for topk-search (keep about 1/eta of remaining cases)")
-    parser.add_argument("--topk-explore-ratio", type=float, default=0.05,
-                        help="Top-k explore ratio (random from non-top candidates); exploit is 1 - explore")
-    parser.add_argument("--topk-seed", type=int, default=42,
-                        help="Random seed for topk-search exploration picks")
-    args = parser.parse_args()
-    valid_algos = {"adp_realmove", "beam_realmove", "mpc_realmove", "mpc_simplemove", "spst_realmove", "sa_realmove"}
-    valid_order_keywords = {"shuffle", "quota-window-coverage", "global-coverage"}
-    algo_set = None
-    if args.algo != "all":
-        algo_list = [item.strip() for item in args.algo.split(",") if item.strip()]
-        unknown_algos = [algo for algo in algo_list if algo not in VALID_ALGOS]
-        if unknown_algos:
-            parser.error(f"Unknown algo(s) in --algo: {', '.join(unknown_algos)}")
-        algo_set = set(algo_list)
-    if args.order not in valid_order_keywords:
-        order_list = [item.strip() for item in args.order.split(",") if item.strip()]
-        unknown_order_algos = [algo for algo in order_list if algo not in VALID_ALGOS]
-        if unknown_order_algos:
-            parser.error(f"Unknown algo(s) in --order: {', '.join(sorted(set(unknown_order_algos)))}")
-    global PARAM_RANGES, ALGO_TOTALS
-    try:
-        PARAM_RANGES = apply_range_overrides(BASE_PARAM_RANGES, args.range)
-    except ValueError as e:
-        parser.error(str(e))
-    ALGO_TOTALS = compute_algo_totals(PARAM_RANGES)
-    print("Effective parameter ranges:")
-    for name, values in PARAM_RANGES.items():
-        print(f"  {name}: {_format_allowed_values(values)}")
-
-    # Setup paths
-    output_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(output_dir, args.output)
-    json_path = os.path.join(output_dir, args.json_output)
-
-    if not args.resume and (os.path.exists(csv_path) or os.path.exists(json_path)):
-        print("Existing benchmark results detected.")
-        print(f"  - CSV: {csv_path if os.path.exists(csv_path) else 'not found'}")
-        print(f"  - JSON: {json_path if os.path.exists(json_path) else 'not found'}")
-        response = input("Type 'reset' to overwrite, or press Enter to cancel: ").strip().lower()
-        if response != "reset":
-            print("Cancelled. Re-run with --resume or type 'reset' to overwrite.")
-            return
-
-    # Load existing results if resuming
+def prepare_benchmark_state(args, json_path, algo_set):
     results_all = []
     completed_keys_all = set()
     results = []
@@ -2806,16 +2720,12 @@ def main():
     if args.resume:
         results_all, completed_keys_all = load_existing_results(json_path)
 
-    # Generate test cases
     all_test_cases = generate_test_cases(args.verbose)
     total_tests_original = len(all_test_cases)
 
-    # Filter by algorithm if specified
     if algo_set is not None:
         all_test_cases = [tc for tc in all_test_cases if tc[0] in algo_set]
 
-
-    # Build active resume view for current effective ranges
     if args.resume and completed_keys_all:
         active_completed_keys = set()
         for algo, params, _ in all_test_cases:
@@ -2835,7 +2745,6 @@ def main():
         results_all = []
         completed_keys_all = set()
 
-    # Filter out already completed tests (active scope)
     if args.resume and completed_keys:
         print(f"Filtering completed tests from {len(all_test_cases)} cases...")
         if args.workers > 1 and len(all_test_cases) > args.workers:
@@ -2892,6 +2801,100 @@ def main():
                         )
                     )
                 print("  global distribution: " + " | ".join(parts))
+
+    return results_all, completed_keys_all, results, completed_keys, all_test_cases, total_tests_original
+
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Benchmark trajectory planning algorithms",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--output", default="benchmark_results.csv", help="Output CSV file")
+    parser.add_argument("--json-output", default="benchmark_results.json", help="Output JSON file")
+    parser.add_argument("--workers", type=int, default=12, help="Number of parallel workers")
+    parser.add_argument("--algo", default="all",
+                        help="Which algorithm(s) to benchmark (comma-separated or 'all')")
+    parser.add_argument("--range", action="append", default=[],
+                        help="Override a parameter range (repeatable): name=v1,v2 or name=min:max")
+    parser.add_argument("--resume", action="store_true", help="Resume from previous run (skip completed tests)")
+    parser.add_argument("--order", default="quota-window-coverage",
+                        help="Execution order: 'quota-window-coverage' (local greedy per algo; windowed merge with "
+                             "per-algo quotas and head gain selection; stratified across chunks when using workers), "
+                             "'global-coverage' (global greedy coverage ordering), "
+                             "'shuffle' (random across algos/params), or comma-separated algo list "
+                             "(sequential params per algo)")
+    parser.add_argument("--save-interval", type=int, default=100, help="Save results every N completed tests")
+    parser.add_argument("--verbose", type=int, default=0, help="Verbosity level (0=summary, 1=details)")
+    parser.add_argument("--window-size", type=int, default=DEFAULT_WINDOW_SIZE,
+                        help="Window size for quota-window-coverage; ETA uses W_eta=W/2 with EWMA alpha=2/(W_eta+1)")
+    parser.add_argument("--search-mode", default="grid", choices=["grid", "space-search", "coarse-to-fine", "topk-search"],
+                        help="Case generation mode: 'grid' runs all remaining cases; "
+                             "'space-search' keeps a deterministic coarse/refine1/refine2 subset (one-shot); "
+                             "'coarse-to-fine' runs sequential phases with replanning between phases; "
+                             "'topk-search' keeps an estimated best subset with exploit/explore split")
+    parser.add_argument("--space-coarse-step", type=int, default=4,
+                        help="Sparse-grid step for space-search coarse phase")
+    parser.add_argument("--space-refine-step", type=int, default=2,
+                        help="Sparse-grid step for space-search refine pool")
+    parser.add_argument("--space-eta", type=int, default=3,
+                        help="Successive-halving factor for space-search (keep ~1/eta per refine phase)")
+    parser.add_argument("--space-early-stop-delta", type=float, default=0.0,
+                        help="Optional relative min improvement for refine2 activation per algo (fraction; 0.02=2%%)")
+    parser.add_argument("--metric", default="additive-mean",
+                        choices=["additive-mean", "additive-median", "partial-match", "knn"],
+                        help="Scoring metric for space-search/coarse-to-fine candidate ranking")
+    parser.add_argument("--topk-eta", type=int, default=3,
+                        help="Top-k selection factor for topk-search (keep about 1/eta of remaining cases)")
+    parser.add_argument("--topk-explore-ratio", type=float, default=0.05,
+                        help="Top-k explore ratio (random from non-top candidates); exploit is 1 - explore")
+    parser.add_argument("--topk-seed", type=int, default=42,
+                        help="Random seed for topk-search exploration picks")
+    args = parser.parse_args()
+    valid_order_keywords = {"shuffle", "quota-window-coverage", "global-coverage"}
+    algo_set = None
+    if args.algo != "all":
+        algo_list = [item.strip() for item in args.algo.split(",") if item.strip()]
+        unknown_algos = [algo for algo in algo_list if algo not in VALID_ALGOS]
+        if unknown_algos:
+            parser.error(f"Unknown algo(s) in --algo: {', '.join(unknown_algos)}")
+        algo_set = set(algo_list)
+    if args.order not in valid_order_keywords:
+        order_list = [item.strip() for item in args.order.split(",") if item.strip()]
+        unknown_order_algos = [algo for algo in order_list if algo not in VALID_ALGOS]
+        if unknown_order_algos:
+            parser.error(f"Unknown algo(s) in --order: {', '.join(sorted(set(unknown_order_algos)))}")
+    global PARAM_RANGES, ALGO_TOTALS
+    try:
+        PARAM_RANGES = apply_range_overrides(BASE_PARAM_RANGES, args.range)
+    except ValueError as e:
+        parser.error(str(e))
+    ALGO_TOTALS = compute_algo_totals(PARAM_RANGES)
+    print("Effective parameter ranges:")
+    for name, values in PARAM_RANGES.items():
+        print(f"  {name}: {_format_allowed_values(values)}")
+
+    # Setup paths
+    output_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_path = os.path.join(output_dir, args.output)
+    json_path = os.path.join(output_dir, args.json_output)
+
+    if not args.resume and (os.path.exists(csv_path) or os.path.exists(json_path)):
+        print("Existing benchmark results detected.")
+        print(f"  - CSV: {csv_path if os.path.exists(csv_path) else 'not found'}")
+        print(f"  - JSON: {json_path if os.path.exists(json_path) else 'not found'}")
+        response = input("Type 'reset' to overwrite, or press Enter to cancel: ").strip().lower()
+        if response != "reset":
+            print("Cancelled. Re-run with --resume or type 'reset' to overwrite.")
+            return
+
+    results_all, completed_keys_all, results, completed_keys, all_test_cases, total_tests_original = prepare_benchmark_state(
+        args=args,
+        json_path=json_path,
+        algo_set=algo_set,
+    )
 
     interrupted_state = {"value": False}
     print_progress_line._suspend = False
