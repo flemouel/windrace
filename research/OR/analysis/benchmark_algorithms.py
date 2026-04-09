@@ -441,12 +441,11 @@ def generate_test_cases(verbose=0):
             test_id += 1
             pct = 100.0 * test_id / total_expected
             if int(pct) != last_pct and int(pct) % 10 == 0:
-                bar = format_progress_bar(pct, width=20)
-                print(f"\r  generation [{bar}] {pct:3.0f}%", end="", flush=True)
+                print(render_progress_line("generation", pct, width=20), end="", flush=True)
                 last_pct = int(pct)
         counts[algo_name] = test_id - start_count
 
-    print(f"\r  generation [{format_progress_bar(100.0, width=20)}] 100%   ", end="", flush=True)
+    print(render_progress_line("generation", 100.0, suffix="   ", width=20), end="", flush=True)
     print()
     if verbose > 0:
         for algo in DEFAULT_ALGO_ORDER:
@@ -1385,7 +1384,7 @@ def order_cases_quota_window_coverage_chunked(test_cases, algo_order, workers, v
     # Announce early before heavy metric computations.
     print(f"Ordering {len(shuffled)} cases with stratified {workers} chunks (workers={workers})...")
     if shuffle_global_done:
-        print(f"  shuffle global [{format_progress_bar(100.0, width=20)}] 100%   ")
+        print_completed_progress("shuffle global")
     if verbose > 0:
         global_counts, global_max_gaps, global_max_runs, global_min_share, global_gain, global_unique_ratio, global_param_run = compute_chunk_metrics(
             shuffled, algo_order, pairs_by_algo
@@ -1421,7 +1420,7 @@ def order_cases_quota_window_coverage_chunked(test_cases, algo_order, workers, v
                     )
             if parts:
                 print(f"  global distribution: " + " | ".join(parts))
-    print(f"  chunk dispatch [{format_progress_bar(100.0, width=20)}] 100%   ")
+    print_completed_progress("chunk dispatch")
     # Pre-coverage metrics (verbose only)
     if verbose > 0:
         pre_counts = {}
@@ -1472,10 +1471,16 @@ def order_cases_quota_window_coverage_chunked(test_cases, algo_order, workers, v
         done_chunks += 1
         total_chunks = len(chunks) + 1
         pct = 100.0 * done_chunks / max(1, total_chunks)
-        bar = format_progress_bar(pct, width=20)
         elapsed = time.perf_counter() - window_start
         print(
-            f"\r  window-based coverage chunks + warmup [{bar}] {done_chunks}/{total_chunks} ({pct:.0f}%) {elapsed:.1f}s",
+            render_count_progress_line(
+                "window-based coverage chunks + warmup",
+                pct,
+                done_chunks,
+                total_chunks,
+                suffix=f" {elapsed:.1f}s",
+                width=20,
+            ),
             end="",
             flush=True,
         )
@@ -1493,13 +1498,19 @@ def order_cases_quota_window_coverage_chunked(test_cases, algo_order, workers, v
                 chunk_metrics[worker_id] = compute_chunk_metrics(chunk_ordered, algo_order, pairs_by_algo)
             done_chunks += 1
             pct = 100.0 * done_chunks / max(1, total_chunks)
-            bar = format_progress_bar(pct, width=20)
             elapsed = time.perf_counter() - window_start
             print(
-            f"\r  window-based coverage chunks + warmup [{bar}] {done_chunks}/{total_chunks} ({pct:.0f}%) {elapsed:.1f}s",
-            end="",
-            flush=True,
-        )
+                render_count_progress_line(
+                    "window-based coverage chunks + warmup",
+                    pct,
+                    done_chunks,
+                    total_chunks,
+                    suffix=f" {elapsed:.1f}s",
+                    width=20,
+                ),
+                end="",
+                flush=True,
+            )
     if total_chunks:
         print()
     if verbose > 0 and chunk_metrics:
@@ -1583,12 +1594,21 @@ def render_progress_line(label, pct, suffix="", width=20):
     return f"\r  {label} [{bar}] {pct:3.0f}%{suffix}"
 
 
+def render_count_progress_line(label, pct, current, total, suffix="", width=20):
+    bar = format_progress_bar(pct, width=width)
+    return f"\r  {label} [{bar}] {current}/{total} ({pct:.0f}%){suffix}"
+
+
 def maybe_print_progress(label, pct, last_pct, suffix="", step=5, width=20):
     pct_int = int(pct)
     if pct_int != last_pct and pct_int % step == 0:
         print(render_progress_line(label, pct, suffix=suffix, width=width), end="", flush=True)
         return pct_int
     return last_pct
+
+
+def print_completed_progress(label, width=20, suffix="   ", flush=True):
+    print(f"  {label} [{format_progress_bar(100.0, width=width)}] 100%{suffix}", flush=flush)
 
 
 def load_existing_results(json_path):
@@ -1967,7 +1987,7 @@ def order_cases_by_mode(test_cases, args):
     if args.order == "shuffle":
         print(f"Ordering {len(test_cases)} cases...")
         random.shuffle(test_cases)
-        print(f"  shuffle global [{format_progress_bar(100.0, width=20)}] 100%   ")
+        print_completed_progress("shuffle global")
         return test_cases
 
     if args.order == "quota-window-coverage":
@@ -2028,13 +2048,12 @@ def order_cases_by_mode(test_cases, args):
         done_order += len(chunk)
         pct = 100.0 * done_order / total_order if total_order else 100.0
         if int(pct) != last_pct and int(pct) % 5 == 0:
-            bar = format_progress_bar(pct, width=20)
-            print(f"\r  order by algo [{bar}] {pct:3.0f}%", end="", flush=True)
+            print(render_progress_line("order by algo", pct, width=20), end="", flush=True)
             last_pct = int(pct)
     tail = [tc for tc in test_cases if tc[0] not in order_set]
     ordered.extend(tail)
     if total_order:
-        print(f"\r  order by algo [{format_progress_bar(100.0, width=20)}] 100%   ", end="", flush=True)
+        print(render_progress_line("order by algo", 100.0, suffix="   ", width=20), end="", flush=True)
         print()
     print(f"Test cases ordered by: {', '.join(order_list)}")
     return ordered
@@ -2675,7 +2694,7 @@ def run_selected_search_mode(
             f"(selected {plan.get('selected_total', 0)}/{planned_total_input})",
             flush=True,
         )
-        print(f"  top-k fusion [{format_progress_bar(100.0, width=20)}] 100%   ", flush=True)
+        print_completed_progress("top-k fusion")
         quota = plan.get("per_algo_quota", {})
         picked = plan.get("per_algo_selected", {})
         exp = plan.get("per_algo_exploit", {})
@@ -2754,8 +2773,17 @@ def prepare_benchmark_state(args, json_path, algo_set):
                     done_chunks += 1
                     if done_chunks % max(1, len(chunks) // 10) == 0 or done_chunks == len(chunks):
                         pct = 100.0 * done_chunks / len(chunks)
-                        bar = format_progress_bar(pct, width=20)
-                        print(f"\r  filter progress [{bar}] {done_chunks}/{len(chunks)} chunks ({pct:.0f}%)", end="", flush=True)
+                        print(
+                            render_count_progress_line(
+                                "filter progress",
+                                pct,
+                                done_chunks,
+                                f"{len(chunks)} chunks",
+                                width=20,
+                            ),
+                            end="",
+                            flush=True,
+                        )
         else:
             remaining_tests = []
             for algo, params, tid in all_test_cases:
