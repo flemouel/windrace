@@ -265,11 +265,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT_DIR = os.path.dirname(os.path.dirname(BASE_DIR))
 
 
-def run_algorithm(algo_name, params, timeout=300):
-    """
-    Run a single algorithm with given parameters.
-    Returns dict with results or None on failure.
-    """
+def _build_algorithm_command(algo_name, params):
     script_path = os.path.join(BASE_DIR, ALGO_SPECS[algo_name]["script"])
     wind_path = os.path.join(ROOT_DIR, "winddata", "wind_data.json")
 
@@ -342,6 +338,50 @@ def run_algorithm(algo_name, params, timeout=300):
             "--seed", str(FIXED_PARAMS["seed"]),
         ])
     # mpc_simplemove doesn't have near/far delay parameters
+    return cmd
+
+
+def _parse_algorithm_output(output, elapsed):
+    total_sailed = None
+    nb_tacks = None
+    steps = None
+    distance_to_mark = None
+
+    for line in output.strip().split("\n"):
+        if line.startswith("total_sailed:"):
+            total_sailed = float(line.split(":")[1].strip().replace(" m", ""))
+        elif line.startswith("tacks:"):
+            # Parse "tacks: ['P123', 'S456'] ... total 5 tack decisions"
+            if "total" in line:
+                parts = line.split("total")
+                nb_tacks = int(parts[1].strip().split()[0])
+            else:
+                nb_tacks = 0
+        elif line.startswith("steps:"):
+            steps = int(line.split(":")[1].strip())
+        elif line.startswith("distance_to_mark:"):
+            dist_str = line.split(":")[1].strip().replace(" m", "")
+            if dist_str != "-":
+                distance_to_mark = float(dist_str)
+
+    finished = distance_to_mark is not None and distance_to_mark <= FIXED_PARAMS["goal"]
+    return {
+        "total_sailed": total_sailed,
+        "nb_tacks": nb_tacks,
+        "steps": steps,
+        "distance_to_mark": distance_to_mark,
+        "elapsed_time": elapsed,
+        "finished": finished,
+        "success": True
+    }
+
+
+def run_algorithm(algo_name, params, timeout=300):
+    """
+    Run a single algorithm with given parameters.
+    Returns dict with results or None on failure.
+    """
+    cmd = _build_algorithm_command(algo_name, params)
 
     try:
         start_time = time.time()
@@ -356,43 +396,7 @@ def run_algorithm(algo_name, params, timeout=300):
 
         if result.returncode != 0:
             return None
-
-        # Parse output
-        output = result.stdout
-        total_sailed = None
-        nb_tacks = None
-        steps = None
-        distance_to_mark = None
-
-        for line in output.strip().split("\n"):
-            if line.startswith("total_sailed:"):
-                total_sailed = float(line.split(":")[1].strip().replace(" m", ""))
-            elif line.startswith("tacks:"):
-                # Parse "tacks: ['P123', 'S456'] ... total 5 tack decisions"
-                if "total" in line:
-                    parts = line.split("total")
-                    nb_tacks = int(parts[1].strip().split()[0])
-                else:
-                    nb_tacks = 0
-            elif line.startswith("steps:"):
-                steps = int(line.split(":")[1].strip())
-            elif line.startswith("distance_to_mark:"):
-                dist_str = line.split(":")[1].strip().replace(" m", "")
-                if dist_str != "-":
-                    distance_to_mark = float(dist_str)
-
-        # Check if race was completed (distance_to_mark <= goal)
-        finished = distance_to_mark is not None and distance_to_mark <= FIXED_PARAMS["goal"]
-
-        return {
-            "total_sailed": total_sailed,
-            "nb_tacks": nb_tacks,
-            "steps": steps,
-            "distance_to_mark": distance_to_mark,
-            "elapsed_time": elapsed,
-            "finished": finished,
-            "success": True
-        }
+        return _parse_algorithm_output(result.stdout, elapsed)
 
     except subprocess.TimeoutExpired:
         return {"success": False, "error": "timeout"}
