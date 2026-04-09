@@ -2232,6 +2232,195 @@ def execute_batch(
     }
 
 
+def build_eta_history_lines(history):
+    pred_totals_local = []
+    lines_local = []
+    for i, (elapsed_s, eta_s, eta_ewma_s, eta_wall_s, _eta_phase, eta_w_ewma, eta_w_wall) in enumerate(history, start=1):
+        eta_sum = (elapsed_s if elapsed_s is not None else 0.0) + (eta_s if eta_s is not None else 0.0)
+        pred_totals_local.append(eta_sum)
+        if eta_ewma_s is not None and eta_wall_s is not None:
+            eta_expr = (
+                f"{_format_duration(eta_s)}"
+                f"({eta_w_ewma:.1f}*{_format_duration(eta_ewma_s)}+{eta_w_wall:.1f}*{_format_duration(eta_wall_s)})"
+            )
+        elif eta_ewma_s is not None:
+            we = eta_w_ewma if eta_w_ewma is not None else 1.0
+            ww = eta_w_wall if eta_w_wall is not None else 0.0
+            eta_expr = f"{_format_duration(eta_s)}({we:.1f}*{_format_duration(eta_ewma_s)}+{ww:.1f}*n/a)"
+        else:
+            eta_expr = _format_duration(eta_s)
+        lines_local.append(
+            f"  {i:>4d}. {_format_duration(elapsed_s)} + {eta_expr} = {_format_duration(eta_sum)}"
+        )
+    return pred_totals_local, lines_local
+
+
+def compute_eta_stats(pred_totals_local, target):
+    if not pred_totals_local or target is None or target <= 0:
+        return None
+    errors = [p - target for p in pred_totals_local]
+    abs_errors = [abs(e) for e in errors]
+    rel_abs = [ae / target for ae in abs_errors]
+    within10 = sum(1 for r in rel_abs if r <= 0.10)
+    return {
+        "bias_s": sum(errors) / len(errors),
+        "mae_s": sum(abs_errors) / len(abs_errors),
+        "mape": (sum(rel_abs) / len(rel_abs)) * 100.0,
+        "hit10": (100.0 * within10 / len(rel_abs)),
+    }
+
+
+def find_stabilization_start(pred_totals_local, target, tolerance, window_size=20, inside_ratio=0.80, consecutive_windows=3):
+    if not pred_totals_local or target is None or tolerance is None:
+        return None
+    n = len(pred_totals_local)
+    if n == 0:
+        return None
+    k = min(window_size, n)
+    need = max(1, int(inside_ratio * k))
+    consec = 0
+    for start in range(0, n - k + 1):
+        window = pred_totals_local[start:start + k]
+        inside = sum(1 for value in window if abs(value - target) <= tolerance)
+        if inside >= need:
+            consec += 1
+            if consec >= consecutive_windows:
+                return start
+        else:
+            consec = 0
+    return None
+
+
+def print_eta_history_compact(lines_local, pred_totals_local, target, stats):
+    print("ETA history (elapsed + ETA (w_ewma*EWMA+w_wall*ETA_Wall)):")
+    n = len(lines_local)
+    if n <= 30:
+        for line in lines_local:
+            print(line)
+        return
+    first_n = 10
+    middle_n = 10
+    last_n = 10
+    mid_start_1based = None
+    if stats is not None and pred_totals_local:
+        target_zone = target + stats["bias_s"]
+        tol = max(1.0, stats["mae_s"])
+        stable_idx = find_stabilization_start(pred_totals_local, target_zone, tol)
+        if stable_idx is not None:
+            mid_start_1based = stable_idx + 1
+    if mid_start_1based is None:
+        mid_start = max(first_n, (n - middle_n) // 2)
+    else:
+        mid_start = max(first_n, min(n - last_n - middle_n, mid_start_1based - 1))
+    mid_end = min(n, mid_start + middle_n)
+    if mid_end > n - last_n:
+        mid_end = n - last_n
+        mid_start = mid_end - middle_n
+    sections = [
+        (1, first_n),
+        (mid_start + 1, mid_end),
+        (n - last_n + 1, n),
+    ]
+    seen = set()
+    for idx, (a, b) in enumerate(sections):
+        if a > b:
+            continue
+        key = (a, b)
+        if key in seen:
+            continue
+        seen.add(key)
+        print(f"  [{a}-{b}]")
+        for j in range(a - 1, b):
+            print(lines_local[j])
+        if idx < len(sections) - 1:
+            print("  ...")
+
+
+def compute_total_compute_time(rows):
+    total = 0.0
+    found = False
+    for row in rows:
+        try:
+            value = float(row.get("effective_elapsed_time", row.get("elapsed_time")))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        total += value
+        found = True
+    return total if found else None
+
+
+def format_eta_slope(slope):
+    if slope is None:
+        return "n/a"
+    sign = "+" if slope >= 0 else "-"
+    return f"{sign}{abs(slope):.1f}h/h"
+
+
+def compute_eta_trend(history, pred_totals_local):
+    if not history or not pred_totals_local:
+        return None
+    elapsed_values = [float(item[0] or 0.0) for item in history]
+    start = pred_totals_local[0]
+    last20 = pred_totals_local[-20:]
+    end = _percentile(last20, 0.5)
+    if start is None or start <= 0 or end is None or end <= 0:
+        return None
+
+    delta = end - start
+    delta_pct = 100.0 * delta / start
+
+    slope = None
+    if len(last20) >= 2:
+        last20_elapsed = elapsed_values[-len(last20):]
+        mean_x = sum(last20_elapsed) / len(last20_elapsed)
+        mean_y = sum(last20) / len(last20)
+        denom = sum((x - mean_x) ** 2 for x in last20_elapsed)
+        if denom > 0:
+            slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(last20_elapsed, last20)) / denom
+
+    last20_errors = [abs(p - end) for p in last20]
+    last20_mae = sum(last20_errors) / len(last20_errors) if last20_errors else None
+    volatility = None
+    if last20:
+        deviations = [abs(p - end) for p in last20]
+        mad = _percentile(deviations, 0.5)
+        if mad is not None and end > 0:
+            volatility = 100.0 * mad / end
+
+    stabilized_after = None
+    n = len(pred_totals_local)
+    if last20_mae is not None and n >= 3:
+        tol = max(last20_mae, 0.10 * end, 1.0)
+        stable_idx = find_stabilization_start(pred_totals_local, end, tol)
+        if stable_idx is not None:
+            stabilized_after = elapsed_values[stable_idx]
+
+    return {
+        "start_s": start,
+        "end_s": end,
+        "delta_s": delta,
+        "delta_pct": delta_pct,
+        "slope_last20": slope,
+        "volatility_last20": volatility,
+        "stabilized_after_s": stabilized_after,
+    }
+
+
+def format_eta_trend(trend):
+    if trend is None:
+        return "ETA trend: n/a"
+    volatility = trend.get("volatility_last20")
+    volatility_s = f"{volatility:.1f}%" if volatility is not None else "n/a"
+    return (
+        f"ETA trend: start={_format_duration(trend['start_s'])} "
+        f"end={_format_duration(trend['end_s'])} "
+        f"delta={_format_signed_duration(trend['delta_s'])} ({trend['delta_pct']:+.1f}%) "
+        f"slope_last20={format_eta_slope(trend.get('slope_last20'))} "
+        f"volatility_last20={volatility_s} "
+        f"stabilized_after={_format_duration(trend.get('stabilized_after_s'))}"
+    )
+
+
 def main():
     import argparse
 
@@ -2631,196 +2820,15 @@ def main():
         summary_algo_order = list(DEFAULT_ALGO_ORDER)
     print_progress_summary(results, summary_algo_order, "RÉSUMÉ FINAL")
 
-    def _build_eta_history_lines(history):
-        pred_totals_local = []
-        lines_local = []
-        for i, (elapsed_s, eta_s, eta_ewma_s, eta_wall_s, _eta_phase, eta_w_ewma, eta_w_wall) in enumerate(history, start=1):
-            eta_sum = (elapsed_s if elapsed_s is not None else 0.0) + (eta_s if eta_s is not None else 0.0)
-            pred_totals_local.append(eta_sum)
-            if eta_ewma_s is not None and eta_wall_s is not None:
-                eta_expr = (
-                    f"{_format_duration(eta_s)}"
-                    f"({eta_w_ewma:.1f}*{_format_duration(eta_ewma_s)}+{eta_w_wall:.1f}*{_format_duration(eta_wall_s)})"
-                )
-            elif eta_ewma_s is not None:
-                we = eta_w_ewma if eta_w_ewma is not None else 1.0
-                ww = eta_w_wall if eta_w_wall is not None else 0.0
-                eta_expr = f"{_format_duration(eta_s)}({we:.1f}*{_format_duration(eta_ewma_s)}+{ww:.1f}*n/a)"
-            else:
-                eta_expr = _format_duration(eta_s)
-            lines_local.append(
-                f"  {i:>4d}. {_format_duration(elapsed_s)} + {eta_expr} = {_format_duration(eta_sum)}"
-            )
-        return pred_totals_local, lines_local
-
-    def _compute_stats(pred_totals_local, target):
-        if not pred_totals_local or target is None or target <= 0:
-            return None
-        errors = [p - target for p in pred_totals_local]
-        abs_errors = [abs(e) for e in errors]
-        rel_abs = [ae / target for ae in abs_errors]
-        within10 = sum(1 for r in rel_abs if r <= 0.10)
-        return {
-            "bias_s": sum(errors) / len(errors),
-            "mae_s": sum(abs_errors) / len(abs_errors),
-            "mape": (sum(rel_abs) / len(rel_abs)) * 100.0,
-            "hit10": (100.0 * within10 / len(rel_abs)),
-        }
-
-    def _find_stabilization_start(pred_totals_local, target, tolerance, window_size=20, inside_ratio=0.80, consecutive_windows=3):
-        if not pred_totals_local or target is None or tolerance is None:
-            return None
-        n = len(pred_totals_local)
-        if n == 0:
-            return None
-        k = min(window_size, n)
-        need = max(1, int(inside_ratio * k))
-        consec = 0
-        for start in range(0, n - k + 1):
-            window = pred_totals_local[start:start + k]
-            inside = sum(1 for value in window if abs(value - target) <= tolerance)
-            if inside >= need:
-                consec += 1
-                if consec >= consecutive_windows:
-                    return start
-            else:
-                consec = 0
-        return None
-
-    def _print_eta_history_compact(lines_local, pred_totals_local, target, stats):
-        print("ETA history (elapsed + ETA (w_ewma*EWMA+w_wall*ETA_Wall)):")
-        n = len(lines_local)
-        if n <= 30:
-            for line in lines_local:
-                print(line)
-            return
-        first_n = 10
-        middle_n = 10
-        last_n = 10
-        mid_start_1based = None
-        if stats is not None and pred_totals_local:
-            target_zone = target + stats["bias_s"]
-            tol = max(1.0, stats["mae_s"])
-            stable_idx = _find_stabilization_start(pred_totals_local, target_zone, tol)
-            if stable_idx is not None:
-                mid_start_1based = stable_idx + 1
-        if mid_start_1based is None:
-            mid_start = max(first_n, (n - middle_n) // 2)
-        else:
-            mid_start = max(first_n, min(n - last_n - middle_n, mid_start_1based - 1))
-        mid_end = min(n, mid_start + middle_n)
-        if mid_end > n - last_n:
-            mid_end = n - last_n
-            mid_start = mid_end - middle_n
-        sections = [
-            (1, first_n),
-            (mid_start + 1, mid_end),
-            (n - last_n + 1, n),
-        ]
-        seen = set()
-        for idx, (a, b) in enumerate(sections):
-            if a > b:
-                continue
-            key = (a, b)
-            if key in seen:
-                continue
-            seen.add(key)
-            print(f"  [{a}-{b}]")
-            for j in range(a - 1, b):
-                print(lines_local[j])
-            if idx < len(sections) - 1:
-                print("  ...")
-
-    def _compute_total_compute_time(rows):
-        total = 0.0
-        found = False
-        for row in rows:
-            try:
-                value = float(row.get("effective_elapsed_time", row.get("elapsed_time")))
-            except (TypeError, ValueError, AttributeError):
-                continue
-            total += value
-            found = True
-        return total if found else None
-
-    def _format_eta_slope(slope):
-        if slope is None:
-            return "n/a"
-        sign = "+" if slope >= 0 else "-"
-        return f"{sign}{abs(slope):.1f}h/h"
-
-    def _compute_eta_trend(history, pred_totals_local):
-        if not history or not pred_totals_local:
-            return None
-        elapsed_values = [float(item[0] or 0.0) for item in history]
-        start = pred_totals_local[0]
-        last20 = pred_totals_local[-20:]
-        end = _percentile(last20, 0.5)
-        if start is None or start <= 0 or end is None or end <= 0:
-            return None
-
-        delta = end - start
-        delta_pct = 100.0 * delta / start
-
-        slope = None
-        if len(last20) >= 2:
-            last20_elapsed = elapsed_values[-len(last20):]
-            mean_x = sum(last20_elapsed) / len(last20_elapsed)
-            mean_y = sum(last20) / len(last20)
-            denom = sum((x - mean_x) ** 2 for x in last20_elapsed)
-            if denom > 0:
-                slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(last20_elapsed, last20)) / denom
-
-        last20_errors = [abs(p - end) for p in last20]
-        last20_mae = sum(last20_errors) / len(last20_errors) if last20_errors else None
-        volatility = None
-        if last20:
-            deviations = [abs(p - end) for p in last20]
-            mad = _percentile(deviations, 0.5)
-            if mad is not None and end > 0:
-                volatility = 100.0 * mad / end
-
-        stabilized_after = None
-        n = len(pred_totals_local)
-        if last20_mae is not None and n >= 3:
-            tol = max(last20_mae, 0.10 * end, 1.0)
-            stable_idx = _find_stabilization_start(pred_totals_local, end, tol)
-            if stable_idx is not None:
-                stabilized_after = elapsed_values[stable_idx]
-
-        return {
-            "start_s": start,
-            "end_s": end,
-            "delta_s": delta,
-            "delta_pct": delta_pct,
-            "slope_last20": slope,
-            "volatility_last20": volatility,
-            "stabilized_after_s": stabilized_after,
-        }
-
-    def _format_eta_trend(trend):
-        if trend is None:
-            return "ETA trend: n/a"
-        volatility = trend.get("volatility_last20")
-        volatility_s = f"{volatility:.1f}%" if volatility is not None else "n/a"
-        return (
-            f"ETA trend: start={_format_duration(trend['start_s'])} "
-            f"end={_format_duration(trend['end_s'])} "
-            f"delta={_format_signed_duration(trend['delta_s'])} ({trend['delta_pct']:+.1f}%) "
-            f"slope_last20={_format_eta_slope(trend.get('slope_last20'))} "
-            f"volatility_last20={volatility_s} "
-            f"stabilized_after={_format_duration(trend.get('stabilized_after_s'))}"
-        )
-
     total_elapsed = time.time() - benchmark_start
     pred_totals = []
     history_lines = []
     if eta_history:
-        pred_totals, history_lines = _build_eta_history_lines(eta_history)
-    eta_trend = _compute_eta_trend(eta_history, pred_totals)
+        pred_totals, history_lines = build_eta_history_lines(eta_history)
+    eta_trend = compute_eta_trend(eta_history, pred_totals)
     run_rows = results[results_before_run:]
-    run_compute_time = _compute_total_compute_time(run_rows)
-    cumulative_compute_time = _compute_total_compute_time(results_all)
+    run_compute_time = compute_total_compute_time(run_rows)
+    cumulative_compute_time = compute_total_compute_time(results_all)
     had_previous_results = results_before_run > 0
 
     if interrupted_state["value"]:
@@ -2831,14 +2839,14 @@ def main():
         last20_totals = pred_totals[-20:] if pred_totals else []
         estimated_elapsed = _percentile(last20_totals, 0.5) if last20_totals else None
         if args.verbose > 0 and history_lines:
-            partial_stats_for_view = _compute_stats(last20_totals, estimated_elapsed)
-            _print_eta_history_compact(history_lines, pred_totals, estimated_elapsed, partial_stats_for_view)
-        estimated_stats = _compute_stats(pred_totals, estimated_elapsed)
+            partial_stats_for_view = compute_eta_stats(last20_totals, estimated_elapsed)
+            print_eta_history_compact(history_lines, pred_totals, estimated_elapsed, partial_stats_for_view)
+        estimated_stats = compute_eta_stats(pred_totals, estimated_elapsed)
         if run_compute_time is not None:
             print(f"Aggregate multi-processor compute time: {_format_duration(run_compute_time)}")
         if args.resume and had_previous_results and cumulative_compute_time is not None:
             print(f"Cumulative aggregate multi-processor compute time: {_format_duration(cumulative_compute_time)}")
-        print(_format_eta_trend(eta_trend))
+        print(format_eta_trend(eta_trend))
         if estimated_stats is not None:
             print(
                 f"Estimated elapsed time: {_format_duration(estimated_elapsed)}"
@@ -2850,7 +2858,7 @@ def main():
         else:
             print(f"Estimated elapsed time: {_format_duration(estimated_elapsed)}")
 
-        partial_stats = _compute_stats(last20_totals, estimated_elapsed)
+        partial_stats = compute_eta_stats(last20_totals, estimated_elapsed)
         if partial_stats is not None and last20_totals:
             print(
                 "Partial ETA diagnostics (interrupted, target=median last 20 predicted totals): "
@@ -2865,16 +2873,16 @@ def main():
         run_completed = len(results) - results_before_run
         print(f"Benchmark complete! ({run_completed} tests in this run)")
         print()
-        pred_stats = _compute_stats(pred_totals, total_elapsed)
+        pred_stats = compute_eta_stats(pred_totals, total_elapsed)
         if args.verbose > 0 and history_lines:
-            _print_eta_history_compact(history_lines, pred_totals, total_elapsed, pred_stats)
+            print_eta_history_compact(history_lines, pred_totals, total_elapsed, pred_stats)
         elif not eta_history:
             print(f"Initial ETA estimate: {_format_duration(first_initial_eta_s)}")
         if run_compute_time is not None:
             print(f"Aggregate multi-processor compute time: {_format_duration(run_compute_time)}")
         if args.resume and had_previous_results and cumulative_compute_time is not None:
             print(f"Cumulative aggregate multi-processor compute time: {_format_duration(cumulative_compute_time)}")
-        print(_format_eta_trend(eta_trend))
+        print(format_eta_trend(eta_trend))
         if pred_stats is not None:
             print(
                 f"Real elapsed time: {_format_duration(total_elapsed)}"
