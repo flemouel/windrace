@@ -2421,6 +2421,118 @@ def format_eta_trend(trend):
     )
 
 
+def print_final_report(
+    args,
+    results,
+    results_all,
+    results_before_run,
+    total_tests_original,
+    benchmark_start,
+    eta_history,
+    first_initial_eta_s,
+    interrupted_state,
+    csv_path,
+    json_path,
+):
+    summary_present_algos = {r.get("algorithm") for r in results if r.get("algorithm")}
+    summary_algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in summary_present_algos]
+    summary_algo_order.extend(sorted(summary_present_algos - set(summary_algo_order)))
+    if not summary_algo_order:
+        summary_algo_order = list(DEFAULT_ALGO_ORDER)
+    print_progress_summary(results, summary_algo_order, "RÉSUMÉ FINAL")
+
+    total_elapsed = time.time() - benchmark_start
+    pred_totals = []
+    history_lines = []
+    if eta_history:
+        pred_totals, history_lines = build_eta_history_lines(eta_history)
+    eta_trend = compute_eta_trend(eta_history, pred_totals)
+    run_rows = results[results_before_run:]
+    run_compute_time = compute_total_compute_time(run_rows)
+    cumulative_compute_time = compute_total_compute_time(results_all)
+    had_previous_results = results_before_run > 0
+
+    if interrupted_state["value"]:
+        run_completed = len(results) - results_before_run
+        print(f"\nBenchmark interrupted! ({run_completed} tests in this run)")
+        print(f"Progress saved: {len(results)}/{total_tests_original} tests completed")
+        print(f"Run with --resume to continue\n")
+        last20_totals = pred_totals[-20:] if pred_totals else []
+        estimated_elapsed = _percentile(last20_totals, 0.5) if last20_totals else None
+        if args.verbose > 0 and history_lines:
+            partial_stats_for_view = compute_eta_stats(last20_totals, estimated_elapsed)
+            print_eta_history_compact(history_lines, pred_totals, estimated_elapsed, partial_stats_for_view)
+        estimated_stats = compute_eta_stats(pred_totals, estimated_elapsed)
+        if run_compute_time is not None:
+            print(f"Aggregate multi-processor compute time: {_format_duration(run_compute_time)}")
+        if args.resume and had_previous_results and cumulative_compute_time is not None:
+            print(f"Cumulative aggregate multi-processor compute time: {_format_duration(cumulative_compute_time)}")
+        print(format_eta_trend(eta_trend))
+        if estimated_stats is not None:
+            print(
+                f"Estimated elapsed time: {_format_duration(estimated_elapsed)}"
+                f" | bias:{_format_signed_duration(estimated_stats['bias_s'])}"
+                f" mae:{_format_duration(estimated_stats['mae_s'])}"
+                f" mape:{estimated_stats['mape']:.1f}%"
+                f" hit10%:{estimated_stats['hit10']:.0f}%"
+            )
+        else:
+            print(f"Estimated elapsed time: {_format_duration(estimated_elapsed)}")
+
+        partial_stats = compute_eta_stats(last20_totals, estimated_elapsed)
+        if partial_stats is not None and last20_totals:
+            print(
+                "Partial ETA diagnostics (interrupted, target=median last 20 predicted totals): "
+                f"bias:{_format_signed_duration(partial_stats['bias_s'])} "
+                f"mae:{_format_duration(partial_stats['mae_s'])} "
+                f"mape:{partial_stats['mape']:.1f}% "
+                f"hit10%:{partial_stats['hit10']:.0f}%"
+            )
+        else:
+            print("Partial ETA diagnostics (interrupted, target=median last 20 predicted totals): n/a")
+    else:
+        run_completed = len(results) - results_before_run
+        print(f"Benchmark complete! ({run_completed} tests in this run)")
+        print()
+        pred_stats = compute_eta_stats(pred_totals, total_elapsed)
+        if args.verbose > 0 and history_lines:
+            print_eta_history_compact(history_lines, pred_totals, total_elapsed, pred_stats)
+        elif not eta_history:
+            print(f"Initial ETA estimate: {_format_duration(first_initial_eta_s)}")
+        if run_compute_time is not None:
+            print(f"Aggregate multi-processor compute time: {_format_duration(run_compute_time)}")
+        if args.resume and had_previous_results and cumulative_compute_time is not None:
+            print(f"Cumulative aggregate multi-processor compute time: {_format_duration(cumulative_compute_time)}")
+        print(format_eta_trend(eta_trend))
+        if pred_stats is not None:
+            print(
+                f"Real elapsed time: {_format_duration(total_elapsed)}"
+                f" | bias:{_format_signed_duration(pred_stats['bias_s'])}"
+                f" mae:{_format_duration(pred_stats['mae_s'])}"
+                f" mape:{pred_stats['mape']:.1f}%"
+                f" hit10%:{pred_stats['hit10']:.0f}%"
+            )
+        else:
+            print(f"Real elapsed time: {_format_duration(total_elapsed)}")
+
+    print()
+    print("Results saved to:")
+    print(f"  - {csv_path}")
+    print(f"  - {json_path}")
+
+    successful = [r for r in results if r["success"]]
+    finished_races = [r for r in results if r.get("finished", False)]
+    print(f"\nSummary: {len(successful)}/{total_tests_original} tests ran, {len(finished_races)} finished the race")
+
+    for algo in DEFAULT_ALGO_ORDER:
+        algo_results = [r for r in finished_races if r["algorithm"] == algo]
+        if algo_results:
+            sailed = [r["total_sailed"] for r in algo_results if r["total_sailed"]]
+            if sailed:
+                print(f"\n{algo} ({len(algo_results)} finished):")
+                print(f"  total_sailed: min={min(sailed):.1f}, max={max(sailed):.1f}, avg={sum(sailed)/len(sailed):.1f}")
+
+
 def main():
     import argparse
 
@@ -2811,106 +2923,19 @@ def main():
 
     # Leave progress bars visible, just move to next line
     print()
-
-    # Final progress summary
-    summary_present_algos = {r.get("algorithm") for r in results if r.get("algorithm")}
-    summary_algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in summary_present_algos]
-    summary_algo_order.extend(sorted(summary_present_algos - set(summary_algo_order)))
-    if not summary_algo_order:
-        summary_algo_order = list(DEFAULT_ALGO_ORDER)
-    print_progress_summary(results, summary_algo_order, "RÉSUMÉ FINAL")
-
-    total_elapsed = time.time() - benchmark_start
-    pred_totals = []
-    history_lines = []
-    if eta_history:
-        pred_totals, history_lines = build_eta_history_lines(eta_history)
-    eta_trend = compute_eta_trend(eta_history, pred_totals)
-    run_rows = results[results_before_run:]
-    run_compute_time = compute_total_compute_time(run_rows)
-    cumulative_compute_time = compute_total_compute_time(results_all)
-    had_previous_results = results_before_run > 0
-
-    if interrupted_state["value"]:
-        run_completed = len(results) - results_before_run
-        print(f"\nBenchmark interrupted! ({run_completed} tests in this run)")
-        print(f"Progress saved: {len(results)}/{total_tests_original} tests completed")
-        print(f"Run with --resume to continue\n")
-        last20_totals = pred_totals[-20:] if pred_totals else []
-        estimated_elapsed = _percentile(last20_totals, 0.5) if last20_totals else None
-        if args.verbose > 0 and history_lines:
-            partial_stats_for_view = compute_eta_stats(last20_totals, estimated_elapsed)
-            print_eta_history_compact(history_lines, pred_totals, estimated_elapsed, partial_stats_for_view)
-        estimated_stats = compute_eta_stats(pred_totals, estimated_elapsed)
-        if run_compute_time is not None:
-            print(f"Aggregate multi-processor compute time: {_format_duration(run_compute_time)}")
-        if args.resume and had_previous_results and cumulative_compute_time is not None:
-            print(f"Cumulative aggregate multi-processor compute time: {_format_duration(cumulative_compute_time)}")
-        print(format_eta_trend(eta_trend))
-        if estimated_stats is not None:
-            print(
-                f"Estimated elapsed time: {_format_duration(estimated_elapsed)}"
-                f" | bias:{_format_signed_duration(estimated_stats['bias_s'])}"
-                f" mae:{_format_duration(estimated_stats['mae_s'])}"
-                f" mape:{estimated_stats['mape']:.1f}%"
-                f" hit10%:{estimated_stats['hit10']:.0f}%"
-            )
-        else:
-            print(f"Estimated elapsed time: {_format_duration(estimated_elapsed)}")
-
-        partial_stats = compute_eta_stats(last20_totals, estimated_elapsed)
-        if partial_stats is not None and last20_totals:
-            print(
-                "Partial ETA diagnostics (interrupted, target=median last 20 predicted totals): "
-                f"bias:{_format_signed_duration(partial_stats['bias_s'])} "
-                f"mae:{_format_duration(partial_stats['mae_s'])} "
-                f"mape:{partial_stats['mape']:.1f}% "
-                f"hit10%:{partial_stats['hit10']:.0f}%"
-            )
-        else:
-            print("Partial ETA diagnostics (interrupted, target=median last 20 predicted totals): n/a")
-    else:
-        run_completed = len(results) - results_before_run
-        print(f"Benchmark complete! ({run_completed} tests in this run)")
-        print()
-        pred_stats = compute_eta_stats(pred_totals, total_elapsed)
-        if args.verbose > 0 and history_lines:
-            print_eta_history_compact(history_lines, pred_totals, total_elapsed, pred_stats)
-        elif not eta_history:
-            print(f"Initial ETA estimate: {_format_duration(first_initial_eta_s)}")
-        if run_compute_time is not None:
-            print(f"Aggregate multi-processor compute time: {_format_duration(run_compute_time)}")
-        if args.resume and had_previous_results and cumulative_compute_time is not None:
-            print(f"Cumulative aggregate multi-processor compute time: {_format_duration(cumulative_compute_time)}")
-        print(format_eta_trend(eta_trend))
-        if pred_stats is not None:
-            print(
-                f"Real elapsed time: {_format_duration(total_elapsed)}"
-                f" | bias:{_format_signed_duration(pred_stats['bias_s'])}"
-                f" mae:{_format_duration(pred_stats['mae_s'])}"
-                f" mape:{pred_stats['mape']:.1f}%"
-                f" hit10%:{pred_stats['hit10']:.0f}%"
-            )
-        else:
-            print(f"Real elapsed time: {_format_duration(total_elapsed)}")
-
-    print()
-    print(f"Results saved to:")
-    print(f"  - {csv_path}")
-    print(f"  - {json_path}")
-
-    # Quick summary - only count finished races
-    successful = [r for r in results if r["success"]]
-    finished_races = [r for r in results if r.get("finished", False)]
-    print(f"\nSummary: {len(successful)}/{total_tests_original} tests ran, {len(finished_races)} finished the race")
-
-    for algo in DEFAULT_ALGO_ORDER:
-        algo_results = [r for r in finished_races if r["algorithm"] == algo]
-        if algo_results:
-            sailed = [r["total_sailed"] for r in algo_results if r["total_sailed"]]
-            if sailed:
-                print(f"\n{algo} ({len(algo_results)} finished):")
-                print(f"  total_sailed: min={min(sailed):.1f}, max={max(sailed):.1f}, avg={sum(sailed)/len(sailed):.1f}")
+    print_final_report(
+        args=args,
+        results=results,
+        results_all=results_all,
+        results_before_run=results_before_run,
+        total_tests_original=total_tests_original,
+        benchmark_start=benchmark_start,
+        eta_history=eta_history,
+        first_initial_eta_s=first_initial_eta_s,
+        interrupted_state=interrupted_state,
+        csv_path=csv_path,
+        json_path=json_path,
+    )
 
 
 if __name__ == "__main__":
