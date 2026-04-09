@@ -115,6 +115,7 @@ ALGO_SPECS = {
 }
 DEFAULT_ALGO_ORDER = list(ALGO_SPECS.keys())
 VALID_ALGOS = set(ALGO_SPECS.keys())
+DEFAULT_WINDOW_SIZE = 500
 
 PARAM_RESULT_FIELDS = [
     "horizon", "tackangle", "alpha", "beam_width", "scenarios", "dir_noise", "speed_noise", "seed",
@@ -256,9 +257,6 @@ def apply_range_overrides(base_ranges, range_overrides):
 
     return effective
 
-
-ALGO_TOTALS = compute_algo_totals(PARAM_RANGES)
-
 # Base directory (where the algorithm scripts are located)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Root directory (windgame)
@@ -376,6 +374,15 @@ def _parse_algorithm_output(output, elapsed):
     }
 
 
+def _truncate_text(text, limit=400):
+    if text is None:
+        return ""
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
 def run_algorithm(algo_name, params, timeout=300):
     """
     Run a single algorithm with given parameters.
@@ -395,13 +402,25 @@ def run_algorithm(algo_name, params, timeout=300):
         elapsed = time.time() - start_time
 
         if result.returncode != 0:
-            return None
+            return {
+                "success": False,
+                "error": (
+                    f"{algo_name} exited with code {result.returncode}"
+                    + (
+                        f": {_truncate_text(result.stderr)}"
+                        if result.stderr and result.stderr.strip()
+                        else ""
+                    )
+                ),
+                "elapsed_time": elapsed,
+                "finished": False,
+            }
         return _parse_algorithm_output(result.stdout, elapsed)
 
     except subprocess.TimeoutExpired:
-        return {"success": False, "error": "timeout"}
+        return {"success": False, "error": f"{algo_name} timeout after {timeout}s", "finished": False}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": f"{algo_name} failed: {e}", "finished": False}
 
 
 def run_single_test(args):
@@ -419,11 +438,13 @@ def _init_worker_ignore_sigint():
         pass
 
 
-def generate_test_cases(verbose=0):
+def generate_test_cases(verbose=0, param_ranges=None, algo_totals=None):
     """Generate all test cases for grid search."""
+    effective_ranges = param_ranges if param_ranges is not None else PARAM_RANGES
+    effective_totals = algo_totals if algo_totals is not None else compute_algo_totals(effective_ranges)
     test_cases = []
     test_id = 0
-    total_expected = sum(ALGO_TOTALS.values())
+    total_expected = sum(effective_totals.values())
     print(f"Generating test cases (expected total: {total_expected})...")
     if total_expected <= 0:
         return test_cases
@@ -433,7 +454,7 @@ def generate_test_cases(verbose=0):
     for algo_name in DEFAULT_ALGO_ORDER:
         spec = ALGO_SPECS[algo_name]
         start_count = test_id
-        value_lists = [PARAM_RANGES[param_name] for param_name in spec["grid_params"]]
+        value_lists = [effective_ranges[param_name] for param_name in spec["grid_params"]]
         for combo in itertools.product(*value_lists):
             params = {"tackangle": FIXED_PARAMS["tackangle"], "beam_width": None}
             params.update(dict(zip(spec["grid_params"], combo)))
@@ -560,8 +581,9 @@ def _build_value_cost_model(results):
     return means, algo_means
 
 
-def _param_is_numeric(name):
-    vals = PARAM_RANGES.get(name, [])
+def _param_is_numeric(name, param_ranges=None):
+    ranges = param_ranges if param_ranges is not None else PARAM_RANGES
+    vals = ranges.get(name, [])
     if not vals:
         return False
     return all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in vals)
@@ -575,11 +597,13 @@ def _estimate_case_cost(
     metric="additive-mean",
     idx_maps=None,
     knn_k=3,
+    param_ranges=None,
 ):
     parts = []
     m = (metric or "additive-mean").strip().lower()
     algo_fallback = algo_means.get(algo, float("inf"))
     idx_maps = idx_maps or {}
+    ranges = param_ranges if param_ranges is not None else PARAM_RANGES
 
     if m in {"additive-mean", "additive-median"}:
         for p in algo_param_list(algo):
@@ -602,8 +626,8 @@ def _estimate_case_cost(
         for p in algo_param_list(algo):
             v0 = params.get(p)
             # Numeric params: exact + immediate neighbors in param index space.
-            if _param_is_numeric(p) and p in idx_maps:
-                vals = PARAM_RANGES[p]
+            if _param_is_numeric(p, ranges) and p in idx_maps:
+                vals = ranges[p]
                 i0 = idx_maps[p].get(v0)
                 if i0 is None:
                     continue
@@ -630,14 +654,14 @@ def _estimate_case_cost(
         for p in algo_param_list(algo):
             v0 = params.get(p)
             # For categoricals/bools, exact-match only.
-            if not _param_is_numeric(p):
+            if not _param_is_numeric(p, ranges):
                 key = (algo, p, v0)
                 vv = value_means.get(key)
                 if vv is not None:
                     parts.append(vv)
                 continue
 
-            vals = [v for v in PARAM_RANGES.get(p, []) if (algo, p, v) in value_means]
+            vals = [v for v in ranges.get(p, []) if (algo, p, v) in value_means]
             if not vals:
                 continue
             vmin = min(vals)
@@ -665,19 +689,20 @@ def _estimate_case_cost(
     return algo_fallback
 
 
-def _is_sparse_point(algo, params, step, idx_maps):
+def _is_sparse_point(algo, params, step, idx_maps, param_ranges=None):
     """Return True if params lie on a sparse grid for this algo."""
+    ranges = param_ranges if param_ranges is not None else PARAM_RANGES
     if step <= 1:
         return True
     for p in algo_param_list(algo):
-        if p not in PARAM_RANGES:
+        if p not in ranges:
             continue
         p_map = idx_maps.get(p, {})
         val = params.get(p)
         if val not in p_map:
             continue
         idx = p_map[val]
-        last = len(PARAM_RANGES[p]) - 1
+        last = len(ranges[p]) - 1
         if idx not in (0, last) and (idx % step) != 0:
             return False
     return True
@@ -767,6 +792,7 @@ def build_space_search_plan(
     eta=3,
     early_stop_delta=0.0,
     metric="additive-mean",
+    param_ranges=None,
 ):
     """
     Build deterministic 3-phase plan: coarse -> refine1 -> refine2.
@@ -777,7 +803,8 @@ def build_space_search_plan(
     refine_step = max(1, int(refine_step))
     early_stop_delta = max(0.0, float(early_stop_delta))
 
-    idx_maps = {p: {v: i for i, v in enumerate(vals)} for p, vals in PARAM_RANGES.items()}
+    effective_ranges = param_ranges if param_ranges is not None else PARAM_RANGES
+    idx_maps = {p: {v: i for i, v in enumerate(vals)} for p, vals in effective_ranges.items()}
     value_means, algo_means = _build_value_cost_model(results)
 
     by_algo = {}
@@ -793,15 +820,17 @@ def build_space_search_plan(
 
     for algo in sorted(by_algo):
         cases = by_algo[algo]
-        coarse = [tc for tc in cases if _is_sparse_point(algo, tc[1], coarse_step, idx_maps)]
+        coarse = [tc for tc in cases if _is_sparse_point(algo, tc[1], coarse_step, idx_maps, effective_ranges)]
         coarse_keys = {make_test_key(tc[0], tc[1]) for tc in coarse}
         remaining = [tc for tc in cases if make_test_key(tc[0], tc[1]) not in coarse_keys]
 
         # Favor finer sparse points for refine pool, then rank by estimated cost.
-        refine_pool = [tc for tc in remaining if _is_sparse_point(algo, tc[1], refine_step, idx_maps)]
+        refine_pool = [tc for tc in remaining if _is_sparse_point(algo, tc[1], refine_step, idx_maps, effective_ranges)]
         refine_pool.sort(
             key=lambda tc: (
-                _estimate_case_cost(tc[0], tc[1], value_means, algo_means, metric=metric, idx_maps=idx_maps),
+                _estimate_case_cost(
+                    tc[0], tc[1], value_means, algo_means, metric=metric, idx_maps=idx_maps, param_ranges=effective_ranges
+                ),
                 make_test_key(tc[0], tc[1]),
             )
         )
@@ -813,7 +842,9 @@ def build_space_search_plan(
         remaining_after_refine1 = [tc for tc in remaining if make_test_key(tc[0], tc[1]) not in refine1_keys]
         remaining_after_refine1.sort(
             key=lambda tc: (
-                _estimate_case_cost(tc[0], tc[1], value_means, algo_means, metric=metric, idx_maps=idx_maps),
+                _estimate_case_cost(
+                    tc[0], tc[1], value_means, algo_means, metric=metric, idx_maps=idx_maps, param_ranges=effective_ranges
+                ),
                 make_test_key(tc[0], tc[1]),
             )
         )
@@ -821,13 +852,17 @@ def build_space_search_plan(
         best_coarse = float("inf")
         if coarse:
             best_coarse = min(
-                _estimate_case_cost(tc[0], tc[1], value_means, algo_means, metric=metric, idx_maps=idx_maps)
+                _estimate_case_cost(
+                    tc[0], tc[1], value_means, algo_means, metric=metric, idx_maps=idx_maps, param_ranges=effective_ranges
+                )
                 for tc in coarse
             )
         best_refine1 = float("inf")
         if refine1:
             best_refine1 = min(
-                _estimate_case_cost(tc[0], tc[1], value_means, algo_means, metric=metric, idx_maps=idx_maps)
+                _estimate_case_cost(
+                    tc[0], tc[1], value_means, algo_means, metric=metric, idx_maps=idx_maps, param_ranges=effective_ranges
+                )
                 for tc in refine1
             )
 
@@ -863,6 +898,7 @@ def build_topk_search_plan(
     eta=3,
     seed=42,
     show_progress=True,
+    param_ranges=None,
 ):
     """
     Build a top-k plan from historical score estimates.
@@ -888,7 +924,8 @@ def build_topk_search_plan(
     explore_ratio = max(0.0, min(1.0, float(explore_ratio)))
     exploit_ratio = 1.0 - explore_ratio
 
-    idx_maps = {p: {v: i for i, v in enumerate(vals)} for p, vals in PARAM_RANGES.items()}
+    effective_ranges = param_ranges if param_ranges is not None else PARAM_RANGES
+    idx_maps = {p: {v: i for i, v in enumerate(vals)} for p, vals in effective_ranges.items()}
     value_means, algo_means = _build_value_cost_model(results)
 
     k_total = max(1, total // eta)
@@ -918,7 +955,9 @@ def build_topk_search_plan(
         scored = []
         for tc in cases:
             _, params, _ = tc
-            s = _estimate_case_cost(a, params, value_means, algo_means, metric=metric, idx_maps=idx_maps)
+            s = _estimate_case_cost(
+                a, params, value_means, algo_means, metric=metric, idx_maps=idx_maps, param_ranges=effective_ranges
+            )
             scored.append((s, make_test_key(a, params), tc))
         scored.sort(key=lambda x: (x[0], x[1]))
 
@@ -1633,10 +1672,6 @@ def load_existing_results(json_path):
         return [], set()
 
 
-DEFAULT_ALGO_ORDER = ["adp_realmove", "beam_realmove", "mpc_realmove", "mpc_simplemove", "spst_realmove", "sa_realmove"]
-DEFAULT_WINDOW_SIZE = 500
-
-
 def count_by_algorithm(results):
     """Count completed tests per algorithm."""
     counts = {algo: 0 for algo in DEFAULT_ALGO_ORDER}
@@ -1647,11 +1682,11 @@ def count_by_algorithm(results):
     return counts
 
 
-def print_progress_summary(results, algo_order, title="ÉTAT D'AVANCEMENT DES TESTS"):
+def print_progress_summary(results, algo_order, algo_totals, title="ÉTAT D'AVANCEMENT DES TESTS"):
     """Affiche un résumé de l'avancement par algorithme avec barre de progression."""
     counts = count_by_algorithm(results)
     total_done = sum(counts.get(algo, 0) for algo in algo_order)
-    total_all = sum(ALGO_TOTALS.get(algo, counts.get(algo, 0)) for algo in algo_order)
+    total_all = sum(algo_totals.get(algo, counts.get(algo, 0)) for algo in algo_order)
 
     print("\n" + "=" * 70)
     print(f"{title}")
@@ -1659,7 +1694,7 @@ def print_progress_summary(results, algo_order, title="ÉTAT D'AVANCEMENT DES TE
 
     for algo in algo_order:
         done = counts.get(algo, 0)
-        total = ALGO_TOTALS.get(algo, done)
+        total = algo_totals.get(algo, done)
         pct = 100.0 * done / total if total > 0 else 0
         bar = format_progress_bar(pct, width=20)
         status = "✓ COMPLET" if done >= total else ""
@@ -1759,12 +1794,10 @@ def eta_snapshot(tracker, counts, algo_order, fallback_rate=0.0, workers=1, tota
     eta_p50 = 0.0
     eta_p90 = 0.0
     has_any = False
+    totals_map = totals if totals is not None else compute_algo_totals(PARAM_RANGES)
     for algo in algo_order:
         done = counts.get(algo, 0)
-        if totals is not None:
-            total = totals.get(algo, done)
-        else:
-            total = ALGO_TOTALS.get(algo, done)
+        total = totals_map.get(algo, done)
         remaining = max(0, total - done)
         if remaining <= 0:
             continue
@@ -1796,6 +1829,7 @@ def print_progress_line(
     elapsed_time,
     rate,
     algo_order,
+    algo_totals,
     coverage_gain=None,
     eta_tracker=None,
     workers=1,
@@ -1809,7 +1843,7 @@ def print_progress_line(
     """Affiche une ligne compacte de progression mise à jour à chaque test."""
     counts = count_by_algorithm(results)
     total_done = sum(counts.get(algo, 0) for algo in algo_order)
-    total_all = sum(ALGO_TOTALS.get(algo, counts.get(algo, 0)) for algo in algo_order)
+    total_all = sum(algo_totals.get(algo, counts.get(algo, 0)) for algo in algo_order)
     total_pct = 100.0 * total_done / total_all if total_all > 0 else 0
 
     # ETA via EWMA per algo + wallclock warmup/blend.
@@ -1844,7 +1878,7 @@ def print_progress_line(
     parts = []
     for algo in algo_order:
         label = algo_label(algo)
-        total = ALGO_TOTALS.get(algo, counts.get(algo, 0))
+        total = algo_totals.get(algo, counts.get(algo, 0))
         parts.append(f"{label}:{counts.get(algo, 0)}/{total}")
     algo_status = " | ".join(parts)
 
@@ -1955,7 +1989,7 @@ def coverage_gain_snapshot(tracker, algo_order):
     return gains
 
 
-def save_results(results, csv_path, json_path, start_time, total_tests, interrupted=False):
+def save_results(results, csv_path, json_path, start_time, total_tests, effective_ranges, interrupted=False):
     """Save results to CSV and JSON files."""
     # CSV output
     with open(csv_path, "w", newline="") as f:
@@ -1964,8 +1998,6 @@ def save_results(results, csv_path, json_path, start_time, total_tests, interrup
         writer.writerows(results)
 
     # JSON output (with metadata)
-    effective_ranges = {key: list(values) for key, values in PARAM_RANGES.items()}
-
     output_data = {
         "metadata": {
             "timestamp": datetime.now().isoformat(),
@@ -1973,7 +2005,7 @@ def save_results(results, csv_path, json_path, start_time, total_tests, interrup
             "completed_tests": len(results),
             "total_time_seconds": time.time() - start_time,
             "fixed_params": dict(FIXED_PARAMS),
-            "param_ranges": effective_ranges,
+            "param_ranges": {key: list(values) for key, values in effective_ranges.items()},
             "interrupted": interrupted,
         },
         "results": results
@@ -2074,6 +2106,8 @@ def execute_batch(
     save_results_ref=None,
     eta_history=None,
     run_start_time=None,
+    algo_totals=None,
+    effective_ranges=None,
 ):
     """Execute one batch of ordered test cases."""
     if not test_cases:
@@ -2084,6 +2118,10 @@ def execute_batch(
         all_completed_keys = completed_keys
     if save_results_ref is None:
         save_results_ref = all_results
+    if algo_totals is None:
+        algo_totals = compute_algo_totals(PARAM_RANGES)
+    if effective_ranges is None:
+        effective_ranges = PARAM_RANGES
 
     present_algos = {tc[0] for tc in test_cases}
     if args.order in {"shuffle", "quota-window-coverage", "global-coverage"}:
@@ -2156,7 +2194,7 @@ def execute_batch(
                 try:
                     algo_name, params, result, test_id = future.result()
                 except Exception as e:
-                    print(f"Error in test: {e}")
+                    print(f"Error in worker future: {e}")
                     continue
 
                 orchestrator_start = time.time()
@@ -2181,7 +2219,15 @@ def execute_batch(
                     if coverage_tracker is not None:
                         update_coverage_tracker(coverage_tracker, row["algorithm"], row)
                     if completed_this_run - last_save_count >= args.save_interval:
-                        save_results(save_results_ref, csv_path, json_path, start_time, total_tests_original, interrupted=False)
+                        save_results(
+                            save_results_ref,
+                            csv_path,
+                            json_path,
+                            start_time,
+                            total_tests_original,
+                            effective_ranges,
+                            interrupted=False,
+                        )
                         last_save_count = completed_this_run
 
                     gains = coverage_gain_snapshot(coverage_tracker, algo_order)
@@ -2190,6 +2236,7 @@ def execute_batch(
                         elapsed,
                         rate,
                         algo_order,
+                        algo_totals,
                         coverage_gain=gains,
                         eta_tracker=eta_tracker,
                         workers=args.workers,
@@ -2447,13 +2494,14 @@ def print_final_report(
     interrupted_state,
     csv_path,
     json_path,
+    algo_totals,
 ):
     summary_present_algos = {r.get("algorithm") for r in results if r.get("algorithm")}
     summary_algo_order = [algo for algo in DEFAULT_ALGO_ORDER if algo in summary_present_algos]
     summary_algo_order.extend(sorted(summary_present_algos - set(summary_algo_order)))
     if not summary_algo_order:
         summary_algo_order = list(DEFAULT_ALGO_ORDER)
-    print_progress_summary(results, summary_algo_order, "RÉSUMÉ FINAL")
+    print_progress_summary(results, summary_algo_order, algo_totals, "RÉSUMÉ FINAL")
 
     total_elapsed = time.time() - benchmark_start
     pred_totals = []
@@ -2560,6 +2608,8 @@ def run_ordered_batch(
     all_completed_keys,
     eta_history,
     benchmark_start,
+    algo_totals,
+    effective_ranges,
     phase_label=None,
 ):
     ordered_cases = order_cases_by_mode(test_cases, args)
@@ -2581,6 +2631,8 @@ def run_ordered_batch(
         save_results_ref=all_results,
         eta_history=eta_history,
         run_start_time=benchmark_start,
+        algo_totals=algo_totals,
+        effective_ranges=effective_ranges,
     )
 
 
@@ -2597,6 +2649,8 @@ def run_selected_search_mode(
     completed_keys_all,
     eta_history,
     benchmark_start,
+    algo_totals,
+    effective_ranges,
 ):
     first_initial_eta_s = None
 
@@ -2610,6 +2664,7 @@ def run_selected_search_mode(
             eta=args.space_eta,
             early_stop_delta=args.space_early_stop_delta,
             metric=args.metric,
+            param_ranges=effective_ranges,
         )
         phase_sizes = {
             "coarse": len(plan.get("coarse", [])),
@@ -2631,7 +2686,7 @@ def run_selected_search_mode(
                 )
         batch_stats = run_ordered_batch(
             selected_cases, args, results, completed_keys, total_tests_original, csv_path, json_path,
-            interrupted_state, results_all, completed_keys_all, eta_history, benchmark_start,
+            interrupted_state, results_all, completed_keys_all, eta_history, benchmark_start, algo_totals, effective_ranges,
         )
         if batch_stats:
             first_initial_eta_s = batch_stats.get("initial_run_eta_s")
@@ -2653,6 +2708,7 @@ def run_selected_search_mode(
                 eta=args.space_eta,
                 early_stop_delta=args.space_early_stop_delta,
                 metric=args.metric,
+                param_ranges=effective_ranges,
             )
             phase_cases = list(phase_plan.get(phase_name, []))
             print(
@@ -2667,7 +2723,7 @@ def run_selected_search_mode(
             batch_stats = run_ordered_batch(
                 phase_cases, args, results, completed_keys, total_tests_original, csv_path, json_path,
                 interrupted_state, results_all, completed_keys_all, eta_history, benchmark_start,
-                phase_label=phase_name,
+                algo_totals, effective_ranges, phase_label=phase_name,
             )
             if first_initial_eta_s is None and batch_stats:
                 first_initial_eta_s = batch_stats.get("initial_run_eta_s")
@@ -2686,6 +2742,7 @@ def run_selected_search_mode(
             explore_ratio=args.topk_explore_ratio,
             eta=args.topk_eta,
             seed=args.topk_seed,
+            param_ranges=effective_ranges,
         )
         selected_cases = list(plan.get("selected", []))
         print(
@@ -2711,7 +2768,7 @@ def run_selected_search_mode(
             )
         batch_stats = run_ordered_batch(
             selected_cases, args, results, completed_keys, total_tests_original, csv_path, json_path,
-            interrupted_state, results_all, completed_keys_all, eta_history, benchmark_start,
+            interrupted_state, results_all, completed_keys_all, eta_history, benchmark_start, algo_totals, effective_ranges,
         )
         if batch_stats:
             first_initial_eta_s = batch_stats.get("initial_run_eta_s")
@@ -2719,14 +2776,13 @@ def run_selected_search_mode(
 
     batch_stats = run_ordered_batch(
         all_test_cases, args, results, completed_keys, total_tests_original, csv_path, json_path,
-        interrupted_state, results_all, completed_keys_all, eta_history, benchmark_start,
+        interrupted_state, results_all, completed_keys_all, eta_history, benchmark_start, algo_totals, effective_ranges,
     )
     if batch_stats:
         first_initial_eta_s = batch_stats.get("initial_run_eta_s")
     return first_initial_eta_s
 
-
-def prepare_benchmark_state(args, json_path, algo_set):
+def prepare_benchmark_state(args, json_path, algo_set, effective_ranges, algo_totals):
     results_all = []
     completed_keys_all = set()
     results = []
@@ -2734,7 +2790,7 @@ def prepare_benchmark_state(args, json_path, algo_set):
     if args.resume:
         results_all, completed_keys_all = load_existing_results(json_path)
 
-    all_test_cases = generate_test_cases(args.verbose)
+    all_test_cases = generate_test_cases(args.verbose, param_ranges=effective_ranges, algo_totals=algo_totals)
     total_tests_original = len(all_test_cases)
 
     if algo_set is not None:
@@ -2749,7 +2805,7 @@ def prepare_benchmark_state(args, json_path, algo_set):
         results = [r for r in results_all if make_test_key_from_result_row(r) in active_completed_keys]
         completed_keys = active_completed_keys
         print(f"Resuming: found {len(completed_keys)} completed tests in active ranges")
-        print_progress_summary(results, DEFAULT_ALGO_ORDER, "TESTS DÉJÀ EFFECTUÉS")
+        print_progress_summary(results, DEFAULT_ALGO_ORDER, algo_totals, "TESTS DÉJÀ EFFECTUÉS")
     elif args.resume:
         results = []
         completed_keys = set()
@@ -2898,15 +2954,15 @@ def parse_and_validate_args():
 
 
 def configure_effective_ranges(args, parser):
-    global PARAM_RANGES, ALGO_TOTALS
     try:
-        PARAM_RANGES = apply_range_overrides(BASE_PARAM_RANGES, args.range)
+        effective_ranges = apply_range_overrides(BASE_PARAM_RANGES, args.range)
     except ValueError as e:
         parser.error(str(e))
-    ALGO_TOTALS = compute_algo_totals(PARAM_RANGES)
+    algo_totals = compute_algo_totals(effective_ranges)
     print("Effective parameter ranges:")
-    for name, values in PARAM_RANGES.items():
+    for name, values in effective_ranges.items():
         print(f"  {name}: {_format_allowed_values(values)}")
+    return effective_ranges, algo_totals
 
 
 def resolve_output_paths(args):
@@ -2918,7 +2974,7 @@ def resolve_output_paths(args):
 
 def main():
     parser, args, algo_set = parse_and_validate_args()
-    configure_effective_ranges(args, parser)
+    effective_ranges, algo_totals = configure_effective_ranges(args, parser)
     csv_path, json_path = resolve_output_paths(args)
 
     if not args.resume and (os.path.exists(csv_path) or os.path.exists(json_path)):
@@ -2934,6 +2990,8 @@ def main():
         args=args,
         json_path=json_path,
         algo_set=algo_set,
+        effective_ranges=effective_ranges,
+        algo_totals=algo_totals,
     )
 
     interrupted_state = {"value": False}
@@ -2964,6 +3022,8 @@ def main():
             completed_keys_all=completed_keys_all,
             eta_history=eta_history,
             benchmark_start=benchmark_start,
+            algo_totals=algo_totals,
+            effective_ranges=effective_ranges,
         )
     except ValueError as e:
         print(str(e))
@@ -2973,7 +3033,15 @@ def main():
         interrupted_state["value"] = True
 
     # Final save
-    save_results(results_all, csv_path, json_path, benchmark_start, total_tests_original, interrupted=interrupted_state["value"])
+    save_results(
+        results_all,
+        csv_path,
+        json_path,
+        benchmark_start,
+        total_tests_original,
+        effective_ranges,
+        interrupted=interrupted_state["value"],
+    )
 
     # Leave progress bars visible, just move to next line
     print()
@@ -2989,6 +3057,7 @@ def main():
         interrupted_state=interrupted_state,
         csv_path=csv_path,
         json_path=json_path,
+        algo_totals=algo_totals,
     )
 
 
