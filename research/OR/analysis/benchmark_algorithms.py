@@ -684,6 +684,50 @@ def _is_sparse_point(algo, params, step, idx_maps):
     return True
 
 
+def allocate_proportional_quotas(counts_by_key, total_slots, order=None):
+    total_slots = max(0, int(total_slots))
+    if total_slots <= 0 or not counts_by_key:
+        return {key: 0 for key in counts_by_key}
+
+    positive_keys = [key for key, count in counts_by_key.items() if count > 0]
+    if not positive_keys:
+        return {key: 0 for key in counts_by_key}
+
+    if order is None:
+        order = list(positive_keys)
+    else:
+        order = [key for key in order if key in counts_by_key and counts_by_key[key] > 0]
+        seen = set(order)
+        order.extend(key for key in positive_keys if key not in seen)
+
+    total_count = sum(counts_by_key[key] for key in positive_keys)
+    quotas = {key: 0 for key in counts_by_key}
+    fractions = []
+    used = 0
+    for key in order:
+        count = counts_by_key[key]
+        raw = total_slots * (count / total_count)
+        q = min(count, int(raw))
+        quotas[key] = q
+        used += q
+        fractions.append((raw - int(raw), key))
+
+    remaining = total_slots - used
+    fractions.sort(reverse=True)
+    while remaining > 0:
+        placed = False
+        for _, key in fractions:
+            if quotas[key] < counts_by_key[key]:
+                quotas[key] += 1
+                remaining -= 1
+                placed = True
+                if remaining <= 0:
+                    break
+        if not placed:
+            break
+    return quotas
+
+
 def build_space_search_plan(
     test_cases,
     results,
@@ -825,29 +869,7 @@ def build_topk_search_plan(
     per_algo_candidates = {a: len(by_algo.get(a, [])) for a in algo_order}
 
     # Quotas proportional to remaining tests per algo.
-    quota = {a: 0 for a in algo_order}
-    frac = []
-    used = 0
-    for a in algo_order:
-        count = per_algo_candidates[a]
-        raw = k_total * (count / total)
-        q = min(count, int(raw))
-        quota[a] = q
-        used += q
-        frac.append((raw - int(raw), a))
-    rem = k_total - used
-    frac.sort(reverse=True)
-    while rem > 0:
-        placed = False
-        for _, a in frac:
-            if quota[a] < per_algo_candidates[a]:
-                quota[a] += 1
-                rem -= 1
-                placed = True
-                if rem <= 0:
-                    break
-        if not placed:
-            break
+    quota = allocate_proportional_quotas(per_algo_candidates, k_total, order=algo_order)
 
     # Score each algo locally, then take exploit/explore within each algo quota.
     rng = random.Random(int(seed))
@@ -991,30 +1013,11 @@ def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True
     total_windows = (total_remaining + window_size - 1) // window_size if window_size else 0
     while len(ordered) < total and total_remaining > 0:
         current_window = min(window_size, total_remaining)
-        quotas = {}
-        fractions = []
-        remaining_slots = current_window
-        for algo in algo_order:
-            count = remaining_counts.get(algo, 0)
-            if count <= 0:
-                continue
-            raw = current_window * (count / total_remaining)
-            q = int(raw)
-            quotas[algo] = q
-            remaining_slots -= q
-            fractions.append((raw - q, algo))
-        fractions.sort(reverse=True)
-        for _ in range(remaining_slots):
-            if not fractions:
-                break
-            placed = False
-            for _, algo in fractions:
-                if quotas.get(algo, 0) < remaining_counts.get(algo, 0):
-                    quotas[algo] += 1
-                    placed = True
-                    break
-            if not placed:
-                break
+        quotas = allocate_proportional_quotas(
+            {algo: remaining_counts.get(algo, 0) for algo in algo_order},
+            current_window,
+            order=algo_order,
+        )
 
         window_items = []
         for algo in algo_order:
@@ -1225,26 +1228,14 @@ def order_cases_quota_window_coverage_worker(chunk, algo_order, worker_id=None, 
     rebuilt = []
     while total_remaining > 0:
         current_window = min(window_size, total_remaining)
-        quotas = {}
-        fractions = []
-        remaining_slots = current_window
-        for algo in algo_order:
-            lst = buckets.get(algo, [])
-            count = len(lst) - indices.get(algo, 0)
-            if count <= 0:
-                continue
-            raw = current_window * (count / total_remaining)
-            q = int(raw)
-            quotas[algo] = q
-            remaining_slots -= q
-            fractions.append((raw - q, algo))
-        fractions.sort(reverse=True)
-        for _, algo in fractions:
-            if remaining_slots <= 0:
-                break
-            if quotas.get(algo, 0) < len(buckets.get(algo, [])):
-                quotas[algo] += 1
-                remaining_slots -= 1
+        quotas = allocate_proportional_quotas(
+            {
+                algo: len(buckets.get(algo, [])) - indices.get(algo, 0)
+                for algo in algo_order
+            },
+            current_window,
+            order=algo_order,
+        )
 
         window = []
         used_any = True
