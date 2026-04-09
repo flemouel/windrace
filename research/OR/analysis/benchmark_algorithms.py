@@ -2809,7 +2809,7 @@ def prepare_benchmark_state(args, json_path, algo_set):
     return results_all, completed_keys_all, results, completed_keys, all_test_cases, total_tests_original
 
 
-def main():
+def build_arg_parser():
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -2856,6 +2856,11 @@ def main():
                         help="Top-k explore ratio (random from non-top candidates); exploit is 1 - explore")
     parser.add_argument("--topk-seed", type=int, default=42,
                         help="Random seed for topk-search exploration picks")
+    return parser
+
+
+def parse_and_validate_args():
+    parser = build_arg_parser()
     args = parser.parse_args()
     valid_order_keywords = {"shuffle", "quota-window-coverage", "global-coverage"}
     algo_set = None
@@ -2870,6 +2875,10 @@ def main():
         unknown_order_algos = [algo for algo in order_list if algo not in VALID_ALGOS]
         if unknown_order_algos:
             parser.error(f"Unknown algo(s) in --order: {', '.join(sorted(set(unknown_order_algos)))}")
+    return parser, args, algo_set
+
+
+def configure_effective_ranges(args, parser):
     global PARAM_RANGES, ALGO_TOTALS
     try:
         PARAM_RANGES = apply_range_overrides(BASE_PARAM_RANGES, args.range)
@@ -2880,10 +2889,18 @@ def main():
     for name, values in PARAM_RANGES.items():
         print(f"  {name}: {_format_allowed_values(values)}")
 
-    # Setup paths
+
+def resolve_output_paths(args):
     output_dir = os.path.dirname(os.path.abspath(__file__))
     csv_path = os.path.join(output_dir, args.output)
     json_path = os.path.join(output_dir, args.json_output)
+    return csv_path, json_path
+
+
+def main():
+    parser, args, algo_set = parse_and_validate_args()
+    configure_effective_ranges(args, parser)
+    csv_path, json_path = resolve_output_paths(args)
 
     if not args.resume and (os.path.exists(csv_path) or os.path.exists(json_path)):
         print("Existing benchmark results detected.")
