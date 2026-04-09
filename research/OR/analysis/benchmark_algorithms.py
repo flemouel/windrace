@@ -756,6 +756,10 @@ def mark_case_coverage(algo, tid, pairs_by_algo, case_pairs, covered):
             covered[(algo, pair)].add(combo)
 
 
+def build_local_coverage_view(algo, pairs_by_algo, local_covered):
+    return {(algo, pair): local_covered[pair] for pair in pairs_by_algo.get(algo, [])}
+
+
 def build_space_search_plan(
     test_cases,
     results,
@@ -990,6 +994,7 @@ def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True
         algo_done = 0
         algo_last_pct = -1
         local_covered = {pair: set() for pair in pairs_by_algo.get(algo, [])}
+        local_coverage_view = build_local_coverage_view(algo, pairs_by_algo, local_covered)
         algo_ordered = []
         while cases:
             best_idx = None
@@ -1000,7 +1005,7 @@ def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True
                     tid,
                     pairs_by_algo,
                     case_pairs,
-                    {(algo, pair): local_covered[pair] for pair in pairs_by_algo.get(algo, [])},
+                    local_coverage_view,
                 )
                 if score > best_score:
                     best_score = score
@@ -1514,48 +1519,45 @@ def order_cases_quota_window_coverage_chunked(test_cases, algo_order, workers, v
     return ordered
 
 
+TEST_KEY_COMPONENTS = [
+    ("horizon", "h"),
+    ("tackangle", "ta"),
+    ("alpha", "a"),
+    ("beam_width", "bw"),
+    ("scenarios", "sc"),
+    ("dir_noise", "dn"),
+    ("speed_noise", "sn"),
+    ("gamma", "g"),
+    ("lr", "lr"),
+    ("goal_penalty", "gp"),
+    ("epsilon", "e"),
+    ("epsilon_decay", "ed"),
+    ("epsilon_min", "emin"),
+    ("approx", "ap"),
+    ("hidden_size", "hs"),
+    ("l2", "l2"),
+    ("normalize_features", "nf"),
+    ("initial_temp", "it"),
+    ("cooling_rate", "cr"),
+    ("min_temp", "mt"),
+    ("reheat_factor", "rf"),
+]
+
+
+def extract_test_key_params(mapping):
+    return {field: mapping.get(field) for field, _ in TEST_KEY_COMPONENTS}
+
+
 def make_test_key(algo_name, params):
     """Create a unique key for a test case."""
-    return (
-        f"{algo_name}|h{params['horizon']}|ta{params['tackangle']}|a{params['alpha']}"
-        f"|bw{params.get('beam_width', 'None')}|sc{params.get('scenarios', 'None')}"
-        f"|dn{params.get('dir_noise', 'None')}|sn{params.get('speed_noise', 'None')}"
-        f"|g{params.get('gamma', 'None')}|lr{params.get('lr', 'None')}|gp{params.get('goal_penalty', 'None')}"
-        f"|e{params.get('epsilon', 'None')}|ed{params.get('epsilon_decay', 'None')}|emin{params.get('epsilon_min', 'None')}"
-        f"|ap{params.get('approx', 'None')}|hs{params.get('hidden_size', 'None')}|l2{params.get('l2', 'None')}"
-        f"|nf{params.get('normalize_features', 'None')}"
-        f"|it{params.get('initial_temp', 'None')}|cr{params.get('cooling_rate', 'None')}"
-        f"|mt{params.get('min_temp', 'None')}|rf{params.get('reheat_factor', 'None')}"
-    )
+    key = algo_name
+    for field, prefix in TEST_KEY_COMPONENTS:
+        key += f"|{prefix}{params.get(field, 'None')}"
+    return key
 
 
 def make_test_key_from_result_row(row):
-    return make_test_key(
-        row["algorithm"],
-        {
-            "horizon": row["horizon"],
-            "tackangle": row["tackangle"],
-            "alpha": row["alpha"],
-            "beam_width": row.get("beam_width"),
-            "scenarios": row.get("scenarios"),
-            "dir_noise": row.get("dir_noise"),
-            "speed_noise": row.get("speed_noise"),
-            "gamma": row.get("gamma"),
-            "lr": row.get("lr"),
-            "goal_penalty": row.get("goal_penalty"),
-            "epsilon": row.get("epsilon"),
-            "epsilon_decay": row.get("epsilon_decay"),
-            "epsilon_min": row.get("epsilon_min"),
-            "approx": row.get("approx"),
-            "hidden_size": row.get("hidden_size"),
-            "l2": row.get("l2"),
-            "normalize_features": row.get("normalize_features"),
-            "initial_temp": row.get("initial_temp"),
-            "cooling_rate": row.get("cooling_rate"),
-            "min_temp": row.get("min_temp"),
-            "reheat_factor": row.get("reheat_factor"),
-        },
-    )
+    return make_test_key(row["algorithm"], extract_test_key_params(row))
 
 
 def filter_completed_chunk(chunk, completed_keys):
