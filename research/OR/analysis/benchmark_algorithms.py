@@ -2421,8 +2421,9 @@ def compute_eta_trend(history, pred_totals_local):
     if not history or not pred_totals_local:
         return None
     elapsed_values = [float(item[0] or 0.0) for item in history]
-    start = pred_totals_local[0]
+    first20 = pred_totals_local[:20]
     last20 = pred_totals_local[-20:]
+    start = _percentile(first20, 0.5)
     end = _percentile(last20, 0.5)
     if start is None or start <= 0 or end is None or end <= 0:
         return None
@@ -2473,8 +2474,8 @@ def format_eta_trend(trend):
     volatility = trend.get("volatility_last20")
     volatility_s = f"{volatility:.1f}%" if volatility is not None else "n/a"
     return (
-        f"ETA trend: start={_format_duration(trend['start_s'])} "
-        f"end={_format_duration(trend['end_s'])} "
+        f"ETA trend: start_first20={_format_duration(trend['start_s'])} "
+        f"end_last20={_format_duration(trend['end_s'])} "
         f"delta={_format_signed_duration(trend['delta_s'])} ({trend['delta_pct']:+.1f}%) "
         f"slope_last20={format_eta_slope(trend.get('slope_last20'))} "
         f"volatility_last20={volatility_s} "
