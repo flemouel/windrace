@@ -728,6 +728,34 @@ def allocate_proportional_quotas(counts_by_key, total_slots, order=None):
     return quotas
 
 
+def build_coverage_context(test_cases, algo_order):
+    pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order}
+    covered = {(algo, pair): set() for algo in pairs_by_algo for pair in pairs_by_algo[algo]}
+    case_pairs = {}
+    for algo, params, tid in test_cases:
+        pairs = {}
+        for pair in pairs_by_algo.get(algo, []):
+            pairs[pair] = (params.get(pair[0]), params.get(pair[1]))
+        case_pairs[tid] = pairs
+    return pairs_by_algo, covered, case_pairs
+
+
+def score_case_coverage(algo, tid, pairs_by_algo, case_pairs, covered):
+    score = 0
+    for pair in pairs_by_algo.get(algo, []):
+        combo = case_pairs[tid].get(pair)
+        if combo is not None and combo not in covered[(algo, pair)]:
+            score += 1
+    return score
+
+
+def mark_case_coverage(algo, tid, pairs_by_algo, case_pairs, covered):
+    for pair in pairs_by_algo.get(algo, []):
+        combo = case_pairs[tid].get(pair)
+        if combo is not None:
+            covered[(algo, pair)].add(combo)
+
+
 def build_space_search_plan(
     test_cases,
     results,
@@ -943,14 +971,7 @@ def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True
         step1_time = time.perf_counter() - step_start
         print(f"  [{label}] step 1/4 group by algo ({step1_time:.2f}s)", flush=True)
 
-    pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order if algo in by_algo}
-    covered = {(algo, pair): set() for algo in pairs_by_algo for pair in pairs_by_algo[algo]}
-    case_pairs = {}
-    for algo, params, tid in test_cases:
-        pairs = {}
-        for pair in pairs_by_algo.get(algo, []):
-            pairs[pair] = (params.get(pair[0]), params.get(pair[1]))
-        case_pairs[tid] = pairs
+    pairs_by_algo, covered, case_pairs = build_coverage_context(test_cases, [algo for algo in algo_order if algo in by_algo])
 
     total = sum(len(cases) for cases in by_algo.values())
     ordered = []
@@ -974,11 +995,13 @@ def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True
             best_idx = None
             best_score = -1
             for i, (_, params, tid) in enumerate(cases):
-                score = 0
-                for p in pairs_by_algo.get(algo, []):
-                    combo = case_pairs[tid].get(p)
-                    if combo is not None and combo not in local_covered[p]:
-                        score += 1
+                score = score_case_coverage(
+                    algo,
+                    tid,
+                    pairs_by_algo,
+                    case_pairs,
+                    {(algo, pair): local_covered[pair] for pair in pairs_by_algo.get(algo, [])},
+                )
                 if score > best_score:
                     best_score = score
                     best_idx = i
@@ -987,10 +1010,10 @@ def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True
                 break
             tc = cases.pop(best_idx)
             algo_ordered.append(tc)
-            for p in pairs_by_algo.get(algo, []):
-                combo = case_pairs[tc[2]].get(p)
+            for pair in pairs_by_algo.get(algo, []):
+                combo = case_pairs[tc[2]].get(pair)
                 if combo is not None:
-                    local_covered[p].add(combo)
+                    local_covered[pair].add(combo)
             algo_done += 1
             if label:
                 pct = 100.0 * algo_done / algo_total if algo_total else 100.0
@@ -1033,20 +1056,13 @@ def order_cases_quota_window_coverage(test_cases, algo_order, show_progress=True
         # Order window by global coverage gain
         scored = []
         for idx, (algo, params, tid) in enumerate(window_items):
-            score = 0
-            for p in pairs_by_algo.get(algo, []):
-                combo = case_pairs[tid].get(p)
-                if combo is not None and combo not in covered[(algo, p)]:
-                    score += 1
+            score = score_case_coverage(algo, tid, pairs_by_algo, case_pairs, covered)
             scored.append((score, idx, (algo, params, tid)))
         scored.sort(key=lambda x: (-x[0], x[1]))
         for score, _, tc in scored:
             ordered.append(tc)
             algo = tc[0]
-            for p in pairs_by_algo.get(algo, []):
-                combo = case_pairs[tc[2]].get(p)
-                if combo is not None:
-                    covered[(algo, p)].add(combo)
+            mark_case_coverage(algo, tc[2], pairs_by_algo, case_pairs, covered)
 
             if show_progress:
                 pct = 100.0 * len(ordered) / total if total else 100.0
@@ -1100,14 +1116,7 @@ def order_cases_coverage_global(test_cases, algo_order, show_progress=True, labe
     for algo, params, tid in test_cases:
         by_algo.setdefault(algo, []).append((algo, params, tid))
 
-    pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order if algo in by_algo}
-    covered = {(algo, pair): set() for algo in pairs_by_algo for pair in pairs_by_algo[algo]}
-    case_pairs = {}
-    for algo, params, tid in test_cases:
-        pairs = {}
-        for pair in pairs_by_algo.get(algo, []):
-            pairs[pair] = (params.get(pair[0]), params.get(pair[1]))
-        case_pairs[tid] = pairs
+    pairs_by_algo, covered, case_pairs = build_coverage_context(test_cases, [algo for algo in algo_order if algo in by_algo])
 
     total = sum(len(cases) for cases in by_algo.values())
     ordered = []
@@ -1115,14 +1124,6 @@ def order_cases_coverage_global(test_cases, algo_order, show_progress=True, labe
     progress_start = time.perf_counter()
     label_start = time.perf_counter() if label else None
     label_next_pct = 10
-
-    def score_case(algo, tid):
-        score = 0
-        for p in pairs_by_algo.get(algo, []):
-            combo = case_pairs[tid].get(p)
-            if combo is not None and combo not in covered[(algo, p)]:
-                score += 1
-        return score
 
     # Lazy-greedy heaps per algo.
     heaps = {}
@@ -1134,7 +1135,7 @@ def order_cases_coverage_global(test_cases, algo_order, show_progress=True, labe
             continue
         heap = []
         for idx, (_, _, tid) in enumerate(cases):
-            heapq.heappush(heap, (-score_case(algo, tid), idx, tid))
+            heapq.heappush(heap, (-score_case_coverage(algo, tid, pairs_by_algo, case_pairs, covered), idx, tid))
         heaps[algo] = heap
 
     while len(ordered) < total:
@@ -1149,7 +1150,7 @@ def order_cases_coverage_global(test_cases, algo_order, show_progress=True, labe
                 neg_score, idx, tid = heapq.heappop(heap)
                 if tid in selected[algo]:
                     continue
-                current_score = score_case(algo, tid)
+                current_score = score_case_coverage(algo, tid, pairs_by_algo, case_pairs, covered)
                 if current_score <= 0:
                     saturated.add(algo)
                     break
@@ -1157,10 +1158,7 @@ def order_cases_coverage_global(test_cases, algo_order, show_progress=True, labe
                     tc = by_algo[algo][idx]
                     ordered.append(tc)
                     selected[algo].add(tid)
-                    for p in pairs_by_algo.get(algo, []):
-                        combo = case_pairs[tid].get(p)
-                        if combo is not None:
-                            covered[(algo, p)].add(combo)
+                    mark_case_coverage(algo, tid, pairs_by_algo, case_pairs, covered)
                     progress = True
                     if show_progress:
                         pct = 100.0 * len(ordered) / total if total else 100.0
@@ -1212,15 +1210,10 @@ def order_cases_quota_window_coverage_worker(chunk, algo_order, worker_id=None, 
         if algo_cases:
             buckets[algo] = order_cases_coverage_global(algo_cases, [algo], show_progress=False)
 
-    pairs_by_algo = {algo: algo_param_pairs(algo) for algo in algo_order}
-    covered = {(algo, pair): set() for algo in pairs_by_algo for pair in pairs_by_algo[algo]}
-    case_pairs = {}
+    all_bucket_cases = []
     for algo in algo_order:
-        for _, params, tid in buckets.get(algo, []):
-            pairs = {}
-            for pair in pairs_by_algo.get(algo, []):
-                pairs[pair] = (params.get(pair[0]), params.get(pair[1]))
-            case_pairs[tid] = pairs
+        all_bucket_cases.extend(buckets.get(algo, []))
+    pairs_by_algo, covered, case_pairs = build_coverage_context(all_bucket_cases, algo_order)
 
     indices = {algo: 0 for algo in algo_order}
     total_remaining = sum(len(buckets.get(algo, [])) for algo in algo_order)
@@ -1252,11 +1245,7 @@ def order_cases_quota_window_coverage_worker(chunk, algo_order, worker_id=None, 
                 if idx >= len(lst):
                     continue
                 tc = lst[idx]
-                gain = 0
-                for p in pairs_by_algo.get(algo, []):
-                    combo = case_pairs[tc[2]].get(p)
-                    if combo is not None and combo not in covered[(algo, p)]:
-                        gain += 1
+                gain = score_case_coverage(algo, tc[2], pairs_by_algo, case_pairs, covered)
                 if gain > best_gain:
                     best_gain = gain
                     best_algo = algo
@@ -1265,10 +1254,7 @@ def order_cases_quota_window_coverage_worker(chunk, algo_order, worker_id=None, 
                 indices[best_algo] = indices.get(best_algo, 0) + 1
                 quotas[best_algo] -= 1
                 window.append(best_tc)
-                for p in pairs_by_algo.get(best_algo, []):
-                    combo = case_pairs[best_tc[2]].get(p)
-                    if combo is not None:
-                        covered[(best_algo, p)].add(combo)
+                mark_case_coverage(best_algo, best_tc[2], pairs_by_algo, case_pairs, covered)
                 used_any = True
 
         if len(window) < current_window:
@@ -1280,10 +1266,7 @@ def order_cases_quota_window_coverage_worker(chunk, algo_order, worker_id=None, 
                     idx += 1
                     indices[algo] = idx
                     window.append(tc)
-                    for p in pairs_by_algo.get(algo, []):
-                        combo = case_pairs[tc[2]].get(p)
-                        if combo is not None:
-                            covered[(algo, p)].add(combo)
+                    mark_case_coverage(algo, tc[2], pairs_by_algo, case_pairs, covered)
         rebuilt.extend(window)
         total_remaining = sum(
             len(buckets.get(algo, [])) - indices.get(algo, 0) for algo in algo_order
