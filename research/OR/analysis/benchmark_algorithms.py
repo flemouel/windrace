@@ -1766,6 +1766,14 @@ def _blend_eta(eta_ewma, eta_wall, run_done, w_eta):
     return (w_ewma * eta_ewma) + (w_wall * eta_wall), phase, w_ewma, w_wall
 
 
+def apply_eta_bias_factor(eta_s, elapsed_s, factor):
+    if eta_s is None:
+        return None
+    factor = max(0.0, float(factor))
+    elapsed_s = max(0.0, float(elapsed_s or 0.0))
+    return max(0.0, factor * (elapsed_s + eta_s) - elapsed_s)
+
+
 def update_eta_tracker(tracker, algo, elapsed_time):
     if not tracker or algo not in tracker:
         return
@@ -1837,6 +1845,7 @@ def print_progress_line(
     run_total=None,
     run_counts=None,
     run_totals=None,
+    eta_bias_factor=1.05,
 ):
     if getattr(print_progress_line, "_suspend", False):
         return
@@ -1858,9 +1867,12 @@ def print_progress_line(
     global_remaining = max(0, total_all - total_done)
     eta_wall = (global_remaining / wall_rate) if wall_rate else None
     eta, eta_phase, w_ewma, w_wall = _blend_eta(eta_ewma, eta_wall, run_done_i, w_eta)
+    eta = apply_eta_bias_factor(eta, elapsed_time, eta_bias_factor)
 
     eta_p50, _, _, _ = _blend_eta(eta_p50_ewma, eta_wall, run_done_i, w_eta)
     eta_p90, _, _, _ = _blend_eta(eta_p90_ewma, eta_wall, run_done_i, w_eta)
+    eta_p50 = apply_eta_bias_factor(eta_p50, elapsed_time, eta_bias_factor)
+    eta_p90 = apply_eta_bias_factor(eta_p90, elapsed_time, eta_bias_factor)
 
     if eta is None:
         remaining = total_all - total_done
@@ -1906,10 +1918,11 @@ def print_progress_line(
         run_eta, run_phase, run_w_ewma, run_w_wall = _blend_eta(run_eta_ewma, run_eta_wall, run_done_i, w_eta)
         if run_eta is None:
             run_eta = (run_remaining / rate) if rate > 0 else 0
+        run_eta = apply_eta_bias_factor(run_eta, elapsed_time, eta_bias_factor)
 
         run_status = (
             f"[{run_bar}] {run_pct:5.1f}% | "
-            f"run {run_done_i}/{run_total_i} ETA:{_format_duration(run_eta)}"
+            f"run {run_done_i}/{run_total_i} ETA:{_format_duration(run_eta)} margin:x{eta_bias_factor:.2f}"
         )
 
     line1 = f"[{bar}] {total_pct:5.1f}% | {algo_status}"
@@ -1944,6 +1957,7 @@ def print_progress_line(
         "run_phase": run_phase if run_status else None,
         "run_w_ewma": run_w_ewma if run_status else None,
         "run_w_wall": run_w_wall if run_status else None,
+        "eta_bias_factor": eta_bias_factor,
     }
 
 
@@ -2162,7 +2176,7 @@ def execute_batch(
             r.get("algorithm"),
             r.get("effective_elapsed_time", r.get("elapsed_time")),
         )
-    initial_run_eta_s, _, _ = eta_snapshot(
+    initial_run_eta_raw_s, _, _ = eta_snapshot(
         eta_tracker,
         {algo: 0 for algo in algo_order},
         algo_order,
@@ -2170,12 +2184,13 @@ def execute_batch(
         workers=args.workers,
         totals=run_totals_by_algo,
     )
+    initial_run_eta_s = apply_eta_bias_factor(initial_run_eta_raw_s, 0.0, args.eta_bias_factor)
     if eta_history is not None and initial_run_eta_s is not None:
         if run_start_time is not None:
             initial_elapsed = max(0.0, time.time() - run_start_time)
         else:
             initial_elapsed = 0.0
-        eta_history.append((initial_elapsed, initial_run_eta_s, initial_run_eta_s, None, "steady-state", 0.65, 0.35))
+        eta_history.append((initial_elapsed, initial_run_eta_s, initial_run_eta_raw_s, None, "steady-state", 1.0, 0.0, args.eta_bias_factor))
         last_eta_display_value = _format_duration(initial_run_eta_s)
     if args.order in {"quota-window-coverage", "global-coverage"}:
         coverage_tracker = init_coverage_tracker(algo_order)
@@ -2240,6 +2255,7 @@ def execute_batch(
                         coverage_gain=gains,
                         eta_tracker=eta_tracker,
                         workers=args.workers,
+                        eta_bias_factor=args.eta_bias_factor,
                         run_done=completed_this_run,
                         run_total=total_remaining,
                         run_counts=run_done_by_algo,
@@ -2264,6 +2280,7 @@ def execute_batch(
                             eta_phase = None
                             eta_w_ewma = None
                             eta_w_wall = None
+                            eta_bias_factor = args.eta_bias_factor
                             if isinstance(eta_info, dict):
                                 eta_ewma = eta_info.get("run_eta_ewma")
                                 eta_wall = eta_info.get("run_eta_wall")
@@ -2276,7 +2293,8 @@ def execute_batch(
                                     eta_phase = eta_info.get("global_phase")
                                     eta_w_ewma = eta_info.get("global_w_ewma")
                                     eta_w_wall = eta_info.get("global_w_wall")
-                            eta_history.append((eta_elapsed, current_eta, eta_ewma, eta_wall, eta_phase, eta_w_ewma, eta_w_wall))
+                                eta_bias_factor = eta_info.get("eta_bias_factor", args.eta_bias_factor)
+                            eta_history.append((eta_elapsed, current_eta, eta_ewma, eta_wall, eta_phase, eta_w_ewma, eta_w_wall, eta_bias_factor))
                             last_eta_display_value = eta_display_value
 
         if interrupted_state["value"]:
@@ -2296,18 +2314,24 @@ def execute_batch(
 def build_eta_history_lines(history):
     pred_totals_local = []
     lines_local = []
-    for i, (elapsed_s, eta_s, eta_ewma_s, eta_wall_s, _eta_phase, eta_w_ewma, eta_w_wall) in enumerate(history, start=1):
+    for i, item in enumerate(history, start=1):
+        if len(item) >= 8:
+            elapsed_s, eta_s, eta_ewma_s, eta_wall_s, _eta_phase, eta_w_ewma, eta_w_wall, eta_bias_factor = item[:8]
+        else:
+            elapsed_s, eta_s, eta_ewma_s, eta_wall_s, _eta_phase, eta_w_ewma, eta_w_wall = item
+            eta_bias_factor = 1.0
         eta_sum = (elapsed_s if elapsed_s is not None else 0.0) + (eta_s if eta_s is not None else 0.0)
         pred_totals_local.append(eta_sum)
+        margin = f"; margin x{eta_bias_factor:.2f}" if eta_bias_factor and abs(float(eta_bias_factor) - 1.0) > 1e-12 else ""
         if eta_ewma_s is not None and eta_wall_s is not None:
             eta_expr = (
                 f"{_format_duration(eta_s)}"
-                f"({eta_w_ewma:.1f}*{_format_duration(eta_ewma_s)}+{eta_w_wall:.1f}*{_format_duration(eta_wall_s)})"
+                f"({eta_w_ewma:.1f}*{_format_duration(eta_ewma_s)}+{eta_w_wall:.1f}*{_format_duration(eta_wall_s)}{margin})"
             )
         elif eta_ewma_s is not None:
             we = eta_w_ewma if eta_w_ewma is not None else 1.0
             ww = eta_w_wall if eta_w_wall is not None else 0.0
-            eta_expr = f"{_format_duration(eta_s)}({we:.1f}*{_format_duration(eta_ewma_s)}+{ww:.1f}*n/a)"
+            eta_expr = f"{_format_duration(eta_s)}({we:.1f}*{_format_duration(eta_ewma_s)}+{ww:.1f}*n/a{margin})"
         else:
             eta_expr = _format_duration(eta_s)
         lines_local.append(
@@ -2532,6 +2556,7 @@ def print_final_report(
             print(f"Aggregate multi-processor compute time: {_format_duration(run_compute_time)}")
         if args.resume and had_previous_results and cumulative_compute_time is not None:
             print(f"Cumulative aggregate multi-processor compute time: {_format_duration(cumulative_compute_time)}")
+        print(f"ETA bias factor: x{args.eta_bias_factor:.2f}")
         print(format_eta_trend(eta_trend))
         if estimated_stats is not None:
             print(
@@ -2568,6 +2593,7 @@ def print_final_report(
             print(f"Aggregate multi-processor compute time: {_format_duration(run_compute_time)}")
         if args.resume and had_previous_results and cumulative_compute_time is not None:
             print(f"Cumulative aggregate multi-processor compute time: {_format_duration(cumulative_compute_time)}")
+        print(f"ETA bias factor: x{args.eta_bias_factor:.2f}")
         print(format_eta_trend(eta_trend))
         if pred_stats is not None:
             print(
@@ -2912,6 +2938,8 @@ def build_arg_parser():
     parser.add_argument("--verbose", type=int, default=0, help="Verbosity level (0=summary, 1=details)")
     parser.add_argument("--window-size", type=int, default=DEFAULT_WINDOW_SIZE,
                         help="Window size for quota-window-coverage; ETA uses W_eta=W/2 with EWMA alpha=2/(W_eta+1)")
+    parser.add_argument("--eta-bias-factor", type=float, default=1.05,
+                        help="Safety factor applied to predicted total elapsed time for ETA display/diagnostics")
     parser.add_argument("--search-mode", default="grid", choices=["grid", "space-search", "coarse-to-fine", "topk-search"],
                         help="Case generation mode: 'grid' runs all remaining cases; "
                              "'space-search' keeps a deterministic coarse/refine1/refine2 subset (one-shot); "
@@ -2953,6 +2981,8 @@ def parse_and_validate_args():
         unknown_order_algos = [algo for algo in order_list if algo not in VALID_ALGOS]
         if unknown_order_algos:
             parser.error(f"Unknown algo(s) in --order: {', '.join(sorted(set(unknown_order_algos)))}")
+    if args.eta_bias_factor <= 0:
+        parser.error("--eta-bias-factor must be > 0")
     return parser, args, algo_set
 
 
@@ -2965,6 +2995,13 @@ def configure_effective_ranges(args, parser):
     print("Effective parameter ranges:")
     for name, values in effective_ranges.items():
         print(f"  {name}: {_format_allowed_values(values)}")
+    if args.verbose > 0:
+        print("Effective runtime options:")
+        for name in sorted(vars(args)):
+            value = getattr(args, name)
+            if isinstance(value, list):
+                value = ", ".join(str(v) for v in value) if value else "[]"
+            print(f"  {name}: {value}")
     return effective_ranges, algo_totals
 
 
